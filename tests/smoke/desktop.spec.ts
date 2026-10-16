@@ -17,12 +17,12 @@ test('desktop starts with secure boundaries, Korean UI and ephemeral settings', 
     page.on('pageerror', (error) => runtimeErrors.push(error.message));
     await expect(page.getByRole('heading', { name: /좋은 면접은/ })).toBeVisible();
     await expect(page.getByText('MVP 1 · v0.1.0')).toBeVisible();
-    await expect(page.getByRole('button', { name: '면접 시작하기' })).toBeDisabled();
+    await expect(page.getByRole('button', { name: '면접 시작하기' })).toBeEnabled();
     expect(page.url()).toBe('app://studio/index.html');
     expect(await page.evaluate(() => ({
       require: typeof Reflect.get(window, 'require'), process: typeof Reflect.get(window, 'process'),
       api: Object.keys(window.studio ?? {}).sort(),
-    }))).toEqual({ require: 'undefined', process: 'undefined', api: ['getSnapshot', 'selectResume', 'updateSettings'] });
+    }))).toEqual({ require: 'undefined', process: 'undefined', api: ['deleteAllInterviews', 'deleteInterview', 'getInterview', 'getInterviewHistory', 'getSnapshot', 'selectResume', 'startInterview', 'submitInterviewAnswer', 'updateSettings'] });
     const rendererMetric = await application.evaluate(({ app, BrowserWindow }) => {
       const pid = BrowserWindow.getAllWindows()[0]!.webContents.getOSProcessId();
       return app.getAppMetrics().find((metric) => metric.pid === pid);
@@ -73,10 +73,10 @@ test('desktop starts with secure boundaries, Korean UI and ephemeral settings', 
       } });
       try {
         await other.loadURL('app://studio/index.html');
-        return await other.webContents.executeJavaScript('window.studio.getSnapshot()');
+        return await other.webContents.executeJavaScript('Promise.all([window.studio.getSnapshot(), window.studio.getInterviewHistory()])');
       } finally { other.destroy(); }
     });
-    expect(unauthorized).toMatchObject({ ok: false, error: { code: 'UNAUTHORIZED' } });
+    expect(unauthorized).toMatchObject([{ ok: false, error: { code: 'UNAUTHORIZED' } }, { ok: false, error: { code: 'UNAUTHORIZED' } }]);
 
     await page.getByRole('button', { name: '시작하기', exact: true }).click();
     await page.screenshot({ path: 'test-results/desktop.png', fullPage: true });

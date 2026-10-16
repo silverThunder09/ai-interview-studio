@@ -1,6 +1,12 @@
 import type { SelectedResume } from './resume';
+import type { DeleteAllInterviewsRequest, DeleteInterviewRequest, InterviewHistory, InterviewSession, StartInterviewRequest, SubmitAnswerRequest } from './interview';
 
-export const CHANNELS = { snapshot: 'studio:snapshot', settings: 'studio:settings', resume: 'studio:select-resume' } as const;
+export const CHANNELS = {
+  snapshot: 'studio:snapshot', settings: 'studio:settings', resume: 'studio:select-resume',
+  interviewHistory: 'studio:interview-history', interviewGet: 'studio:interview-get',
+  interviewStart: 'studio:interview-start', interviewAnswer: 'studio:interview-answer',
+  interviewDelete: 'studio:interview-delete', interviewDeleteAll: 'studio:interview-delete-all',
+} as const;
 export const THEMES = ['system', 'light', 'dark'] as const;
 export type Theme = (typeof THEMES)[number];
 export interface Settings { locale: 'ko-KR'; theme: Theme; interviewRole: 'backend' }
@@ -15,6 +21,12 @@ export interface DesktopAPI {
   getSnapshot(): Promise<Result<Snapshot>>;
   updateSettings(settings: Settings): Promise<Result<Settings>>;
   selectResume(): Promise<Result<SelectedResume | null>>;
+  getInterviewHistory(): Promise<Result<InterviewHistory>>;
+  getInterview(sessionId: string): Promise<Result<InterviewSession>>;
+  startInterview(request: StartInterviewRequest): Promise<Result<InterviewSession>>;
+  submitInterviewAnswer(request: SubmitAnswerRequest): Promise<Result<InterviewSession>>;
+  deleteInterview(request: DeleteInterviewRequest): Promise<Result<null>>;
+  deleteAllInterviews(request: DeleteAllInterviewsRequest): Promise<Result<null>>;
 }
 
 export function isSettings(value: unknown): value is Settings {
