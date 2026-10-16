@@ -29,6 +29,7 @@ test('selected local documents are extracted, reviewed and cleared inside the sa
         dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [selectedPath] });
       }, path);
       await page.getByRole('button', { name: /이력서 불러오기|다른 문서 선택/ }).click();
+      await expect(page.getByRole('button', { name: /이력서 불러오기|다른 문서 선택/ })).toBeEnabled({ timeout: 20_000 });
     }
     await application.evaluate(({ dialog }) => { dialog.showOpenDialog = async () => ({ canceled: true, filePaths: [] }); });
     await page.getByRole('button', { name: '이력서 불러오기', exact: true }).click();

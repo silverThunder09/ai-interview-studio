@@ -37,7 +37,9 @@ export async function extractPdf(bytes: Uint8Array): Promise<ExtractedResume> {
           if (chunk.done) break;
           for (const item of chunk.value.items) {
             if (!('str' in item)) continue;
-            const part = item.str + (item.hasEOL ? '\n' : ' ');
+            // PDF.js already emits spaces for word gaps; item boundaries alone
+            // do not imply a separator (notably for CJK text).
+            const part = item.str + (item.hasEOL ? '\n' : '');
             total += part.length;
             if (total > RESUME_LIMITS.textChars) throw new ResumeError('LIMIT');
             text += part;
