@@ -1,13 +1,13 @@
 # 아키텍처와 MVP 로드맵
 
-## 현재 결정: MVP 1의 로컬 이력서 검토
+## 현재 결정: MVP 1의 로컬 텍스트 연습·기록
 
 Windows 우선 개인용 데스크톱 앱. Electron + React + strict TypeScript + Vite를 사용한다. 별도 backend나 production localhost 서버는 없다. `app://studio/index.html`과 허용된 번들 자산만 메모리 partition의 custom protocol로 제공한다. 개발 시에만 `127.0.0.1:5173` Vite를 허용한다. electron-vite는 main, sandbox 호환 CJS preload, renderer를 별도 빌드한다.
 
 | 경계 | 책임 | 제한 |
 | --- | --- | --- |
 | `src/main` | 수명주기, 리소스 제공, 권한, IPC 처리, 메모리 설정 | 선택 대화상자를 거친 파일 한 개만 제한적으로 읽기; 임의 경로·shell·URL API 미제공 |
-| `src/preload` | `window.studio.getSnapshot/updateSettings/selectResume` | ipcRenderer 원본이나 범용 invoke 미노출 |
+| `src/preload` | 설정·이력서 선택·면접 시작/답변·기록 조회/삭제의 좁은 `window.studio` API | ipcRenderer 원본이나 범용 invoke 미노출 |
 | `src/renderer` | 한국어 화면, 상태·오류·테마 표시 | Node·파일·API 키 접근 없음 |
 | `src/shared` | 타입, 채널, 설정 검증 계약 | Electron/React 의존 없음 |
 
@@ -15,13 +15,13 @@ Windows 우선 개인용 데스크톱 앱. Electron + React + strict TypeScript 
 
 성공/실패는 판별 가능한 `Result<T>`로 반환하고 renderer는 오류와 재시도를 제공한다. 창·메인 프레임·정확한 URL을 모두 확인한다. 자산 경로는 index와 생성된 assets 이름만 허용한다. 팝업·탐색·webview·장치·다운로드는 차단한다. 상세 위협 모델과 출처는 security 문서를 따른다.
 
-로컬 이력서 검토는 main의 native dialog → 제한된 파일 읽기 → sandbox renderer의 전용 worker → PDF 페이지/DOCX 본문 단락과 사용자 수정본으로 흐른다. 원문 파일·추출값·수정본은 저장·전송하지 않으며 검토 화면을 벗어나면 해제한다. renderer는 경로를 main에 전달할 수 없다. PDF.js의 하위 worker와 DOCX 파서는 OS·preload 접근 없이 동작하며 15초/취소 시 종료한다.
+로컬 이력서 검토는 main의 native dialog → 제한된 파일 읽기 → sandbox renderer의 전용 worker → PDF 페이지/DOCX 본문 단락과 사용자 수정본으로 흐른다. 검토만 하는 동안 원문 파일·추출값·수정본은 메모리에 두며 외부 전송하지 않는다. 검토를 완료하고 로컬 저장에 동의한 후 연습을 시작하면 추출 원문·수정본·질문·답변을 SQLite에 보관한다. renderer는 경로를 main에 전달할 수 없다. PDF.js의 하위 worker와 DOCX 파서는 OS·preload 접근 없이 동작하며 15초/취소 시 종료한다.
 
-SQLite와 AI provider adapter는 텍스트 면접·저장 단계 승인 시 검토한다. 향후 application 서비스가 domain 규칙을 담당하고 main 측 infrastructure adapter에 저장소·AI를 연결한다. React 컴포넌트에서 SQL·외부 AI 호출을 하지 않는다. 현재 사용하지 않는 DB, provider SDK, 장치 라이브러리, microservice는 넣지 않는다.
+Electron에 내장된 `node:sqlite`를 main의 저장 adapter에서 사용한다. `questions.ts`의 로컬 질문 공급자가 이력서/사용자 수정본/답변의 인용과 일반 기술 질문을 구분한다. 6개 기본 질문과 각 답변의 인용형 후속 질문으로 총 12개 답변을 연습하며, AI 생성·평가로 표현하지 않는다. `interview-store.ts`의 SQLite 트랜잭션이 질문·답변 순서와 재시도 중복 방지를 담당한다. 외부 AI adapter는 서비스·비용·전송 범위의 별도 선택/승인 후 추가한다. React 컴포넌트에서 SQL·외부 AI 호출을 하지 않는다. 현재 사용하지 않는 DB, provider SDK, 장치 라이브러리, microservice는 넣지 않는다.
 
 ## 단계별 로드맵
 
-각 단계는 별도 승인·PR로 진행한다. 2026-10-17 KST 사용자가 MVP 1의 첫 단계(로컬 파일 선택·PDF/DOCX 추출·근거 위치·수정/검토)를 승인했다. 파일 10MB·PDF 50페이지·텍스트 10만 자·DOCX 압축 해제 30MB·15초 한도도 승인했다. 텍스트 면접·DB·외부 AI는 계속 승인 전이다. 상세 범위는 `specs/mvp-01.md`에 있다.
+각 단계는 별도 승인·PR로 진행한다. 2026-10-17 KST 사용자가 MVP 1의 첫 단계(로컬 파일 선택·PDF/DOCX 추출·근거 위치·수정/검토)를 승인했다. 파일 10MB·PDF 50페이지·텍스트 10만 자·DOCX 압축 해제 30MB·15초 한도도 승인했다. 이후 사용자가 다음 단계 구현과 “로컬 연습·기록부터 완성”을 선택해 텍스트 연습·SQLite 보존/삭제를 승인했다. 외부 AI·과금·전송·음성·영상은 계속 제외한다. 상세 범위는 `specs/mvp-01.md`에 있다.
 
 ### MVP 0 — 기반 구현 완료
 
@@ -32,14 +32,14 @@ SQLite와 AI provider adapter는 텍스트 면접·저장 단계 승인 시 검�
 - Windows 수동: Actions artifact 압축 해제 → exe 실행 → 한국어 홈 → 설정 테마 변경 → 닫고 다시 실행하여 초기화 확인. 인터넷을 끄고도 화면이 뜨는지, 별도 서버·API 키·카메라·마이크 요청이 없는지 확인. unsigned exe의 Windows 경고 여부도 기록. 현재 수행됐다고 간주하지 않는다.
 - 보안·개인정보: 장치 권한 거절, 네트워크 CSP 차단, 메모리 설정, telemetry·개인정보 수집 없음, 자격증명 미포함.
 
-### MVP 1 — 로컬 이력서 검토만 승인·구현
+### MVP 1 — 로컬 이력서 검토·텍스트 연습·기록 승인
 
-- 범위·제외: PDF/DOCX 검토 가능한 텍스트 추출, 근거 기반 텍스트 면접과 답변 기록. 음성·영상·종합 점수 제외.
-- 요구사항: Java/Spring backend 문맥, 근거 없는 경험 금지, 검토 후 AI 전송, 로컬 SQLite 기록과 삭제.
-- AC: 정상 문서의 근거를 보여주고 손상·암호화·형식 위장·한도 초과는 명시적 오류; 질문/후속 질문과 답변 기록 복원; 전송 전 동의와 삭제 확인.
-- 자동 검증: 합성 문서 parser·한도·실패, fake AI provider·비용/timeout·rate limit 처리, DB migration/삭제와 IPC 통합.
+- 현재 범위: PDF/DOCX 검토, 로컬 질문 공급자를 통한 텍스트 연습과 SQLite 기록·복원·삭제. 전체 목표의 외부 AI 질문 생성과 전송은 아직 제외하며 음성·영상·종합 점수도 제공하지 않는다.
+- 요구사항: Java/Spring backend 문맥, 원문/수정본/답변의 인용 구분, 명시적 동의 후 로컬 SQLite 기록, 재시작 복원과 삭제. 실제 AI 서비스는 미연결이다.
+- AC: 문서 추출·근거 검토와 명시적 오류; 동의 없이 저장하지 않음; 질문/후속 질문과 답변을 원자적으로 기록하고 재시작 시 이어하기; 확인 후 세션/전체 기록 삭제; 저장 실패 시 입력·기존 기록 보존.
+- 자동 검증: 합성 문서 parser·한도·실패, 로컬 질문 인용, DB migration·트랜잭션 rollback·중복/충돌 제출·복원·삭제·한도와 IPC 통합. 원본/패키지 Windows smoke가 동의·12개 답변·재시작·저장 실패·삭제를 실제 실행한다. 외부 AI 검증은 해당 단계 승인 후 추가한다.
 - Windows 수동: 실제 파일 선택·한글·취소·네트워크 실패·재시작 기록·삭제 확인. 실제 개인정보는 CI에 올리지 않는다.
-- 보안·개인정보: 비신뢰 문서 파싱 격리, 외부 전송·비용 고지, secret의 OS 보호 저장 검토, 보존·삭제 정책.
+- 보안·개인정보: 비신뢰 문서 파싱 격리, 저장 전 평문 로컬 파일 안내/동의, 보존 위치·삭제 확인. 외부 전송·비용·secret 저장은 활성화하지 않는다.
 
 ### MVP 2 — 승인 전
 
