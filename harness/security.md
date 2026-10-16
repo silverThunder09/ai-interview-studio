@@ -13,7 +13,7 @@
 | renderer 외부 전송 | production CSP connect/media/frame/default none; 자체 script/style만 허용 | CSP 응답과 실제 fetch 차단 smoke |
 | 민감정보 유입 | 업로드·녹음·키 입력 없음; 테스트는 합성 값; gitignore | diff 및 패키지 내용 검토 |
 
-개발 CSP의 inline script/style와 loopback websocket 허용은 Vite HMR 전용이다. packaged 실행은 환경변수에 개발 URL이 있더라도 무시한다. Windows portable을 포함해 production 실행에는 HTTP 서버가 없다. CSP는 session 응답 헤더로 적용하며 `bypassCSP`를 사용하지 않는다. 앱이 시작 시 보안 초기화나 화면 로드에 실패하면 한국어 오류와 실패 종료를 제공한다.
+개발 CSP의 inline script/style와 loopback websocket 허용은 Vite HMR 전용이다. packaged 실행은 환경변수에 개발 URL이 있더라도 무시한다. Windows portable을 포함해 production 실행에는 HTTP 서버가 없다. CSP는 custom protocol 응답과 session 응답 헤더로 적용하며 `bypassCSP`를 사용하지 않는다. `session.fetch`는 webRequest 헤더 변경을 반영하지 않을 수 있으므로 protocol 응답에도 명시한다. 앱이 시작 시 보안 초기화나 화면 로드에 실패하면 한국어 오류와 실패 종료를 제공한다.
 
 Electron/Chromium 자체가 OS 캐시·로그·runtime profile을 생성할 수 있다. 제품 설정은 메모리로만 유지하며, 제품 개인정보 저장이 구현됐다는 의미는 아니다. 서명·자동 업데이트는 초기 범위에 없고 Windows에서 미서명 실행 경고가 발생할 수 있다. 배포 범위 확대 전에 코드 서명·업데이트 무결성·Electron fuses 강화와 runtime 보안 업데이트를 검토한다.
 

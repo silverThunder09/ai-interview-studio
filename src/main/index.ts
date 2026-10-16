@@ -22,10 +22,13 @@ async function start(): Promise<void> {
   browserSession.webRequest.onHeadersReceived((details, callback) => callback({
     responseHeaders: { ...details.responseHeaders, 'Content-Security-Policy': [devURL ? DEVELOPMENT_CSP : PRODUCTION_CSP] },
   }));
-  await browserSession.protocol.handle('app', (request) => {
+  browserSession.protocol.handle('app', async (request) => {
     const file = assetPath(request.url, join(__dirname, '../renderer'));
     if (request.method !== 'GET' || !file) return new Response('Not found', { status: 404 });
-    return net.fetch(pathToFileURL(file).href);
+    const response = await net.fetch(pathToFileURL(file).href);
+    const headers = new Headers(response.headers);
+    headers.set('Content-Security-Policy', PRODUCTION_CSP);
+    return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
   });
   for (const [channel, handle] of [
     [CHANNELS.snapshot, handlers.snapshot], [CHANNELS.settings, handlers.update],
