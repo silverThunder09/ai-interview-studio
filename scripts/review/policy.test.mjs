@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { URL } from 'node:url';
-import { evaluateMergeGate, PR_SECTIONS, validatePRBody } from './policy.mjs';
+import { countChangeRequests, evaluateMergeGate, PR_SECTIONS, validatePRBody } from './policy.mjs';
 import { createCIEvidence } from './ci-evidence.mjs';
 
 const policy = JSON.parse(readFileSync(new URL('../../.github/review-policy.json', import.meta.url)));
@@ -15,6 +15,7 @@ function fixture() {
       base: { sha: BASE, ref: 'main', repo: { full_name: policy.repository } } },
     review: { source: 'current-run', head_sha: HEAD, base_sha: BASE, outstanding_findings: 0, unresolved_threads: 0, open_review_issues: 0, change_requests: 0, changed_paths: ['src/renderer/src/App.tsx'] },
     authorization: { scope_approved: true },
+    reviews: [],
     checks: policy.required_checks.map((name, i) => ({ id: i + 1, name, head_sha: HEAD, app: { slug: 'github-actions' }, status: 'completed', conclusion: 'success', details_url: `https://github.com/${policy.repository}/actions/runs/${i + 10}/job/100` })),
     evidence: policy.required_checks.map((context, i) => ({ context, repository: policy.repository, pr_number: 1, run_id: String(i + 10), head_sha: HEAD, base_sha: BASE, checkout_sha: MERGE })),
   };
@@ -38,6 +39,8 @@ const mutations = {
   'issues': (v) => { v.review.open_review_issues = 1; },
   'human change request': (v) => { v.review.change_requests = 1; },
   'missing review state': (v) => { delete v.review.change_requests; },
+  'missing GitHub reviews': (v) => { delete v.reviews; },
+  'GitHub changes requested': (v) => { v.reviews = [{ id: 1, user: { login: 'reviewer' }, state: 'CHANGES_REQUESTED' }]; },
   'missing labels': (v) => { delete v.pr.labels; },
   'missing diff': (v) => { v.review.changed_paths = []; },
   'paused': (v) => { v.pr.labels = [{ name: 'agent-paused' }]; },
@@ -68,6 +71,16 @@ test('protected changes require an explicit user request independently of scope'
   assert.equal(evaluateMergeGate(value, policy).allowed, true);
 });
 test('missing input is denied', () => { assert.equal(evaluateMergeGate({}, policy).allowed, false); });
+test('comments and pending reviews cannot clear a change request', () => {
+  const review = (id, state, login = 'reviewer') => ({ id, state, user: { login } });
+  const changes = review(1, 'CHANGES_REQUESTED');
+  assert.equal(countChangeRequests([review(3, 'PENDING'), review(2, 'COMMENTED'), changes]), 1);
+  assert.equal(countChangeRequests([changes, review(2, 'APPROVED')]), 0);
+  assert.equal(countChangeRequests([changes, review(2, 'DISMISSED')]), 0);
+  assert.equal(countChangeRequests([changes, review(2, 'APPROVED', 'someone-else')]), 1);
+  assert.equal(countChangeRequests([review(1, 'REQUEST_CHANGES')]), null);
+  assert.equal(countChangeRequests(undefined), null);
+});
 test('PR template comments do not count as filled sections', () => {
   assert.ok(validatePRBody(readFileSync(new URL('../../.github/PULL_REQUEST_TEMPLATE.md', import.meta.url), 'utf8')).length);
   assert.deepEqual(validatePRBody(PR_SECTIONS.map((s) => `## ${s}\n검증 내용`).join('\n\n')), []);

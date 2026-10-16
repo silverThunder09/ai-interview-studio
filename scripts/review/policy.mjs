@@ -13,9 +13,21 @@ export function validatePRBody(body) {
   return errors;
 }
 
+export function countChangeRequests(reviews) {
+  if (!Array.isArray(reviews)) return null;
+  const decisions = new Map();
+  const known = ['APPROVED', 'CHANGES_REQUESTED', 'DISMISSED', 'COMMENTED', 'PENDING'];
+  for (const review of [...reviews].sort((a, b) => a.id - b.id)) {
+    if (!Number.isSafeInteger(review.id) || !review.user?.login || !known.includes(review.state)) return null;
+    // A comment is not an approval and cannot clear a previous change request.
+    if (['APPROVED', 'CHANGES_REQUESTED', 'DISMISSED'].includes(review.state)) decisions.set(review.user.login, review.state);
+  }
+  return [...decisions.values()].filter((state) => state === 'CHANGES_REQUESTED').length;
+}
+
 // All evidence is collected from authenticated APIs/current review, never a PR's claims.
 export function evaluateMergeGate(input, policy) {
-  const { pr, review, checks, evidence, authorization } = input ?? {};
+  const { pr, review, reviews, checks, evidence, authorization } = input ?? {};
   const reasons = [];
   const deny = (condition, reason) => { if (!condition) reasons.push(reason); };
   const head = pr?.head?.sha;
@@ -31,6 +43,7 @@ export function evaluateMergeGate(input, policy) {
   deny(authorization?.scope_approved === true, 'Scope has not been established');
   deny(review?.source === 'current-run' && review?.head_sha === head && review?.base_sha === base, 'Review is missing or stale');
   deny(review?.outstanding_findings === 0 && review?.unresolved_threads === 0 && review?.open_review_issues === 0 && review?.change_requests === 0, 'Unresolved findings/issues/threads/change requests');
+  deny(countChangeRequests(reviews) === 0, 'GitHub decision reviews are blocking or missing');
   deny(Array.isArray(pr?.labels), 'Labels have not been fetched');
   deny(Array.isArray(review?.changed_paths) && review.changed_paths.length > 0, 'Changed files are missing');
   deny(!pr?.labels?.some((label) => policy?.blocking_labels?.includes(label.name)), 'PR is paused');
