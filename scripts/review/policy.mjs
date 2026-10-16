@@ -20,7 +20,8 @@ export function countChangeRequests(reviews) {
   for (const review of [...reviews].sort((a, b) => a.id - b.id)) {
     if (!Number.isSafeInteger(review.id) || !review.user?.login || !known.includes(review.state)) return null;
     // A comment is not an approval and cannot clear a previous change request.
-    if (['APPROVED', 'CHANGES_REQUESTED', 'DISMISSED'].includes(review.state)) decisions.set(review.user.login, review.state);
+    // DISMISSED removes that review's own effect, not another active request.
+    if (['APPROVED', 'CHANGES_REQUESTED'].includes(review.state)) decisions.set(review.user.login, review.state);
   }
   return [...decisions.values()].filter((state) => state === 'CHANGES_REQUESTED').length;
 }

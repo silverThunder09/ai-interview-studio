@@ -76,7 +76,8 @@ test('comments and pending reviews cannot clear a change request', () => {
   const changes = review(1, 'CHANGES_REQUESTED');
   assert.equal(countChangeRequests([review(3, 'PENDING'), review(2, 'COMMENTED'), changes]), 1);
   assert.equal(countChangeRequests([changes, review(2, 'APPROVED')]), 0);
-  assert.equal(countChangeRequests([changes, review(2, 'DISMISSED')]), 0);
+  assert.equal(countChangeRequests([changes, review(2, 'DISMISSED')]), 1);
+  assert.equal(countChangeRequests([review(1, 'DISMISSED')]), 0);
   assert.equal(countChangeRequests([changes, review(2, 'APPROVED', 'someone-else')]), 1);
   assert.equal(countChangeRequests([review(1, 'REQUEST_CHANGES')]), null);
   assert.equal(countChangeRequests(undefined), null);
