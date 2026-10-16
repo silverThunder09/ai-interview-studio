@@ -1,0 +1,35 @@
+name: 리뷰 발견 사항
+description: 코드·PR 리뷰의 근거와 수정 검증을 추적합니다.
+title: '[Review] '
+labels: [bug]
+body:
+  - type: dropdown
+    id: severity
+    attributes:
+      label: 심각도
+      options: [P0, P1, P2, P3]
+    validations:
+      required: true
+  - type: input
+    id: source
+    attributes:
+      label: PR·head SHA·파일 위치
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 재현 조건·근거·영향
+      description: 관측과 추정을 구분하고 비밀정보·개인정보는 제외합니다.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: 수정 인수 기준과 검증 방법
+    validations:
+      required: true
+  - type: textarea
+    id: resolution
+    attributes:
+      label: 수정 커밋·검증 결과·남은 차단 사유

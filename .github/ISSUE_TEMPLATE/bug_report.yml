@@ -1,0 +1,30 @@
+name: 버그 신고
+description: 재현 가능한 동작 문제를 기록합니다.
+title: '[Bug] '
+labels: [bug]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 문제와 영향
+      description: 기대 동작과 실제 동작을 적어 주세요. 실제 이력서·API 키·녹음은 첨부하지 마세요.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 재현 방법과 환경
+      description: 실행 파일 버전, Windows 버전, 최소 재현 단계와 익명화한 오류를 적어 주세요.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: 수정 인수 기준
+      description: 어떻게 확인하면 해결됐다고 판단할 수 있나요?
+    validations:
+      required: true
+  - type: textarea
+    id: links
+    attributes:
+      label: 관련 PR·커밋·검증

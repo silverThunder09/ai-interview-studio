@@ -1,0 +1,65 @@
+name: Windows build
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: windows-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  package:
+    runs-on: windows-2025
+    timeout-minutes: 25
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm run build
+      - run: npm run test:smoke
+      - run: npm run package:win
+      - name: Smoke test packaged application
+        run: npm run test:smoke
+        env:
+          SMOKE_EXECUTABLE: release/win-unpacked/AI Interview Studio.exe
+      - name: Verify notices and calculate checksum
+        shell: pwsh
+        run: |
+          $required = @('release/win-unpacked/LICENSE.electron.txt', 'release/win-unpacked/LICENSES.chromium.html', 'release/win-unpacked/resources/notices/THIRD-PARTY-NOTICES.txt')
+          foreach ($file in $required) { if (-not (Test-Path $file)) { throw "Missing notice: $file" } }
+          $files = @(Get-ChildItem release/AI-Interview-Studio-*-win-x64.exe)
+          if ($files.Count -ne 1) { throw 'Expected exactly one portable executable' }
+          $hash = Get-FileHash $files[0].FullName -Algorithm SHA256
+          "$($hash.Hash.ToLower())  $($files[0].Name)" | Set-Content release/SHA256SUMS.txt -Encoding utf8
+      - name: Record tested head and base
+        run: node scripts/review/ci-evidence.mjs
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: ai-interview-studio-windows-x64
+          path: |
+            release/AI-Interview-Studio-*-win-x64.exe
+            release/SHA256SUMS.txt
+            release/win-unpacked/LICENSE.electron.txt
+            release/win-unpacked/LICENSES.chromium.html
+            release-notices/THIRD-PARTY-NOTICES.txt
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload smoke diagnostics
+        if: failure()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: windows-smoke-diagnostics
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 14
