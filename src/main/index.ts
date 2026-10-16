@@ -4,6 +4,8 @@ import { pathToFileURL } from 'node:url';
 import { CHANNELS, type Result } from '../shared/contracts';
 import { createHandlers } from './handlers';
 import { createResumeSelector } from './resume';
+import { createInterviewHandlers } from './interview-handlers';
+import { InterviewStore } from './interview-store';
 import { APP_URL, assetPath, DEVELOPMENT_CSP, developmentURL, isTrustedSender, PRODUCTION_CSP } from './policy';
 
 protocol.registerSchemesAsPrivileged([
@@ -15,6 +17,9 @@ async function start(): Promise<void> {
   const devURL = app.isPackaged ? undefined : developmentURL(process.env.ELECTRON_RENDERER_URL);
   const entry = devURL ?? APP_URL;
   const handlers = createHandlers(app.getVersion());
+  let interviewStore: InterviewStore | undefined;
+  const interview = createInterviewHandlers(() => interviewStore ??= new InterviewStore(join(app.getPath('userData'), 'interviews.sqlite')));
+  app.on('will-quit', () => { interviewStore?.close(); });
   const selectResume = createResumeSelector(async () => {
     if (!window) throw new Error('Window unavailable');
     const selected = await dialog.showOpenDialog(window, {
@@ -42,6 +47,9 @@ async function start(): Promise<void> {
   for (const [channel, handle] of [
     [CHANNELS.snapshot, handlers.snapshot], [CHANNELS.settings, handlers.update],
     [CHANNELS.resume, selectResume],
+    [CHANNELS.interviewHistory, interview.history], [CHANNELS.interviewGet, interview.get],
+    [CHANNELS.interviewStart, interview.start], [CHANNELS.interviewAnswer, interview.answer],
+    [CHANNELS.interviewDelete, interview.delete], [CHANNELS.interviewDeleteAll, interview.deleteAll],
   ] as const) {
     ipcMain.handle(channel, (event, ...args: unknown[]): Result<unknown> | Promise<Result<unknown>> => {
       const frame = event.senderFrame;
