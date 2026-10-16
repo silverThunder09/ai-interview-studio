@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "repository": "silverThunder09/ai-interview-studio",
+  "base_branch": "main",
+  "allowed_authors": ["silverThunder09"],
+  "scope": "approved-mvp-and-defect-repairs-only",
+  "required_checks": ["checks", "package", "pr-policy"],
+  "merge_method": "squash",
+  "max_fix_cycles": 3,
+  "max_prs_per_run": 2,
+  "protected_paths": ["AGENTS.md", ".agents/", ".github/", "harness/", "scripts/review/", "package.json", "package-lock.json"],
+  "blocking_labels": ["needs-user", "agent-paused"],
+  "notifications": "meaningful-changes-only"
+}

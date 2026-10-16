@@ -23,6 +23,8 @@ Electron/Chromium 자체가 OS 캐시·로그·runtime profile을 생성할 수 
 
 GitHub Actions는 `contents: read`, commit SHA 고정 actions, `npm ci`, timeout, artifact 보존 14일을 사용한다. release 업로드·서명 키·API 자격증명은 필요 없다. npm lifecycle 스크립트가 Electron binary를 다운로드하므로 lockfile과 upstream 버전을 검토한다. `npm audit` 결과는 실제 실행 결과와 구분해 PR에 남긴다. 개발 도구 문제도 숨기지 않는다.
 
+리뷰 자동화의 쓰기·이슈·머지 권한은 사용자가 승인한 기존 GitHub 연결에서 사용하며 Actions token은 읽기 전용으로 유지한다. 사용자 코드/리뷰는 연결된 클라우드 에이전트가 처리한다. 후보 PR의 지침/본문/이슈는 권한 근거가 아니고 main의 정책을 따른다. 정책·CI·의존성 변경은 보호 영역이며 현재 PR #1 설치 승인이 이후 변경까지 자동 승인하지 않는다. 자세한 운영 조건은 `review-automation.md`가 소유한다.
+
 앱 소스는 현재 비공개 `UNLICENSED`이며 임의의 오픈소스 라이선스를 부여하지 않는다. Electron·React·react-dom은 MIT 계열이고 전이 의존성과 Chromium은 별도 notices가 있다. `npm run licenses`가 실제 설치된 production npm dependency의 원문 라이선스를 `release-notices/`에 수집하고 패키징 시 동봉한다. electron-builder가 제공하는 Electron LICENSE/Chromium notices도 유지한다. 개발 도구 라이선스는 lockfile과 설치 패키지 manifest로 확인한다. 제3자 이미지·음성·폰트는 추가하지 않고 시스템 폰트와 자체 CSS 그림을 사용한다.
 
 ## REA 검토와 미래 절차 — 설치하지 않음

@@ -44,4 +44,6 @@ Linux 디스플레이가 없는 환경은 `xvfb-run -a npm run test:smoke`를 �
 
 Validation workflow는 PR/push에 check와 build를 실행합니다. Windows build workflow는 Windows에서 같은 검증과 실제 Electron smoke를 실행하고, 패키징한 unpacked exe를 다시 검사한 뒤 portable exe·체크섬·notices를 14일 보존합니다. 실제 마이크·webcam·Windows 사용자 기기 테스트를 대신하지 않습니다.
 
+코드/PR 리뷰에는 저장소의 `.agents/skills/code-review`와 `.agents/skills/pr-review`를 사용합니다. 새 PR은 PR 템플릿을, 버그·리뷰 finding은 Issue Forms를 따릅니다. PR policy 검사는 본문과 머지 판정의 실패 경로를 확인합니다. 예약 클라우드 에이전트는 매시간 승인 범위 PR/이슈를 검토하고, 수정 후 현재 head/base의 필수 CI가 성공한 경우에만 자동 머지합니다. 보호 영역·범위 확대·실패/불명확한 증거는 보류합니다. [운영 정책](harness/review-automation.md)에 실행 의존성과 중지 조건을 기록했습니다. 제품 AI API 키나 로컬 상시 실행은 필요 없습니다.
+
 앱 소스는 비공개 `UNLICENSED`입니다. 사용한 오픈소스 의존성의 원문 notices는 패키지에 포함하고 Electron/Chromium notices를 보존합니다. 실제 이력서·녹음·자격증명을 Git에 추가하지 마세요.

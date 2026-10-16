@@ -7,7 +7,8 @@ test('desktop starts with secure boundaries, Korean UI and ephemeral settings', 
   if (process.env.SMOKE_EXECUTABLE) env.ELECTRON_RENDERER_URL = 'https://example.invalid';
   const options = {
     chromiumSandbox: true,
-    ...(process.env.SMOKE_EXECUTABLE ? { executablePath: resolve(process.env.SMOKE_EXECUTABLE), args: [] } : { args: ['.'] }), env,
+    ...(process.env.SMOKE_EXECUTABLE ? { executablePath: resolve(process.env.SMOKE_EXECUTABLE) } : {}),
+    args: [...(process.env.SMOKE_EXECUTABLE ? [] : ['.']), '--use-fake-device-for-media-stream'], env,
   };
   const application = await electron.launch(options);
   try {
@@ -48,10 +49,16 @@ test('desktop starts with secure boundaries, Korean UI and ephemeral settings', 
       try { await fetch('https://blocked.invalid/probe'); return 'allowed'; } catch { return 'blocked'; }
     })).toBe('blocked');
     expect(externalRequests).toBe(0);
-    expect(await page.evaluate(async () => {
-      try { await navigator.mediaDevices.getUserMedia({ audio: true }); return 'allowed'; }
-      catch { return 'blocked'; }
-    })).toBe('blocked');
+    // Synthetic devices eliminate NotFoundError false positives on hardware-free CI.
+    for (const constraints of [{ audio: true }, { video: true }]) {
+      expect(await page.evaluate(async (request) => {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia(request);
+          stream.getTracks().forEach((track) => track.stop());
+          return 'unexpectedly allowed';
+        } catch (error) { return error instanceof DOMException ? error.name : 'unexpected failure'; }
+      }, constraints)).toBe('NotAllowedError');
+    }
     expect(await application.evaluate(async ({ BrowserWindow }) => {
       const main = BrowserWindow.getAllWindows()[0]!;
       const response = await main.webContents.session.fetch('app://studio/index.html');
