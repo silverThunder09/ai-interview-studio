@@ -43,7 +43,7 @@ export class LocalQuestionProvider implements QuestionProvider {
     if (number % 2 === 1) {
       const answer = previous.at(-1)?.answer;
       if (!answer) throw new Error('Answer required for follow-up');
-      return { kind: 'follow-up', evidence: { origin: 'answer', location: `${number}번 답변`, text: answer.slice(0, 180) }, text: '방금 답변의 아래 부분을 더 구체적으로 설명해 주세요. 선택한 방법의 이유와 검토한 대안은 무엇이었나요? 근거가 부족하다면 그 한계도 알려 주세요.' };
+      return { kind: 'follow-up', evidence: { origin: 'answer', location: `${number}번 답변`, text: answer.trim().slice(0, 180) }, text: '방금 답변의 아래 부분을 더 구체적으로 설명해 주세요. 선택한 방법의 이유와 검토한 대안은 무엇이었나요? 근거가 부족하다면 그 한계도 알려 주세요.' };
     }
     const question = technical[number / 2 - 1];
     if (!question) return null;

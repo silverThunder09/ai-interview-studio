@@ -59,3 +59,12 @@ export function isDeleteInterviewRequest(value: unknown): value is DeleteIntervi
 export function isDeleteAllInterviewsRequest(value: unknown): value is DeleteAllInterviewsRequest {
   return record(value, ['confirm']) && value.confirm === 'DELETE_ALL_INTERVIEWS';
 }
+
+export function isInterviewQuestion(value: unknown): value is InterviewQuestion {
+  if (!record(value, ['id', 'number', 'kind', 'text', 'evidence']) || !isInterviewId(value.id) ||
+    !Number.isInteger(value.number) || Number(value.number) < 1 || Number(value.number) > INTERVIEW_LIMITS.turns ||
+    typeof value.kind !== 'string' || !['experience', 'technical', 'follow-up'].includes(value.kind) || !text(value.text, 4_000)) return false;
+  const evidence = value.evidence;
+  return evidence === null || (record(evidence, ['origin', 'location', 'text']) &&
+    typeof evidence.origin === 'string' && ['source', 'reviewed', 'answer'].includes(evidence.origin) && text(evidence.location, 64) && text(evidence.text, 180));
+}

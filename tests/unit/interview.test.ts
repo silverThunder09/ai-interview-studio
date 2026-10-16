@@ -92,6 +92,13 @@ describe('durable SQLite sessions and transitions', () => {
     expect(session.turns.every((turn) => turn.answer !== null)).toBe(true);
     expect(store.history().sessions[0]).toMatchObject({ answered: 12, status: 'completed' });
   });
+  it('keeps the full answer while producing a nonempty quote after leading whitespace', () => {
+    const store = storage(), session = store.start(startFixture());
+    const answer = ' '.repeat(200) + '합성 답변';
+    const saved = store.answer({ sessionId: session.id, questionId: questionId(session), answer });
+    expect(saved.turns[0]?.answer).toBe(answer);
+    expect(saved.turns[1]?.question.evidence?.text).toBe('합성 답변');
+  });
   it('rolls back a failed next-question generation without losing the unsaved answer position', () => {
     const local = new LocalQuestionProvider();
     const provider: QuestionProvider = { next: (resume, previous) => { if (previous.length) throw new Error('synthetic provider failure'); return local.next(resume, previous); } };
@@ -128,6 +135,24 @@ describe('durable SQLite sessions and transitions', () => {
     const corrupt = path(); writeFileSync(corrupt, 'synthetic corrupt database');
     expect(() => new InterviewStore(corrupt)).toThrow();
     expect(readFileSync(corrupt, 'utf8')).toBe('synthetic corrupt database');
+  });
+  it('rejects a logically damaged question record before it can crash the renderer', () => {
+    const file = path(), store = storage(file), session = store.start(startFixture());
+    const fixture = new DatabaseSync(file);
+    fixture.prepare('UPDATE turns SET question=? WHERE session_id=?').run('null', session.id); fixture.close();
+    const result = createInterviewHandlers(() => store).get([session.id]);
+    expect(result).toMatchObject({ ok: false, error: { code: 'UNAVAILABLE' } });
+    const check = new DatabaseSync(file);
+    expect(check.prepare('SELECT question FROM turns WHERE session_id=?').get(session.id)?.question).toBe('null'); check.close();
+  });
+  it('rejects damaged provenance and question ordering without rewriting records', () => {
+    const file = path(), store = storage(file), session = store.start(startFixture());
+    const fixture = new DatabaseSync(file);
+    fixture.prepare('UPDATE turns SET question=? WHERE session_id=?').run(JSON.stringify({ ...session.turns[0]!.question, evidence: { origin: 'invented', text: 'x', location: 'x' } }), session.id);
+    expect(createInterviewHandlers(() => store).get([session.id]).ok).toBe(false);
+    fixture.prepare('UPDATE turns SET question=?,sequence=8 WHERE session_id=?').run(JSON.stringify(session.turns[0]!.question), session.id);
+    expect(createInterviewHandlers(() => store).get([session.id]).ok).toBe(false);
+    fixture.close();
   });
   it('caps the session count without silently evicting existing records', () => {
     const store = storage();

@@ -3,12 +3,12 @@ import { dirname } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import type { InterviewHistory, InterviewQuestion, InterviewSession, InterviewSummary, StartInterviewRequest, SubmitAnswerRequest } from '../shared/interview';
-import { INTERVIEW_LIMITS } from '../shared/interview';
+import { INTERVIEW_LIMITS, isInterviewId, isInterviewQuestion, isStartInterviewRequest } from '../shared/interview';
 import { LocalQuestionProvider, type QuestionProvider } from './questions';
 
 export class InterviewStoreError extends Error {}
 interface SessionRow { id: string; created_at: string; status: InterviewSession['status']; reviewed_text: string; sources: string; request_hash: string }
-interface TurnRow { question: string; answer: string | null }
+interface TurnRow { sequence: number; question_id: string; question: string; answer: string | null }
 
 export class InterviewStore {
   private readonly database: DatabaseSync;
@@ -50,8 +50,22 @@ export class InterviewStore {
   }
   get(id: string): InterviewSession {
     const row = this.row(id);
-    const turns = this.database.prepare('SELECT question,answer FROM turns WHERE session_id=? ORDER BY sequence').all(id) as unknown as TurnRow[];
-    return { id: row.id, createdAt: row.created_at, status: row.status, mode: 'local-practice', reviewedText: row.reviewed_text, sourceSections: JSON.parse(row.sources), turns: turns.map((turn) => ({ question: JSON.parse(turn.question), answer: turn.answer })) };
+    const damaged = () => new InterviewStoreError('저장된 기록의 형식이 손상되어 열 수 없습니다. 원본 파일은 자동 초기화하지 않습니다.');
+    if (typeof row.sources !== 'string' || row.sources.length > 1_000_000 || !Number.isFinite(Date.parse(row.created_at)) || !['active', 'completed'].includes(row.status)) throw damaged();
+    const sourceSections: unknown = JSON.parse(row.sources);
+    const resume = { requestId: row.id, reviewedText: row.reviewed_text, sourceSections, storageConsent: true };
+    if (!isStartInterviewRequest(resume)) throw damaged();
+    const rows = this.database.prepare('SELECT sequence,question_id,question,answer FROM turns WHERE session_id=? ORDER BY sequence').all(id) as unknown as TurnRow[];
+    if (!rows.length || rows.length > INTERVIEW_LIMITS.turns) throw damaged();
+    const turns = rows.map((turn, index) => {
+      if (typeof turn.question !== 'string' || turn.question.length > 10_000) throw damaged();
+      const question: unknown = JSON.parse(turn.question);
+      if (!isInterviewQuestion(question) || question.id !== turn.question_id || turn.sequence !== index || question.number !== index + 1 || !isInterviewId(turn.question_id)) throw damaged();
+      const pending = row.status === 'active' && index === rows.length - 1;
+      if (pending ? turn.answer !== null : typeof turn.answer !== 'string' || !turn.answer.trim() || turn.answer.includes('\0') || turn.answer.length > INTERVIEW_LIMITS.answerChars) throw damaged();
+      return { question, answer: turn.answer };
+    });
+    return { id: row.id, createdAt: row.created_at, status: row.status, mode: 'local-practice', reviewedText: row.reviewed_text, sourceSections: resume.sourceSections, turns };
   }
   history(): InterviewHistory {
     const rows = this.database.prepare(`SELECT s.id,s.created_at,s.status,COUNT(t.answer) AS answered FROM sessions s
