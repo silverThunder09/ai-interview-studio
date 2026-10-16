@@ -6,6 +6,7 @@ describe('resource and sender policy', () => {
   it('serves only the app entry and generated assets', () => {
     expect(assetPath(APP_URL, '/bundle')).toBe(resolve('/bundle/index.html'));
     expect(assetPath('app://studio/assets/index-abc_123.js', '/bundle')).toBe(resolve('/bundle/assets/index-abc_123.js'));
+    expect(assetPath('app://studio/assets/pdf.worker.min-test.mjs', '/bundle')).toBe(resolve('/bundle/assets/pdf.worker.min-test.mjs'));
   });
   it.each([
     'app://attacker/index.html', 'https://studio/index.html', 'app://studio:80/index.html',

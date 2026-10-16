@@ -16,13 +16,13 @@ test('desktop starts with secure boundaries, Korean UI and ephemeral settings', 
     const runtimeErrors: string[] = [];
     page.on('pageerror', (error) => runtimeErrors.push(error.message));
     await expect(page.getByRole('heading', { name: /좋은 면접은/ })).toBeVisible();
-    await expect(page.getByText('MVP 0 · v0.1.0')).toBeVisible();
+    await expect(page.getByText('MVP 1 · v0.1.0')).toBeVisible();
     await expect(page.getByRole('button', { name: '면접 시작하기' })).toBeDisabled();
     expect(page.url()).toBe('app://studio/index.html');
     expect(await page.evaluate(() => ({
       require: typeof Reflect.get(window, 'require'), process: typeof Reflect.get(window, 'process'),
       api: Object.keys(window.studio ?? {}).sort(),
-    }))).toEqual({ require: 'undefined', process: 'undefined', api: ['getSnapshot', 'updateSettings'] });
+    }))).toEqual({ require: 'undefined', process: 'undefined', api: ['getSnapshot', 'selectResume', 'updateSettings'] });
     const rendererMetric = await application.evaluate(({ app, BrowserWindow }) => {
       const pid = BrowserWindow.getAllWindows()[0]!.webContents.getOSProcessId();
       return app.getAppMetrics().find((metric) => metric.pid === pid);

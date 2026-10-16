@@ -1,13 +1,13 @@
 # 아키텍처와 MVP 로드맵
 
-## 현재 결정: MVP 0
+## 현재 결정: MVP 1의 로컬 이력서 검토
 
 Windows 우선 개인용 데스크톱 앱. Electron + React + strict TypeScript + Vite를 사용한다. 별도 backend나 production localhost 서버는 없다. `app://studio/index.html`과 허용된 번들 자산만 메모리 partition의 custom protocol로 제공한다. 개발 시에만 `127.0.0.1:5173` Vite를 허용한다. electron-vite는 main, sandbox 호환 CJS preload, renderer를 별도 빌드한다.
 
 | 경계 | 책임 | 제한 |
 | --- | --- | --- |
-| `src/main` | 수명주기, 리소스 제공, 권한, IPC 처리, 메모리 설정 | 임의 파일·shell·URL API 미제공 |
-| `src/preload` | `window.studio.getSnapshot/updateSettings` | ipcRenderer 원본이나 범용 invoke 미노출 |
+| `src/main` | 수명주기, 리소스 제공, 권한, IPC 처리, 메모리 설정 | 선택 대화상자를 거친 파일 한 개만 제한적으로 읽기; 임의 경로·shell·URL API 미제공 |
+| `src/preload` | `window.studio.getSnapshot/updateSettings/selectResume` | ipcRenderer 원본이나 범용 invoke 미노출 |
 | `src/renderer` | 한국어 화면, 상태·오류·테마 표시 | Node·파일·API 키 접근 없음 |
 | `src/shared` | 타입, 채널, 설정 검증 계약 | Electron/React 의존 없음 |
 
@@ -15,13 +15,15 @@ Windows 우선 개인용 데스크톱 앱. Electron + React + strict TypeScript 
 
 성공/실패는 판별 가능한 `Result<T>`로 반환하고 renderer는 오류와 재시도를 제공한다. 창·메인 프레임·정확한 URL을 모두 확인한다. 자산 경로는 index와 생성된 assets 이름만 허용한다. 팝업·탐색·webview·장치·다운로드는 차단한다. 상세 위협 모델과 출처는 security 문서를 따른다.
 
-SQLite와 AI provider adapter는 MVP 1 검토 시 추가한다. 향후 application 서비스가 domain 규칙을 담당하고 main 측 infrastructure adapter에 저장소·AI를 연결한다. React 컴포넌트에서 SQL·외부 AI 호출을 하지 않는다. 현재 사용하지 않는 DB, provider SDK, 장치 라이브러리, microservice는 넣지 않는다.
+로컬 이력서 검토는 main의 native dialog → 제한된 파일 읽기 → sandbox renderer의 전용 worker → PDF 페이지/DOCX 본문 단락과 사용자 수정본으로 흐른다. 원문 파일·추출값·수정본은 저장·전송하지 않으며 검토 화면을 벗어나면 해제한다. renderer는 경로를 main에 전달할 수 없다. PDF.js의 하위 worker와 DOCX 파서는 OS·preload 접근 없이 동작하며 15초/취소 시 종료한다.
+
+SQLite와 AI provider adapter는 텍스트 면접·저장 단계 승인 시 검토한다. 향후 application 서비스가 domain 규칙을 담당하고 main 측 infrastructure adapter에 저장소·AI를 연결한다. React 컴포넌트에서 SQL·외부 AI 호출을 하지 않는다. 현재 사용하지 않는 DB, provider SDK, 장치 라이브러리, microservice는 넣지 않는다.
 
 ## 단계별 로드맵
 
-각 단계는 별도 승인·PR로 진행한다. 현재 구현 승인은 MVP 0뿐이다. MVP 1 상세 초안은 `specs/mvp-01.md`에 있다.
+각 단계는 별도 승인·PR로 진행한다. 2026-10-17 KST 사용자가 MVP 1의 첫 단계(로컬 파일 선택·PDF/DOCX 추출·근거 위치·수정/검토)를 승인했다. 파일 10MB·PDF 50페이지·텍스트 10만 자·DOCX 압축 해제 30MB·15초 한도도 승인했다. 텍스트 면접·DB·외부 AI는 계속 승인 전이다. 상세 범위는 `specs/mvp-01.md`에 있다.
 
-### MVP 0 — 현재 활성
+### MVP 0 — 기반 구현 완료
 
 - 범위·제외: 하네스, 한국어 홈·설정 화면, 실행 가능한 Electron, CI·portable exe. AI, 이력서, DB, 장치, 기록 저장은 제외.
 - 요구사항: 보안 격리, 좁은 검증 IPC, 로컬 자산 로딩, 오류 표시, 설정 구조, reproducible install.
@@ -30,7 +32,7 @@ SQLite와 AI provider adapter는 MVP 1 검토 시 추가한다. 향후 applicati
 - Windows 수동: Actions artifact 압축 해제 → exe 실행 → 한국어 홈 → 설정 테마 변경 → 닫고 다시 실행하여 초기화 확인. 인터넷을 끄고도 화면이 뜨는지, 별도 서버·API 키·카메라·마이크 요청이 없는지 확인. unsigned exe의 Windows 경고 여부도 기록. 현재 수행됐다고 간주하지 않는다.
 - 보안·개인정보: 장치 권한 거절, 네트워크 CSP 차단, 메모리 설정, telemetry·개인정보 수집 없음, 자격증명 미포함.
 
-### MVP 1 — 승인 전
+### MVP 1 — 로컬 이력서 검토만 승인·구현
 
 - 범위·제외: PDF/DOCX 검토 가능한 텍스트 추출, 근거 기반 텍스트 면접과 답변 기록. 음성·영상·종합 점수 제외.
 - 요구사항: Java/Spring backend 문맥, 근거 없는 경험 금지, 검토 후 AI 전송, 로컬 SQLite 기록과 삭제.

@@ -65,3 +65,21 @@ dd { margin: 0; }
 .error { margin-top: 16px; padding: 12px; background: #ffeded; color: #842525; border-radius: 8px; font-size: 12px; }
 .error button { background: #fff; color: #842525; border: 1px solid #c37a7a; border-radius: 4px; margin-left: 8px; }
 @media (max-width: 1000px) { main { padding: 0 26px; } .app { grid-template-columns: 190px minmax(0, 1fr); } .interview-art { width: 155px; } .roadmap-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .hero-card { padding: 22px; } }
+.resume-review { padding-top: 32px; min-height: 600px; }
+.resume-actions { display: flex; gap: 12px; align-items: baseline; margin: 12px 0; }
+.secondary { border: 1px solid var(--line); border-radius: 7px; padding: 10px 14px; color: var(--text); background: var(--surface); font-size: 12px; }
+.hint { color: var(--muted); font-size: 11px; line-height: 1.8; }
+.resume-name { overflow-wrap: anywhere; }
+.resume-warnings { font-size: 12px; line-height: 1.8; color: var(--muted); }
+.resume-columns { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; margin: 20px 0; }
+.source-panel, .edit-panel { border: 1px solid var(--line); border-radius: 12px; background: var(--surface); padding: 20px; min-width: 0; }
+.resume-columns h2 { font-size: 16px; margin-top: 0; }
+.source-text { overflow: auto; max-height: 520px; }
+.source-text article { border-top: 1px solid var(--line); }
+.source-text h3 { color: var(--accent); font-size: 11px; }
+.source-text p { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; line-height: 1.9; user-select: text; }
+.edit-panel label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 12px; }
+.edit-panel textarea { width: 100%; min-height: 380px; resize: vertical; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 12px; font: inherit; font-size: 12px; line-height: 1.9; }
+textarea:focus-visible { outline: 3px solid #7979ed; outline-offset: 2px; }
+.edit-panel [role='status'] { font-size: 12px; color: var(--accent); line-height: 1.8; }
+@media (max-width: 1000px) { .resume-columns { grid-template-columns: minmax(0, 1fr); } .source-text { max-height: 300px; } }
