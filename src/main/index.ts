@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { CHANNELS, type Result } from '../shared/contracts';
 import { createHandlers } from './handlers';
+import { createResumeSelector } from './resume';
 import { APP_URL, assetPath, DEVELOPMENT_CSP, developmentURL, isTrustedSender, PRODUCTION_CSP } from './policy';
 
 protocol.registerSchemesAsPrivileged([
@@ -14,6 +15,14 @@ async function start(): Promise<void> {
   const devURL = app.isPackaged ? undefined : developmentURL(process.env.ELECTRON_RENDERER_URL);
   const entry = devURL ?? APP_URL;
   const handlers = createHandlers(app.getVersion());
+  const selectResume = createResumeSelector(async () => {
+    if (!window) throw new Error('Window unavailable');
+    const selected = await dialog.showOpenDialog(window, {
+      title: '검토할 이력서 선택', properties: ['openFile'],
+      filters: [{ name: '이력서 문서', extensions: ['pdf', 'docx'] }],
+    });
+    return selected.canceled ? undefined : selected.filePaths[0];
+  });
   const browserSession = session.fromPartition('studio'); // in memory, no persistent web storage
   browserSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
   browserSession.setPermissionCheckHandler(() => false);
@@ -32,8 +41,9 @@ async function start(): Promise<void> {
   });
   for (const [channel, handle] of [
     [CHANNELS.snapshot, handlers.snapshot], [CHANNELS.settings, handlers.update],
+    [CHANNELS.resume, selectResume],
   ] as const) {
-    ipcMain.handle(channel, (event, ...args: unknown[]): Result<unknown> => {
+    ipcMain.handle(channel, (event, ...args: unknown[]): Result<unknown> | Promise<Result<unknown>> => {
       const frame = event.senderFrame;
       if (!window || event.sender !== window.webContents || !frame ||
           !isTrustedSender(frame.url, entry, frame === window.webContents.mainFrame)) {

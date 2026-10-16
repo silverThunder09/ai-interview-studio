@@ -8,7 +8,7 @@ export function createHandlers(version: string) {
   return {
     snapshot(args: unknown[]): Result<Snapshot> {
       if (args.length !== 0) return invalid();
-      return { ok: true, value: { version, stage: 'mvp-0', settings: { ...settings } } };
+      return { ok: true, value: { version, stage: 'mvp-1-local', settings: { ...settings } } };
     },
     update(args: unknown[]): Result<Settings> {
       if (args.length !== 1 || !isSettings(args[0])) return invalid();

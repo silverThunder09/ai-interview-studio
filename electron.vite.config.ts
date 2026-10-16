@@ -6,6 +6,8 @@ export default defineConfig({
   // Bundle shared contracts into CJS: sandboxed preload cannot require local modules.
   preload: {},
   renderer: {
+    assetsInclude: ['**/*.bcmap'],
+    worker: { format: 'es' },
     plugins: [react()],
     server: { host: '127.0.0.1', port: 5173, strictPort: true },
   },

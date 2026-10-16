@@ -27,6 +27,10 @@ async function collect(name, parent = process.cwd()) {
   for (const child of Object.keys(pkg.dependencies ?? {}).sort()) await collect(child, dir);
 }
 for (const name of Object.keys(root.dependencies ?? {}).sort()) await collect(name);
+// PDF.js is bundled into the sandbox renderer. Its optional native canvas is
+// not shipped as a Node runtime dependency.
+for (const name of root.config?.bundledRendererDependencies ?? []) await collect(name);
+notices.push(`PDF.js bundled Adobe CMaps\n${await readFile('node_modules/pdfjs-dist/cmaps/LICENSE', 'utf8')}`);
 await mkdir('release-notices', { recursive: true });
 await writeFile('release-notices/THIRD-PARTY-NOTICES.txt', notices.join('\n\n====================\n\n'));
 console.log(`Collected full license texts for ${visited.size} installed runtime packages. Electron/Chromium notices are retained by the packager.`);

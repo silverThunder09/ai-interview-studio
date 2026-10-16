@@ -19,7 +19,7 @@ describe('settings trust boundary', () => {
     expect(handlers.update([]).ok).toBe(false);
     expect(handlers.update([DEFAULT_SETTINGS, 'extra']).ok).toBe(false);
     expect(handlers.update([{ ...DEFAULT_SETTINGS, theme: 'invalid' }]).ok).toBe(false);
-    expect(handlers.snapshot([])).toEqual({ ok: true, value: { version: '0.1.0', stage: 'mvp-0', settings: DEFAULT_SETTINGS } });
+    expect(handlers.snapshot([])).toEqual({ ok: true, value: { version: '0.1.0', stage: 'mvp-1-local', settings: DEFAULT_SETTINGS } });
   });
   it('does not accept expected values inherited from a prototype', () => {
     const payload = Object.assign(Object.create(DEFAULT_SETTINGS), { extra1: 1, extra2: 2, extra3: 3 });

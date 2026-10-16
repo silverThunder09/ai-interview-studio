@@ -2,7 +2,7 @@
 
 ## MVP 0 위협 모델과 현재 통제
 
-데이터 흐름: 패키지 내부 자산 → sandbox renderer → 좁은 preload → 검증된 IPC → main 메모리 설정 → 타입화된 응답. 외부 AI, 문서, 녹화, DB 흐름은 아직 없다. 사용자 컨텐츠와 외부 응답은 향후 모두 비신뢰 입력으로 취급한다.
+데이터 흐름: 패키지 내부 자산 → sandbox renderer → 좁은 preload → 검증된 IPC → main 메모리 설정 → 타입화된 응답. 외부 AI, 녹화, DB 흐름은 아직 없다. 로컬 문서 흐름은 아래 별도 항목을 따른다. 사용자 컨텐츠와 외부 응답은 향후 모두 비신뢰 입력으로 취급한다.
 
 | 경계/위험 | 현재 통제 | 검증 |
 | --- | --- | --- |
@@ -11,13 +11,23 @@
 | 임의 로컬 파일·외부 자산 | custom app protocol의 고정 entry/asset whitelist | traversal·오염 URL 거절 테스트 |
 | 팝업·탐색·다운로드·장치 | 모두 deny, 외부 shell 링크 미제공 | smoke·부정 테스트 및 코드 검토 |
 | renderer 외부 전송 | production CSP connect/media/frame/default none; 자체 script/style만 허용 | CSP 응답과 실제 fetch 차단 smoke |
-| 민감정보 유입 | 업로드·녹음·키 입력 없음; 테스트는 합성 값; gitignore | diff 및 패키지 내용 검토 |
+| 민감정보 유입 | 선택한 문서만 메모리 검토; 녹음·키 입력 없음; 테스트는 합성 값; gitignore | diff 및 패키지 내용 검토 |
 
 개발 CSP의 inline script/style와 loopback websocket 허용은 Vite HMR 전용이다. packaged 실행은 환경변수에 개발 URL이 있더라도 무시한다. Windows portable을 포함해 production 실행에는 HTTP 서버가 없다. CSP는 custom protocol 응답과 session 응답 헤더로 적용하며 `bypassCSP`를 사용하지 않는다. `session.fetch`는 webRequest 헤더 변경을 반영하지 않을 수 있으므로 protocol 응답에도 명시한다. 앱이 시작 시 보안 초기화나 화면 로드에 실패하면 한국어 오류와 실패 종료를 제공한다.
 
 Electron/Chromium 자체가 OS 캐시·로그·runtime profile을 생성할 수 있다. 제품 설정은 메모리로만 유지하며, 제품 개인정보 저장이 구현됐다는 의미는 아니다. 서명·자동 업데이트는 초기 범위에 없고 Windows에서 미서명 실행 경고가 발생할 수 있다. 배포 범위 확대 전에 코드 서명·업데이트 무결성·Electron fuses 강화와 runtime 보안 업데이트를 검토한다.
 
 향후 API 키는 main 측 OS 보호 저장소를 우선 검토한다. renderer·Git·CI artifact·로그에 노출하지 않는다. 이력서/음성/transcript의 전송 데이터·provider·인터넷 의존성·사용량 비용을 사전에 표시하고 사용자 동작으로 전송한다. remote AI는 offline 기능으로 표현하지 않는다. 마이크/카메라는 명시적 시작/중지·거절·종료 해제·보존/삭제 테스트 없이는 활성화하지 않는다. 얼굴로 정직성·성격·감정·채용 적합성을 추론하지 않는다.
+
+## 로컬 이력서 검토의 데이터 흐름
+
+사용자가 native dialog에서 고른 파일 한 개 → main의 10MiB+1 바이트 제한 읽기와 서명 확인 → sandbox renderer → 전용 worker(PDF.js 하위 worker 또는 fflate/xmldom) → 근거 위치가 붙은 추출 원문과 사용자 수정본. renderer는 임의 경로를 보내지 못하고 main은 송신 창·프레임·URL·인수 개수를 기존과 같이 검증한다. 오류는 경로·원문·parser 예외를 숨긴 정형 메시지만 반환한다.
+
+PDF는 텍스트 추출만 수행하며 문서 JavaScript/링크/첨부를 실행하지 않는다. CMaps는 코드에 포함된 정적 데이터만 허용한다. DOCX는 ZIP 디렉터리/서명/중복·경로·크기·암호화 플래그와 필요한 XML의 실제 팽창/CRC를 검증하고, DTD를 거절하며 namespace를 확인한 본문 텍스트만 읽는다. 어떠한 ZIP 항목도 디스크에 쓰지 않는다. `worker-src self`로 패키지 worker만 실행하고 `connect-src none` 및 기존 Node·장치·탐색 차단은 유지한다.
+
+파일·페이지·텍스트·압축 팽창·항목·XML 중첩 한도를 적용한다. 15초 타임아웃·취소·화면 이탈 시 전용 worker를 종료하고 Chromium이 하위 worker도 종료한다. 이 경계는 비신뢰 파서를 main 권한에서 분리하지만 별도 OS 메모리 quota를 제공하지 않는다. 문서를 입력한 프로세스 메모리의 즉시 안전 삭제를 보장한다고 표현하지 않는다.
+
+제품은 파일 내용·추출 결과·수정본을 저장/로깅/외부 전송하지 않는다. 화면 비우기·이탈·앱 종료 시 참조를 해제하며 원본 파일은 보존한다. Chromium의 crash/OS 진단 메커니즘까지 완전한 무기록을 보장하지 않는다. 테스트/스크린샷/artifact에는 합성 문서만 쓴다. 외부 AI·DB·API 키 저장은 아직 미승인이다.
 
 ## CI와 의존성 검토
 
