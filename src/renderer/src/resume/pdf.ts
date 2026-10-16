@@ -58,7 +58,7 @@ export async function extractPdf(bytes: Uint8Array): Promise<ExtractedResume> {
     throw new ResumeError('DAMAGED');
   } finally {
     // The caller also terminates the outer worker on cancel/deadline.
-    port.terminate(); worker.destroy();
     await task.destroy().catch(() => undefined);
+    worker.destroy(); port.terminate();
   }
 }
