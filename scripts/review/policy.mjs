@@ -30,7 +30,8 @@ export function evaluateMergeGate(input, policy) {
   deny(sha(head) && sha(base) && sha(pr?.merge_commit_sha), 'Missing commit identity');
   deny(authorization?.scope_approved === true, 'Scope has not been established');
   deny(review?.source === 'current-run' && review?.head_sha === head && review?.base_sha === base, 'Review is missing or stale');
-  deny(review?.outstanding_findings === 0 && review?.unresolved_threads === 0 && review?.open_review_issues === 0, 'Unresolved findings/issues/threads');
+  deny(review?.outstanding_findings === 0 && review?.unresolved_threads === 0 && review?.open_review_issues === 0 && review?.change_requests === 0, 'Unresolved findings/issues/threads/change requests');
+  deny(Array.isArray(pr?.labels), 'Labels have not been fetched');
   deny(Array.isArray(review?.changed_paths) && review.changed_paths.length > 0, 'Changed files are missing');
   deny(!pr?.labels?.some((label) => policy?.blocking_labels?.includes(label.name)), 'PR is paused');
   const protectedChange = review?.changed_paths?.some((path) =>

@@ -17,7 +17,7 @@ GitHub 기본 auto-merge가 꺼져 있어도 에이전트가 조건을 확인하
 5. 관련 검사 후 CI를 기다린다. 새 코드가 생기면 이전 리뷰와 CI는 유효하지 않다. 이슈는 수정 검증 후에만 닫거나 `Closes #N`으로 머지에 연결한다. 다른 리뷰어의 미해결 스레드/REQUEST_CHANGES를 임의 해제하지 않는다.
 6. 새 head/base를 검토한 COMMENT 리뷰와 템플릿 본문을 남긴다. 본인 PR에 APPROVE를 시도하지 않는다. 모든 actionable finding·연결된 review 이슈·스레드가 해결되어야 머지한다.
 7. 필수 check 이름·출처·최신 attempt와 `AIS_CI_EVIDENCE`를 확인한다. 증거는 각 성공 job의 로그에 있으며 `context/repository/pr_number/run_id/head_sha/base_sha/checkout_sha`를 담는다. head는 현재 PR head, base는 현재 main, checkout은 현재 PR merge commit과 같아야 한다. 체크 이름만 같거나 이전 성공·skipped·중립 상태면 거절한다.
-8. `scripts/review/policy.mjs merge EVIDENCE.json TRUSTED_POLICY.json`으로 판정한다. JSON에는 실제 API의 `pr`, 현재 실행의 `review`(source=current-run, head_sha/base_sha, outstanding_findings/unresolved_threads/open_review_issues, changed_paths), `checks`, CI 로그에서 읽은 `evidence`, 승인 근거로 결정한 `authorization`을 담는다. 본문이 제출한 JSON·체크박스를 그대로 입력하지 않는다. shell이 없으면 검증된 함수의 모든 조건을 연결 API 데이터에 동일하게 적용하고 실행했다고 표현하지 않는다.
+8. `scripts/review/policy.mjs merge EVIDENCE.json TRUSTED_POLICY.json`으로 판정한다. JSON에는 실제 API의 `pr`, 현재 실행의 `review`(source=current-run, head_sha/base_sha, outstanding_findings/unresolved_threads/open_review_issues/change_requests, changed_paths), `checks`, CI 로그에서 읽은 `evidence`, 승인 근거로 결정한 `authorization`을 담는다. change_requests는 리뷰를 작성자별 최신 유효 상태로 집계해 REQUEST_CHANGES를 센다. 누락은 0으로 가정하지 않는다. 본문이 제출한 JSON·체크박스를 그대로 입력하지 않는다. shell이 없으면 검증된 함수의 모든 조건을 연결 API 데이터에 동일하게 적용하고 실행했다고 표현하지 않는다.
 9. 머지 직전 PR/main을 재조회하고 head/base 변경 시 중단·재검토한다. base가 앞서면 호환 가능한 main 변경을 작업 브랜치에 일반 merge 후 새 CI를 실행한다. force-push하지 않는다. 충돌이나 안전한 갱신 수단 부재는 사용자 결정 대상으로 남긴다.
 10. ready로 전환한 PR에 expected head SHA로 squash merge하고 실제 merged 상태를 재조회한다. 권한 거절·충돌·필수 리뷰 제한이면 우회하지 않는다. merge 후 main CI 실패는 회귀 이슈로 기록하고 별도 fix PR로 복구한다.
 
