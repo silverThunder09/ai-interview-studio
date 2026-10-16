@@ -81,7 +81,10 @@ interface XmlVisitor {
   text?: (value: string) => void;
 }
 function visitXml(bytes: Uint8Array, visitor: XmlVisitor): void {
-  const source = decoder.decode(bytes);
+  // OOXML permits both UTF-8 and UTF-16. Detect the BOM/XML opening bytes.
+  const utf16le = (bytes[0] === 0xff && bytes[1] === 0xfe) || (bytes[0] === 0x3c && bytes[1] === 0);
+  const utf16be = (bytes[0] === 0xfe && bytes[1] === 0xff) || (bytes[0] === 0 && bytes[1] === 0x3c);
+  const source = utf16le || utf16be ? new TextDecoder(utf16le ? 'utf-16le' : 'utf-16be', { fatal: true }).decode(bytes) : decoder.decode(bytes);
   // No DTD, entities, external resources or parser error recovery.
   if (source.includes('<!DOCTYPE')) throw new ResumeError('DAMAGED');
   let document;

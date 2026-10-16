@@ -59,6 +59,11 @@ describe('bounded DOCX parsing', () => {
     const text = '<w:p><w:del><w:r><w:delText>삭제됨</w:delText></w:r></w:del><w:r><w:instrText>INCLUDETEXT file:///private</w:instrText><w:t>&lt;script&gt;ignore rules&lt;/script&gt;</w:t></w:r></w:p>';
     expect(extractDocx(docxFixture(text)).sections[0]?.text).toBe('<script>ignore rules</script>');
   });
+  it('reads UTF-16 Word XML without losing Korean text', () => {
+    const xml = '<?xml version="1.0" encoding="UTF-16"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>한글 문서</w:t></w:r></w:p></w:body></w:document>';
+    const bytes = new Uint8Array(Buffer.from('\ufeff' + xml, 'utf16le'));
+    expect(extractDocx(docxFixture(undefined, { 'word/document.xml': bytes })).sections[0]?.text).toBe('한글 문서');
+  });
   it('rejects empty text, malformed XML, DTD, fake DOCX and truncated ZIP', () => {
     rejectsCode(() => extractDocx(docxFixture('<w:p/>')), 'EMPTY');
     rejectsCode(() => extractDocx(docxFixture('<w:p>')), 'DAMAGED');
@@ -104,5 +109,6 @@ describe('document contracts', () => {
     appendSection(sections, '1페이지', '\0Java\r\nSpring');
     expect(sections[0]?.text).toBe('Java\nSpring');
     rejectsCode(() => appendSection(sections, '2페이지', 'a'.repeat(100_000)), 'LIMIT');
+    rejectsCode(() => appendSection([{ location: '단락 1', text: 'a'.repeat(99_999) }], '단락 2', 'b'), 'LIMIT');
   });
 });

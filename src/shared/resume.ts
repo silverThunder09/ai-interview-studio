@@ -35,6 +35,7 @@ export function appendSection(sections: ResumeSection[], location: string, text:
   // Remove non-display control characters, retaining tabs and line breaks.
   // eslint-disable-next-line no-control-regex
   const clean = text.replace(/\r\n?/g, '\n').replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, '').trim();
-  if (sections.reduce((sum, section) => sum + section.text.length, 0) + clean.length > RESUME_LIMITS.textChars || sections.length >= 2_000) throw new ResumeError('LIMIT');
+  const joinedLength = sections.reduce((sum, section) => sum + section.text.length, 0) + clean.length + sections.length * 2;
+  if (joinedLength > RESUME_LIMITS.textChars || sections.length >= 2_000) throw new ResumeError('LIMIT');
   if (clean) sections.push({ location, text: clean });
 }
