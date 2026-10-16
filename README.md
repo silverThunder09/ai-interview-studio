@@ -38,7 +38,7 @@ Linux 디스플레이가 없는 환경은 `xvfb-run -a npm run test:smoke`를 �
 
 ## 구조와 개발 규칙
 
-진입점은 [AGENTS.md](AGENTS.md)입니다. [workflow](harness/workflow.md)는 작업/검증/PR 절차, [architecture](harness/architecture.md)는 경계와 MVP 0–4 로드맵, [security](harness/security.md)는 개인정보·Electron·REA·라이선스 검토를 소유합니다. [MVP 1 초안](harness/specs/mvp-01.md)은 다음 단계 승인용입니다.
+진입점은 공통 규칙만 담은 [AGENTS.md](AGENTS.md)입니다. main·preload·renderer·shared·tests·CI·harness의 하위 `AGENTS.md`는 해당 작업 영역에서만 읽습니다. [workflow](harness/workflow.md)는 작업/검증/PR 절차, [architecture](harness/architecture.md)는 경계와 MVP 0–4 로드맵, [security](harness/security.md)는 개인정보·Electron·REA·라이선스 검토를 소유합니다. [MVP 1 초안](harness/specs/mvp-01.md)은 다음 단계 승인용입니다.
 
 `src/main`은 권한·수명주기, `src/preload`는 좁은 IPC, `src/renderer`는 React UI, `src/shared`는 검증 계약입니다. SQLite와 외부 AI adapter는 필요 시 이후 단계에서 추가합니다. REA는 문서만 검토했으며 설치/활성화되지 않은 개발 도구입니다.
 
