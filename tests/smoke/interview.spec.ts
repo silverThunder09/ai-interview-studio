@@ -11,7 +11,7 @@ test('local practice requires consent, survives restart, preserves failed answer
   const directory = await mkdtemp(join(tmpdir(), 'studio-practice-'));
   const profile = join(directory, 'isolated-profile'); await mkdir(profile);
   const databaseFile = join(profile, 'interviews.sqlite');
-  const resumeFile = join(directory, 'synthetic.docx'); await writeFile(resumeFile, docxFixture());
+  const resumeFile = join(directory, 'synthetic.docx'); await writeFile(resumeFile, docxFixture('<w:p><w:r><w:t>합성 프로젝트에서 Java API를 구현했습니다.</w:t></w:r></w:p>'));
   const env = Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => typeof entry[1] === 'string'));
   delete env.ELECTRON_RUN_AS_NODE;
   if (process.env.SMOKE_EXECUTABLE) env.ELECTRON_RENDERER_URL = 'https://example.invalid';
@@ -40,7 +40,7 @@ test('local practice requires consent, survives restart, preserves failed answer
       await page.getByRole('button', { name: '이력서', exact: true }).click();
       await application!.evaluate(({ dialog }, path) => { dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [path] }); }, resumeFile);
       await page.getByRole('button', { name: '이력서 불러오기', exact: true }).click();
-      await expect(page.getByLabel('누락·읽기 순서를 원본과 비교하고 수정하세요.')).toHaveValue('합성 이력서 Java Spring');
+      await expect(page.getByLabel('누락·읽기 순서를 원본과 비교하고 수정하세요.')).toHaveValue('합성 프로젝트에서 Java API를 구현했습니다.');
       await page.getByRole('button', { name: '검토 완료', exact: true }).click();
       const start = page.getByRole('button', { name: '이 내용으로 연습 시작', exact: true });
       await expect(start).toBeDisabled();

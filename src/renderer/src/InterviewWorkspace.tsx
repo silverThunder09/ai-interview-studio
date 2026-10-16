@@ -30,7 +30,7 @@ export function InterviewWorkspace({ session, onUpdate, onHistory }: {
     <div className="session-progress"><span>{answered} / {INTERVIEW_LIMITS.turns}개 답변 저장</span><button className="secondary" disabled={saving} onClick={onHistory}>저장된 기록 보기</button></div>
     {error && <p className="error" role="alert">{error}</p>}
     {current ? <article className="question-card" aria-labelledby="current-question-title">
-      <span className="tag">{current.question.kind === 'technical' ? '일반 기술 질문' : current.question.kind === 'follow-up' ? '내 답변에 대한 후속 질문' : '이력서 관련 질문'}</span>
+      <span className="tag">{current.question.kind === 'technical' ? '일반 기술 질문' : current.question.kind === 'follow-up' ? '내 답변에 대한 후속 질문' : current.question.evidence ? '이력서 관련 질문' : '일반 경험 질문'}</span>
       <h2 id="current-question-title">질문 {current.question.number}</h2><p className="question-copy">{current.question.text}</p>
       {current.question.evidence && <blockquote><cite>{current.question.evidence.origin === 'source' ? '추출 원문' : current.question.evidence.origin === 'reviewed' ? '원문과 다를 수 있는 수정 내용' : '내가 입력한 답변'} · {current.question.evidence.location}</cite><p>{current.question.evidence.text}</p></blockquote>}
       <label htmlFor="interview-answer">내 답변</label><textarea id="interview-answer" value={answer} maxLength={INTERVIEW_LIMITS.answerChars} disabled={saving} onChange={(event) => setAnswer(event.target.value)} />

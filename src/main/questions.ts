@@ -13,16 +13,32 @@ const technical = [
   '같은 API 요청이 중복 도착할 때 데이터 정합성을 지키는 방법을 설명해 주세요.',
   '백엔드 응답이 느릴 때 병목을 찾고 개선 효과를 검증하는 순서를 설명해 주세요.',
 ];
+function experienceQuote(text: string): string | undefined {
+  const match = /프로젝트|구현|설계|개선|운영|담당|project|implemented|designed|improved/iu.exec(text);
+  if (!match) return undefined;
+  // A PDF section can span a whole page. Quote near the experience instead of
+  // always copying its opening contact/header lines.
+  const start = Math.max(0, match.index - 30);
+  const lineStart = text.lastIndexOf('\n', match.index);
+  return text.slice(Math.max(start, lineStart + 1), Math.max(start, lineStart + 1) + 180).trim();
+}
 export class LocalQuestionProvider implements QuestionProvider {
   next(resume: Pick<StartInterviewRequest, 'reviewedText' | 'sourceSections'>, previous: InterviewSession['turns']): QuestionDraft | null {
     const number = previous.length;
     if (number >= INTERVIEW_LIMITS.turns) return null;
     if (number === 0) {
-      const section = resume.sourceSections.find((part) => resume.reviewedText.includes(part.text.slice(0, 180).trim()));
-      const evidence: EvidenceQuote = section
-        ? { origin: 'source', location: section.location, text: section.text.slice(0, 180).trim() }
-        : { origin: 'reviewed', location: '사용자 수정본', text: resume.reviewedText.slice(0, 180).trim() };
-      return { kind: 'experience', evidence, text: '아래 구절과 관련된 실제 경험을 골라 본인의 역할, 문제 해결 과정, 결과를 설명해 주세요. 직접 맡지 않은 일은 구분해 주세요.' };
+      let evidence: EvidenceQuote | null = null;
+      for (const section of resume.sourceSections) {
+        const quote = experienceQuote(section.text);
+        if (quote && resume.reviewedText.includes(quote)) { evidence = { origin: 'source', location: section.location, text: quote }; break; }
+      }
+      if (!evidence) {
+        const quote = experienceQuote(resume.reviewedText);
+        if (quote) evidence = { origin: 'reviewed', location: '사용자 수정본', text: quote };
+      }
+      return { kind: 'experience', evidence, text: evidence
+        ? '아래 구절과 관련된 실제 경험을 골라 본인의 역할, 문제 해결 과정, 결과를 설명해 주세요. 직접 맡지 않은 일은 구분해 주세요.'
+        : '직접 수행한 프로젝트나 학습 경험 중 하나를 골라 역할, 해결 과정과 배운 점을 설명해 주세요. 아직 경험이 없다면 학습 중인 주제와 어려운 점을 알려 주세요.' };
     }
     if (number % 2 === 1) {
       const answer = previous.at(-1)?.answer;

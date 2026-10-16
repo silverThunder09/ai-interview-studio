@@ -138,10 +138,27 @@ describe('durable SQLite sessions and transitions', () => {
 });
 
 describe('local question provenance', () => {
+  it('uses an experience passage instead of a contact-only header as question evidence', () => {
+    const sourceSections = [{ location: '단락 1', text: '합성 지원자 · synthetic@example.invalid' }, { location: '단락 2', text: '합성 API 프로젝트에서 캐시를 구현했습니다.' }];
+    const resume = { ...startFixture(), reviewedText: sourceSections.map((part) => part.text).join('\n\n'), sourceSections };
+    expect(new LocalQuestionProvider().next(resume, [])?.evidence).toEqual({ origin: 'source', location: '단락 2', text: sourceSections[1]!.text });
+  });
   it('quotes a matching source and labels changed review text separately when no source matches', () => {
     const provider = new LocalQuestionProvider(), resume = startFixture();
     expect(provider.next(resume, [])?.evidence).toEqual({ origin: 'source', location: '단락 1', text: resume.reviewedText });
-    expect(provider.next({ ...resume, reviewedText: '사용자가 새로 작성한 내용' }, [])?.evidence?.origin).toBe('reviewed');
+    expect(provider.next({ ...resume, reviewedText: '사용자가 새로 작성한 프로젝트 구현 경험' }, [])?.evidence?.origin).toBe('reviewed');
+  });
+  it('quotes near experience on a long page and leaves contact-only text out of evidence', () => {
+    const provider = new LocalQuestionProvider();
+    const text = '합성 지원자 연락처\n' + '합성 소개 문장\n'.repeat(30) + '합성 프로젝트에서 API를 구현했습니다.';
+    const input = { ...startFixture(), reviewedText: text, sourceSections: [{ location: '1페이지', text }] };
+    const quote = provider.next(input, [])?.evidence;
+    expect(quote?.text).toContain('프로젝트');
+    expect(quote?.text).not.toContain('연락처');
+    expect(quote?.location).toBe('1페이지');
+    const contact = { ...startFixture(), reviewedText: '합성 지원자 synthetic@example.invalid', sourceSections: [{ location: '단락 1', text: '합성 지원자 synthetic@example.invalid' }] };
+    expect(provider.next(contact, [])?.evidence).toBeNull();
+    expect(provider.next(contact, [])?.text).toContain('아직 경험이 없다면');
   });
   it('keeps general technical questions separate from resume evidence and does not generate AI scores', () => {
     const store = storage(); let session = store.start(startFixture());
