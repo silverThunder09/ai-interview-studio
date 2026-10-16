@@ -73,8 +73,15 @@ test('desktop starts with secure boundaries, Korean UI and ephemeral settings', 
 
     await page.evaluate(() => { window.open('https://example.invalid'); });
     await expect.poll(() => application.windows().length).toBe(1);
+    const navigation = application.evaluate(({ BrowserWindow }) => new Promise<boolean>((done) => {
+      BrowserWindow.getAllWindows()[0]!.webContents.once('will-navigate', (event) => done(event.defaultPrevented));
+    }));
     await page.evaluate(() => { window.location.href = 'https://example.invalid'; });
-    await expect(page).toHaveURL('app://studio/index.html');
+    expect(await navigation).toBe(true);
+    // CDP's frame URL can become empty after Electron cancels navigation.
+    // Verify Electron's committed URL and the surviving UI directly.
+    expect(await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.webContents.getURL())).toBe('app://studio/index.html');
+    await expect(page.getByRole('heading', { name: '나에게 맞는 환경' })).toBeVisible();
     await page.getByRole('button', { name: '시작하기', exact: true }).click();
     await page.screenshot({ path: 'test-results/desktop.png', fullPage: true });
     expect(runtimeErrors).toEqual([]);
