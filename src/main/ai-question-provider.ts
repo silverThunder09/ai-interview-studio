@@ -1,5 +1,6 @@
 import { INTERVIEW_LIMITS, type EvidenceQuote } from '../shared/interview';
 import type { QuestionDraft } from './questions';
+import { AI_CALL_LIMIT } from '../shared/ai';
 
 export const AI_QUESTION_LIMITS = Object.freeze({ evidence: 8, quoteChars: 180, answerChars: 2_000, questionChars: 1_500, timeoutMs: 30_000, outputTokens: 600 });
 export interface AIQuestionInput {
@@ -21,13 +22,14 @@ export type AITransportResult = { ok: true; value: unknown } | { ok: false; reas
 // No transport is installed by this module. Only an explicitly selected adapter
 // may implement this boundary; tests inject synthetic results without networking.
 export type AIQuestionTransport = (payload: AIQuestionPayload, signal: AbortSignal) => Promise<AITransportResult>;
-type ErrorCode = 'INVALID_INPUT' | 'INVALID_RESPONSE' | 'TIMEOUT' | 'CANCELLED' | 'RATE_LIMITED' | 'AUTHENTICATION' | 'UNAVAILABLE';
+type ErrorCode = 'INVALID_INPUT' | 'INVALID_RESPONSE' | 'TIMEOUT' | 'CANCELLED' | 'RATE_LIMITED' | 'BUDGET_EXHAUSTED' | 'AUTHENTICATION' | 'UNAVAILABLE';
 const messages: Record<ErrorCode, string> = {
   INVALID_INPUT: 'AI 질문에 사용할 선택 내용과 길이를 확인해 주세요.',
   INVALID_RESPONSE: 'AI 응답의 형식이나 근거를 확인하지 못했습니다. 답변은 진행하지 않았습니다.',
   TIMEOUT: '질문 생성 시간이 초과되었습니다. 입력을 유지하고 다시 시도해 주세요.',
   CANCELLED: '질문 생성을 취소했습니다.',
   RATE_LIMITED: 'AI 서비스의 요청 한도에 도달했습니다. 잠시 후 직접 다시 시도해 주세요.',
+  BUDGET_EXHAUSTED: `이번 앱 실행의 AI 요청 ${AI_CALL_LIMIT}회를 모두 사용했습니다. 기다리거나 키를 재등록해도 복구되지 않습니다. 추가 사용 전 서비스의 사용량·예산을 확인해 주세요. 앱을 재시작하면 실행 한도가 초기화됩니다.`,
   AUTHENTICATION: 'AI 서비스 인증을 확인해 주세요.',
   UNAVAILABLE: 'AI 서비스에 연결하지 못했습니다. 입력을 유지하고 다시 시도해 주세요.',
 };

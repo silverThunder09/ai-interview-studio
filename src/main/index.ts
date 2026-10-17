@@ -6,6 +6,8 @@ import { createHandlers } from './handlers';
 import { createResumeSelector } from './resume';
 import { createInterviewHandlers } from './interview-handlers';
 import { InterviewStore } from './interview-store';
+import { InterviewService } from './interview-service';
+import { AICredentials, createAIHandlers, InterviewProviderRouter } from './external-ai';
 import { APP_URL, assetPath, DEVELOPMENT_CSP, developmentURL, isTrustedSender, PRODUCTION_CSP } from './policy';
 
 protocol.registerSchemesAsPrivileged([
@@ -18,8 +20,11 @@ async function start(): Promise<void> {
   const entry = devURL ?? APP_URL;
   const handlers = createHandlers(app.getVersion());
   let interviewStore: InterviewStore | undefined;
-  const interview = createInterviewHandlers(() => interviewStore ??= new InterviewStore(join(app.getPath('userData'), 'interviews.sqlite')));
-  app.on('will-quit', () => { interview.close(); interviewStore?.close(); });
+  const store = () => interviewStore ??= new InterviewStore(join(app.getPath('userData'), 'interviews.sqlite'));
+  const credentials = new AICredentials();
+  const interview = createInterviewHandlers(store, new InterviewService(store, new InterviewProviderRouter(credentials)));
+  const ai = createAIHandlers(credentials, () => interview.cancelPending());
+  app.on('will-quit', () => { interview.close(); credentials.clearAll(); interviewStore?.close(); });
   const selectResume = createResumeSelector(async () => {
     if (!window) throw new Error('Window unavailable');
     const selected = await dialog.showOpenDialog(window, {
@@ -51,6 +56,7 @@ async function start(): Promise<void> {
     [CHANNELS.interviewStart, interview.start], [CHANNELS.interviewAnswer, interview.answer],
     [CHANNELS.interviewDelete, interview.delete], [CHANNELS.interviewDeleteAll, interview.deleteAll],
     [CHANNELS.interviewCancel, interview.cancel],
+    [CHANNELS.aiStatus, ai.status], [CHANNELS.aiKey, ai.set], [CHANNELS.aiClear, ai.clear],
   ] as const) {
     ipcMain.handle(channel, (event, ...args: unknown[]): Result<unknown> | Promise<Result<unknown>> => {
       const frame = event.senderFrame;
@@ -75,7 +81,7 @@ async function start(): Promise<void> {
     window.webContents.on('will-navigate', (event) => event.preventDefault());
     window.webContents.on('will-redirect', (event) => event.preventDefault());
     window.webContents.on('will-attach-webview', (event) => event.preventDefault());
-    window.on('closed', () => { interview.cancelPending(); window = null; });
+    window.on('closed', () => { interview.cancelPending(); credentials.clearAll(); window = null; });
     void window.loadURL(entry).catch(() => {
       dialog.showErrorBox('시작 실패', '앱 화면을 불러오지 못했습니다. 앱을 다시 실행해 주세요.');
       app.exit(1);

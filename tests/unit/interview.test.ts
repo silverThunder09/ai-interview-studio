@@ -132,7 +132,7 @@ describe('durable SQLite sessions and transitions', () => {
   });
   it('refuses a future schema and corrupt database without automatically resetting their contents', () => {
     const file = path(), future = new DatabaseSync(file);
-    future.exec("CREATE TABLE preservation(value TEXT); INSERT INTO preservation VALUES('synthetic sentinel'); PRAGMA user_version=2;"); future.close();
+    future.exec("CREATE TABLE preservation(value TEXT); INSERT INTO preservation VALUES('synthetic sentinel'); PRAGMA user_version=3;"); future.close();
     const before = readFileSync(file);
     expect(() => new InterviewStore(file)).toThrow('새 버전');
     expect(readFileSync(file)).toEqual(before);

@@ -6,7 +6,7 @@ import { InterviewStoreError, type InterviewStore } from './interview-store';
 import { LocalQuestionProvider, type QuestionDraft } from './questions';
 
 export interface AsyncInterviewProvider {
-  next(resume: Pick<StartInterviewRequest, 'reviewedText' | 'sourceSections'>, previous: InterviewSession['turns'], signal: AbortSignal): QuestionDraft | null | Promise<QuestionDraft | null>;
+  next(resume: Pick<StartInterviewRequest, 'reviewedText' | 'sourceSections' | 'ai'>, previous: InterviewSession['turns'], signal: AbortSignal): QuestionDraft | null | Promise<QuestionDraft | null>;
 }
 interface Operation { id: string; signature: string; sessionId: string | null; controller: AbortController; promise: Promise<InterviewSession> }
 
