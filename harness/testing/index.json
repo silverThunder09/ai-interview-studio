@@ -1,0 +1,665 @@
+{
+  "schema_version": 1,
+  "repository": "silverThunder09/ai-interview-studio",
+  "recorded_at_kst": "2026-10-17T23:36:29+09:00",
+  "current_record_id": "tests-2026-10-17-pr19",
+  "notes": [
+    "Counts refer to each recorded SHA, not cumulative coverage.",
+    "CI uses synthetic documents, provider responses and devices; real paid APIs and user hardware are unverified.",
+    "Paths are relative to harness/testing/; historical observations do not authorize future merges."
+  ],
+  "main_verification": {
+    "head_sha": "a57bd7f23b852ba505b87d6f822cc4dffe89ddbd",
+    "result": "passed",
+    "validation": {
+      "run_id": 39041054743,
+      "job_id": 117420469843,
+      "attempt": 1,
+      "unit": 186,
+      "review_policy": 40,
+      "url": "https://github.com/silverThunder09/ai-interview-studio/actions/runs/39041054743/job/117420469843"
+    },
+    "windows": {
+      "run_id": 39041054730,
+      "job_id": 117420469888,
+      "attempt": 1,
+      "source_count": 5,
+      "packaged_count": 5,
+      "url": "https://github.com/silverThunder09/ai-interview-studio/actions/runs/39041054730/job/117420469888"
+    }
+  },
+  "records": [
+    {
+      "id": "tests-2026-10-17-pr1",
+      "status": "archived",
+      "date_kst": "2026-10-17",
+      "pr": 1,
+      "title": "MVP 0 · Electron 기반과 리뷰 자동화",
+      "path": "archive/2026-10-17/pr-01.md",
+      "tags": [
+        "electron",
+        "sandbox",
+        "ipc",
+        "theme",
+        "review-policy"
+      ],
+      "result": "passed",
+      "tested_head_sha": "e7605e5debe2099f96aa357d02a18133d0d3f9dd",
+      "tested_base_sha": "121d468bb12c583f924533f5465f5e762efd37e6",
+      "tested_checkout_sha": "accd98ba841cf2bb8d706a015583c9e467e15456",
+      "merged_main_sha": "d192314664ff69f74a38854cc47db115a2f22673",
+      "counts": {
+        "unit": 39,
+        "review_policy": 40,
+        "windows_source": 1,
+        "windows_packaged": 1
+      },
+      "evidence": [
+        {
+          "context": "checks",
+          "run_id": 38934532458,
+          "job_id": 117086561119,
+          "url": "https://github.com/silverThunder09/ai-interview-studio/actions/runs/38934532458/job/117086561119",
+          "result": "success",
+          "evidence_step": "success",
+          "ci_evidence": {
+            "repository": "silverThunder09/ai-interview-studio",
+            "context": "checks",
+            "run_id": "38934532458",
+            "pr_number": 1,
+            "head_sha": "e7605e5debe2099f96aa357d02a18133d0d3f9dd",
+            "base_sha": "121d468bb12c583f924533f5465f5e762efd37e6",
+            "checkout_sha": "accd98ba841cf2bb8d706a015583c9e467e15456"
+          }
+        },
+        {
+          "context": "package",
+          "run_id": 38934532423,
+          "job_id": 117086792451,
+          "url": "https://github.com/silverThunder09/ai-interview-studio/actions/runs/38934532423/job/117086792451",
+          "result": "success",
+          "evidence_step": "success",
+          "ci_evidence": {
+            "repository": "silverThunder09/ai-interview-studio",
+            "context": "package",
+            "run_id": "38934532423",
+            "pr_number": 1,
+            "head_sha": "e7605e5debe2099f96aa357d02a18133d0d3f9dd",
+            "base_sha": "121d468bb12c583f924533f5465f5e762efd37e6",
+            "checkout_sha": "accd98ba841cf2bb8d706a015583c9e467e15456"
+          }
+        },
+        {
+          "context": "pr-policy",
+          "run_id": 38934786660,
+          "job_id": 117087432213,
+          "url": "https://github.com/silverThunder09/ai-interview-studio/actions/runs/38934786660/job/117087432213",
+          "result": "success",
+          "evidence_step": "success",
+          "ci_evidence": {
+            "repository": "silverThunder09/ai-interview-studio",
+            "context": "pr-policy",
+            "run_id": "38934786660",
+            "pr_number": 1,
+            "head_sha": "e7605e5debe2099f96aa357d02a18133d0d3f9dd",
+            "base_sha": "121d468bb12c583f924533f5465f5e762efd37e6",
+            "checkout_sha": "accd98ba841cf2bb8d706a015583c9e467e15456"
+          }
+        }
+      ]
+    },
+    {
+      "id": "tests-2026-10-17-pr5",
+      "status": "archived",
+      "date_kst": "2026-10-17",
+      "pr": 5,
+      "title": "이력서 PDF/DOCX 추출·검토",
+      "path": "archive/2026-10-17/pr-05.md",
+      "tags": [
+        "resume",
+        "pdf",
+        "docx",
+        "cjk",
+        "worker"
+      ],
+      "result": "passed",
+      "tested_head_sha": "66d5384b5f2de115e77f756cc542de3671201633",
+      "tested_base_sha": "d192314664ff69f74a38854cc47db115a2f22673",
+      "tested_checkout_sha": "252831253fe5a6b0a3d746e5fd65e8c384974a6d",
+      "merged_main_sha": "4b095fe0973d14d90f23297ed44f1a7f96ccb95c",
+      "counts": {
+        "unit": 54,
+        "review_policy": 40,
+        "windows_source": 2,
+        "windows_packaged": 2
+      },
+      "evidence": [
+        {
+          "context": "checks",
+          "run_id": 38973169255,
+          "job_id": 117216165055,
+          "url": "https://github.com/silverThunder09/ai-interview-studio/actions/runs/38973169255/job/117216165055",
+          "result": "success",
+          "evidence_step": "success",
+          "ci_evidence": {
+            "repository": "silverThunder09/ai-interview-studio",
+            "context": "checks",
+            "run_id": "38973169255",
+            "pr_number": 5,
+            "head_sha": "66d5384b5f2de115e77f756cc542de3671201633",
+            "base_sha": "d192314664ff69f74a38854cc47db115a2f22673",
+            "checkout_sha": "252831253fe5a6b0a3d746e5fd65e8c384974a6d"
+          }
+        },
+        {
+          "context": "package",
+          "run_id": 38973169397,
+          "job_id": 117216166166,
+          "url": "https://github.com/silverThunder09/ai-interview-studio/actions/runs/38973169397/job/117216166166",
+          "result": "success",
+          "evidence_step": "success",
+          "ci_evidence": {
+            "repository": "silverThunder09/ai-interview-studio",
+            "context": "package",
+            "run_id": "38973169397",
+            "pr_number": 5,
+            "head_sha": "66d5384b5f2de115e77f756cc542de3671201633",
+            "base_sha": "d192314664ff69f74a38854cc47db115a2f22673",
+            "checkout_sha": "252831253fe5a6b0a3d746e5fd65e8c384974a6d"
+          }
+        },
+        {
+          "context": "pr-policy",
+          "run_id": 38975255234,
+          "job_id": 117223033877,
+          "url": "https://github.com/silverThunder09/ai-interview-studio/actions/runs/38975255234/job/117223033877",
+          "result": "success",
+          "evidence_step": "success",
+          "ci_evidence": {
+            "repository": "silverThunder09/ai-interview-studio",
+            "context": "pr-policy",
+            "run_id": "38975255234",
+            "pr_number": 5,
+            "head_sha": "66d5384b5f2de115e77f756cc542de3671201633",
+            "base_sha": "d192314664ff69f74a38854cc47db115a2f22673",
+            "checkout_sha": "252831253fe5a6b0a3d746e5fd65e8c384974a6d"
+          }
+        }
+      ]
+    },
+    {
+      "id": "tests-2026-10-17-pr8",
+      "status": "archived",
+      "date_kst": "2026-10-17",
+      "pr": 8,
+      "title": "로컬 텍스트 면접·SQLite 기록",
+      "path": "archive/2026-10-17/pr-08.md",
+      "tags": [
+        "interview",
+        "sqlite",
+        "history",
+        "consent",
+        "provenance"
+      ],
+      "result": "passed",
+      "tested_head_sha": "6c0d6fbe445ed122c54d87a3b181ecfdf3058cc4",
+      "tested_base_sha": "4b095fe0973d14d90f23297ed44f1a7f96ccb95c",
+      "tested_checkout_sha": "2ac0c1872e898f73eda797935398699df36b2dc3",
+      "merged_main_sha": "ec79dbfcc253ccee2749fc122fcdc2ce21d5f1ec",
+      "counts": {
+        "unit": 72,
+        "review_policy": 40,
+        "windows_source": 3,
+        "windows_packaged": 3
+      },
+      "evidence": [
+        {
+          "context": "checks",
+          "run_id": 38980775935,
+          "job_id": 117240877454,
+          "url": "https://github.com/silverThunder09/ai-interview-studio/actions/runs/38980775935/job/117240877454",
+          "result": "success",
+          "evidence_step": "success",
+          "ci_evidence": {
+            "repository": "silverThunder09/ai-interview-studio",
+            "context": "checks",
+            "run_id": "38980775935",
+            "pr_number": 8,
+            "head_sha": "6c0d6fbe445ed122c54d87a3b181ecfdf3058cc4",
+            "base_sha": "4b095fe0973d14d90f23297ed44f1a7f96ccb95c",
+            "checkout_sha": "2ac0c1872e898f73eda797935398699df36b2dc3"
+          }
+        },
+        {
+          "context": "package",
+          "run_id": 38980776018,
+          "job_id": 117240877692,
+          "url": "https://github.com/silverThunder09/ai-interview-studio/actions/runs/38980776018/job/117240877692",
+          "result": "success",
+          "evidence_step": "success",
+          "ci_evidence": {
+            "repository": "silverThunder09/ai-interview-studio",
+            "context": "package",
+            "run_id": "38980776018",
+            "pr_number": 8,
+            "head_sha": "6c0d6fbe445ed122c54d87a3b181ecfdf3058cc4",
+            "base_sha": "4b095fe0973d14d90f23297ed44f1a7f96ccb95c",
+            "checkout_sha": "2ac0c1872e898f73eda797935398699df36b2dc3"
+          }
+        },
+        {
+          "context": "pr-policy",
+          "run_id": 38981217939,
+          "job_id": 117242265290,
+          "url": "https://github.com/silverThunder09/ai-interview-studio/actions/runs/38981217939/job/117242265290",
+          "result": "success",
+          "evidence_step": "success",
+          "ci_evidence": {
+            "repository": "silverThunder09/ai-interview-studio",
+            "context": "pr-policy",
+            "run_id": "38981217939",
+            "pr_number": 8,
+            "head_sha": "6c0d6fbe445ed122c54d87a3b181ecfdf3058cc4",
+            "base_sha": "4b095fe0973d14d90f23297ed44f1a7f96ccb95c",
+            "checkout_sha": "2ac0c1872e898f73eda797935398699df36b2dc3"
+          }
+        }
+      ]
+    },
+    {
+      "id": "tests-2026-10-17-pr13",
+      "status": "archived",
+      "date_kst": "2026-10-17",
+      "pr": 13,
+      "title": "AI 질문 공급자 공통 계약",
+      "path": "archive/2026-10-17/pr-13.md",
+      "tags": [
+        "ai-contract",
+        "mock",
+        "citation",
+        "timeout",
+        "cancellation"
+      ],
+      "result": "passed",
+      "tested_head_sha": "585bf262225d21649777fd87216be3baa4f89205",
+      "tested_base_sha": "ec79dbfcc253ccee2749fc122fcdc2ce21d5f1ec",
+      "tested_checkout_sha": "79dad761c3c296291d83d9f89d4bd871e58be815",
+      "merged_main_sha": "93a3783410d79082bff4c229f95ed61ce06b5d86",
+      "counts": {
+        "unit": 119,
+        "review_policy": 40,
+        "windows_source": 3,
+        "windows_packaged": 3
+      },
+      "evidence": [
+        {
+          "context": "checks",
+          "run_id": 39009480661,
+          "job_id": 117328700537,
+          "url": "https://github.com/silverThunder09/ai-interview-studio/actions/runs/39009480661/job/117328700537",
+          "result": "success",
+          "evidence_step": "success",
+          "ci_evidence": {
+            "repository": "silverThunder09/ai-interview-studio",
+            "context": "checks",
+            "run_id": "39009480661",
+            "pr_number": 13,
+            "head_sha": "585bf262225d21649777fd87216be3baa4f89205",
+            "base_sha": "ec79dbfcc253ccee2749fc122fcdc2ce21d5f1ec",
+            "checkout_sha": "79dad761c3c296291d83d9f89d4bd871e58be815"
+          }
+        },
+        {
+          "context": "package",
+          "run_id": 39009480762,
+          "job_id": 117328700926,
+          "url": "https://github.com/silverThunder09/ai-interview-studio/actions/runs/39009480762/job/117328700926",
+          "result": "success",
+          "evidence_step": "success",
+          "ci_evidence": {
+            "repository": "silverThunder09/ai-interview-studio",
+            "context": "package",
+            "run_id": "39009480762",
+            "pr_number": 13,
+            "head_sha": "585bf262225d21649777fd87216be3baa4f89205",
+            "base_sha": "ec79dbfcc253ccee2749fc122fcdc2ce21d5f1ec",
+            "checkout_sha": "79dad761c3c296291d83d9f89d4bd871e58be815"
+          }
+        },
+        {
+          "context": "pr-policy",
+          "run_id": 39009752655,
+          "job_id": 117329548836,
+          "url": "https://github.com/silverThunder09/ai-interview-studio/actions/runs/39009752655/job/117329548836",
+          "result": "success",
+          "evidence_step": "success",
+          "ci_evidence": {
+            "repository": "silverThunder09/ai-interview-studio",
+            "context": "pr-policy",
+            "run_id": "39009752655",
+            "pr_number": 13,
+            "head_sha": "585bf262225d21649777fd87216be3baa4f89205",
+            "base_sha": "ec79dbfcc253ccee2749fc122fcdc2ce21d5f1ec",
+            "checkout_sha": "79dad761c3c296291d83d9f89d4bd871e58be815"
+          }
+        }
+      ]
+    },
+    {
+      "id": "tests-2026-10-17-pr14",
+      "status": "archived",
+      "date_kst": "2026-10-17",
+      "pr": 14,
+      "title": "비동기 질문 생성·취소·저장 일관성",
+      "path": "archive/2026-10-17/pr-14.md",
+      "tags": [
+        "async",
+        "cancellation",
+        "sqlite",
+        "idempotency"
+      ],
+      "result": "passed",
+      "tested_head_sha": "593477e27ead74c6b697f4561d181daa44daf841",
+      "tested_base_sha": "93a3783410d79082bff4c229f95ed61ce06b5d86",
+      "tested_checkout_sha": "3f92f9377a4cefcea5de49edf04dd7f64f840b4f",
+      "merged_main_sha": "17cc360be07c3a9eae41c05dcace13a7a140a7f7",
+      "counts": {
+        "unit": 132,
+        "review_policy": 40,
+        "windows_source": 3,
+        "windows_packaged": 3
+      },
+      "evidence": [
+        {
+          "context": "checks",
+          "run_id": 39018407483,
+          "job_id": 117355140975,
+          "url": "https://github.com/silverThunder09/ai-interview-studio/actions/runs/39018407483/job/117355140975",
+          "result": "success",
+          "evidence_step": "success",
+          "ci_evidence": {
+            "repository": "silverThunder09/ai-interview-studio",
+            "context": "checks",
+            "run_id": "39018407483",
+            "pr_number": 14,
+            "head_sha": "593477e27ead74c6b697f4561d181daa44daf841",
+            "base_sha": "93a3783410d79082bff4c229f95ed61ce06b5d86",
+            "checkout_sha": "3f92f9377a4cefcea5de49edf04dd7f64f840b4f"
+          }
+        },
+        {
+          "context": "package",
+          "run_id": 39018407521,
+          "job_id": 117355141084,
+          "url": "https://github.com/silverThunder09/ai-interview-studio/actions/runs/39018407521/job/117355141084",
+          "result": "success",
+          "evidence_step": "success",
+          "ci_evidence": {
+            "repository": "silverThunder09/ai-interview-studio",
+            "context": "package",
+            "run_id": "39018407521",
+            "pr_number": 14,
+            "head_sha": "593477e27ead74c6b697f4561d181daa44daf841",
+            "base_sha": "93a3783410d79082bff4c229f95ed61ce06b5d86",
+            "checkout_sha": "3f92f9377a4cefcea5de49edf04dd7f64f840b4f"
+          }
+        },
+        {
+          "context": "pr-policy",
+          "run_id": 39018740633,
+          "job_id": 117356102678,
+          "url": "https://github.com/silverThunder09/ai-interview-studio/actions/runs/39018740633/job/117356102678",
+          "result": "success",
+          "evidence_step": "success",
+          "ci_evidence": {
+            "repository": "silverThunder09/ai-interview-studio",
+            "context": "pr-policy",
+            "run_id": "39018740633",
+            "pr_number": 14,
+            "head_sha": "593477e27ead74c6b697f4561d181daa44daf841",
+            "base_sha": "93a3783410d79082bff4c229f95ed61ce06b5d86",
+            "checkout_sha": "3f92f9377a4cefcea5de49edf04dd7f64f840b4f"
+          }
+        }
+      ]
+    },
+    {
+      "id": "tests-2026-10-17-pr15",
+      "status": "archived",
+      "date_kst": "2026-10-17",
+      "pr": 15,
+      "title": "OpenAI·Claude·Gemini 텍스트 면접",
+      "path": "archive/2026-10-17/pr-15.md",
+      "tags": [
+        "openai",
+        "claude",
+        "gemini",
+        "api",
+        "budget",
+        "consent"
+      ],
+      "result": "passed",
+      "tested_head_sha": "3edcb5ec64d5db15c50f4689619941e4fdd1c33c",
+      "tested_base_sha": "17cc360be07c3a9eae41c05dcace13a7a140a7f7",
+      "tested_checkout_sha": "bac84451f731f9da491fabf2394024d4c1d8b4a5",
+      "merged_main_sha": "c746e6e0cb01c2764fc4844bededb878dce43c18",
+      "counts": {
+        "unit": 163,
+        "review_policy": 40,
+        "windows_source": 4,
+        "windows_packaged": 4
+      },
+      "evidence": [
+        {
+          "context": "checks",
+          "run_id": 39028171287,
+          "job_id": 117383181980,
+          "url": "https://github.com/silverThunder09/ai-interview-studio/actions/runs/39028171287/job/117383181980",
+          "result": "success",
+          "evidence_step": "success",
+          "ci_evidence": {
+            "repository": "silverThunder09/ai-interview-studio",
+            "context": "checks",
+            "run_id": "39028171287",
+            "pr_number": 15,
+            "head_sha": "3edcb5ec64d5db15c50f4689619941e4fdd1c33c",
+            "base_sha": "17cc360be07c3a9eae41c05dcace13a7a140a7f7",
+            "checkout_sha": "bac84451f731f9da491fabf2394024d4c1d8b4a5"
+          }
+        },
+        {
+          "context": "package",
+          "run_id": 39028171270,
+          "job_id": 117383313625,
+          "url": "https://github.com/silverThunder09/ai-interview-studio/actions/runs/39028171270/job/117383313625",
+          "result": "success",
+          "evidence_step": "success",
+          "ci_evidence": {
+            "repository": "silverThunder09/ai-interview-studio",
+            "context": "package",
+            "run_id": "39028171270",
+            "pr_number": 15,
+            "head_sha": "3edcb5ec64d5db15c50f4689619941e4fdd1c33c",
+            "base_sha": "17cc360be07c3a9eae41c05dcace13a7a140a7f7",
+            "checkout_sha": "bac84451f731f9da491fabf2394024d4c1d8b4a5"
+          }
+        },
+        {
+          "context": "pr-policy",
+          "run_id": 39028645128,
+          "job_id": 117384520679,
+          "url": "https://github.com/silverThunder09/ai-interview-studio/actions/runs/39028645128/job/117384520679",
+          "result": "success",
+          "evidence_step": "success",
+          "ci_evidence": {
+            "repository": "silverThunder09/ai-interview-studio",
+            "context": "pr-policy",
+            "run_id": "39028645128",
+            "pr_number": 15,
+            "head_sha": "3edcb5ec64d5db15c50f4689619941e4fdd1c33c",
+            "base_sha": "17cc360be07c3a9eae41c05dcace13a7a140a7f7",
+            "checkout_sha": "bac84451f731f9da491fabf2394024d4c1d8b4a5"
+          }
+        }
+      ]
+    },
+    {
+      "id": "tests-2026-10-17-pr18",
+      "status": "archived",
+      "date_kst": "2026-10-17",
+      "pr": 18,
+      "title": "답변을 유지하며 API 키 재등록",
+      "path": "archive/2026-10-17/pr-18.md",
+      "tags": [
+        "api-key",
+        "recovery",
+        "authentication",
+        "draft-preservation"
+      ],
+      "result": "passed",
+      "tested_head_sha": "9ad35898e2d4cf2328db71512ac0127884f89695",
+      "tested_base_sha": "c746e6e0cb01c2764fc4844bededb878dce43c18",
+      "tested_checkout_sha": "218b4a53c541be19a48eddbead85e1f7bb299f11",
+      "merged_main_sha": "ffcbefabb363df86f30db85f85dbbce8cd357d24",
+      "counts": {
+        "unit": 163,
+        "review_policy": 40,
+        "windows_source": 4,
+        "windows_packaged": 4
+      },
+      "evidence": [
+        {
+          "context": "checks",
+          "run_id": 39028779458,
+          "job_id": 117384903160,
+          "url": "https://github.com/silverThunder09/ai-interview-studio/actions/runs/39028779458/job/117384903160",
+          "result": "success",
+          "evidence_step": "success",
+          "ci_evidence": {
+            "repository": "silverThunder09/ai-interview-studio",
+            "context": "checks",
+            "run_id": "39028779458",
+            "pr_number": 18,
+            "head_sha": "9ad35898e2d4cf2328db71512ac0127884f89695",
+            "base_sha": "c746e6e0cb01c2764fc4844bededb878dce43c18",
+            "checkout_sha": "218b4a53c541be19a48eddbead85e1f7bb299f11"
+          }
+        },
+        {
+          "context": "package",
+          "run_id": 39028779490,
+          "job_id": 117384903116,
+          "url": "https://github.com/silverThunder09/ai-interview-studio/actions/runs/39028779490/job/117384903116",
+          "result": "success",
+          "evidence_step": "success",
+          "ci_evidence": {
+            "repository": "silverThunder09/ai-interview-studio",
+            "context": "package",
+            "run_id": "39028779490",
+            "pr_number": 18,
+            "head_sha": "9ad35898e2d4cf2328db71512ac0127884f89695",
+            "base_sha": "c746e6e0cb01c2764fc4844bededb878dce43c18",
+            "checkout_sha": "218b4a53c541be19a48eddbead85e1f7bb299f11"
+          }
+        },
+        {
+          "context": "pr-policy",
+          "run_id": 39029143416,
+          "job_id": 117385916946,
+          "url": "https://github.com/silverThunder09/ai-interview-studio/actions/runs/39029143416/job/117385916946",
+          "result": "success",
+          "evidence_step": "success",
+          "ci_evidence": {
+            "repository": "silverThunder09/ai-interview-studio",
+            "context": "pr-policy",
+            "run_id": "39029143416",
+            "pr_number": 18,
+            "head_sha": "9ad35898e2d4cf2328db71512ac0127884f89695",
+            "base_sha": "c746e6e0cb01c2764fc4844bededb878dce43c18",
+            "checkout_sha": "218b4a53c541be19a48eddbead85e1f7bb299f11"
+          }
+        }
+      ]
+    },
+    {
+      "id": "tests-2026-10-17-pr19",
+      "status": "current",
+      "date_kst": "2026-10-17",
+      "pr": 19,
+      "title": "음성 입력·전사·답변 검토",
+      "path": "latest.md",
+      "tags": [
+        "voice",
+        "microphone",
+        "transcription",
+        "openai",
+        "review",
+        "cleanup"
+      ],
+      "result": "passed",
+      "tested_head_sha": "fe4ecaf1007350a5aff6a1756fbb6751d17ddca6",
+      "tested_base_sha": "ffcbefabb363df86f30db85f85dbbce8cd357d24",
+      "tested_checkout_sha": "a1f04044edce0e342f470f1c16a12c609b0250c1",
+      "merged_main_sha": "a57bd7f23b852ba505b87d6f822cc4dffe89ddbd",
+      "counts": {
+        "unit": 186,
+        "review_policy": 40,
+        "windows_source": 5,
+        "windows_packaged": 5
+      },
+      "evidence": [
+        {
+          "context": "checks",
+          "run_id": 39040568213,
+          "job_id": 117419085096,
+          "url": "https://github.com/silverThunder09/ai-interview-studio/actions/runs/39040568213/job/117419085096",
+          "result": "success",
+          "evidence_step": "success",
+          "ci_evidence": {
+            "repository": "silverThunder09/ai-interview-studio",
+            "context": "checks",
+            "run_id": "39040568213",
+            "pr_number": 19,
+            "head_sha": "fe4ecaf1007350a5aff6a1756fbb6751d17ddca6",
+            "base_sha": "ffcbefabb363df86f30db85f85dbbce8cd357d24",
+            "checkout_sha": "a1f04044edce0e342f470f1c16a12c609b0250c1"
+          }
+        },
+        {
+          "context": "package",
+          "run_id": 39040568206,
+          "job_id": 117419084811,
+          "url": "https://github.com/silverThunder09/ai-interview-studio/actions/runs/39040568206/job/117419084811",
+          "result": "success",
+          "evidence_step": "success",
+          "ci_evidence": {
+            "repository": "silverThunder09/ai-interview-studio",
+            "context": "package",
+            "run_id": "39040568206",
+            "pr_number": 19,
+            "head_sha": "fe4ecaf1007350a5aff6a1756fbb6751d17ddca6",
+            "base_sha": "ffcbefabb363df86f30db85f85dbbce8cd357d24",
+            "checkout_sha": "a1f04044edce0e342f470f1c16a12c609b0250c1"
+          }
+        },
+        {
+          "context": "pr-policy",
+          "run_id": 39040949159,
+          "job_id": 117420221882,
+          "url": "https://github.com/silverThunder09/ai-interview-studio/actions/runs/39040949159/job/117420221882",
+          "result": "success",
+          "evidence_step": "success",
+          "ci_evidence": {
+            "repository": "silverThunder09/ai-interview-studio",
+            "context": "pr-policy",
+            "run_id": "39040949159",
+            "pr_number": 19,
+            "head_sha": "fe4ecaf1007350a5aff6a1756fbb6751d17ddca6",
+            "base_sha": "ffcbefabb363df86f30db85f85dbbce8cd357d24",
+            "checkout_sha": "a1f04044edce0e342f470f1c16a12c609b0250c1"
+          }
+        }
+      ]
+    }
+  ]
+}
