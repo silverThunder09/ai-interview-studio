@@ -44,6 +44,8 @@ Linux 디스플레이가 없는 환경은 `xvfb-run -a npm run test:smoke`를 �
 
 `src/main`은 권한·수명주기·SQLite·외부 AI/전사 adapter, `src/preload`는 좁은 IPC, `src/renderer`는 React UI, `src/shared`는 검증 계약입니다. REA는 문서만 검토했으며 설치/활성화되지 않은 개발 도구입니다.
 
+개발 작업의 재개·컨텍스트 압축·승인 보존과 세션 인수인계는 [컨텍스트·세션 관리](harness/context-session.md)를 따릅니다. root AGENTS에는 안내만 두고 상세 규칙과 인수인계 양식은 해당 문서에서 관리합니다.
+
 Validation workflow는 PR/push에 check와 build를 실행합니다. Windows build workflow는 Windows에서 같은 검증과 실제 Electron smoke를 실행하고, 패키징한 unpacked exe를 다시 검사한 뒤 portable exe·체크섬·notices를 14일 보존합니다. 실제 마이크·webcam·Windows 사용자 기기 테스트를 대신하지 않습니다.
 
 코드/PR 리뷰에는 저장소의 `.agents/skills/code-review`와 `.agents/skills/pr-review`를 사용합니다. 새 PR은 PR 템플릿을, 버그·리뷰 finding은 Issue Forms를 따릅니다. PR policy 검사는 본문과 머지 판정의 실패 경로를 확인합니다. 예약 클라우드 에이전트는 매시간 승인 범위 PR/이슈를 검토하고, 수정 후 현재 head/base의 필수 CI가 성공한 경우에만 자동 머지합니다. 보호 영역·범위 확대·실패/불명확한 증거는 보류합니다. [운영 정책](harness/review-automation.md)에 실행 의존성과 중지 조건을 기록했습니다. 제품 AI API 키나 로컬 상시 실행은 필요 없습니다.

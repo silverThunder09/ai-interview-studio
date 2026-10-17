@@ -24,6 +24,7 @@
 | 작업 | 문서 |
 | --- | --- |
 | 위험도·검증 선택·Git 절차·인수인계 기준 확인 | `harness/workflow.md` |
+| 작업 재개·컨텍스트 압축·승인 보존·세션 인수인계 | `harness/context-session.md` |
 | 구조·MVP 범위·인수 기준 | `harness/architecture.md` |
 | 보안·개인정보·의존성·REA | `harness/security.md` |
 | 기능 구현 | 승인된 해당 MVP 스펙 (`harness/specs/`) |
