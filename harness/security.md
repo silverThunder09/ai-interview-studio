@@ -39,6 +39,12 @@ DB는 Electron 내장 `node:sqlite`로 사용자 profile의 `interviews.sqlite`�
 
 실제 AI는 연결하지 않는다. 원문/수정본/답변 인용과 일반 기술 질문을 명확히 구분하고 문서 지시문은 실행하지 않는다. 준비된 후속 질문은 사용자 답변 인용일 뿐 AI 추론·사실 검증·독립 평가가 아니다. 네트워크 CSP·장치·sandbox 통제는 유지한다. Windows smoke는 제품 API를 사용하되 별도 임시 userData에서 합성 문서/기록만 저장/삭제한다.
 
+## AI 공급자 공통 계약 — 연결 전 준비
+
+공급자/비용/전송 선택 전에 main 전용 공통 계약만 모의 검증한다. 실제 transport·네트워크·자격증명·제품 진입점은 없다. 선택된 짧은 근거와 직전 답변만 허용하고 원문 전체/파일 경로/임의 필드는 거절한다. 생성 응답은 질문과 근거 id만 받으며, id는 main이 유지한 입력 snapshot의 구절/위치/출처와 결합한다. transport가 자기 payload를 변경해도 snapshot을 바꿀 수 없다. 문서 명령을 system 규칙으로 사용하지 않으며 이력서 없는 경험 금지·질문 전용 지시를 데이터와 분리한다. 이 통제는 AI의 의미적 환각 방지를 보증하지 않는다.
+
+한 요청에 한 번만 transport를 호출하고 자동 재시도/로컬 질문으로의 조용한 대체를 하지 않는다. 취소/시간 초과는 transport에 abort를 보내고 늦은 응답을 반영하지 않으며 timer/listener를 해제한다. 실제 서비스가 취소를 처리하기 전에 수행한 연산/요금을 되돌린다고 보장하지 않는다. adapter가 던진 예외나 서비스 원문 오류는 정형 오류로 바꿔 API 키/URL/이력서가 반환되지 않게 한다. 연결 전 별도 AC에 전송 미리보기·동의·자격증명·비용/보존 안내·SQLite와 비동기 작업의 분리·취소 후 상태 보존을 포함한다.
+
 ## CI와 의존성 검토
 
 GitHub Actions는 `contents: read`, commit SHA 고정 actions, `npm ci`, timeout, artifact 보존 14일을 사용한다. release 업로드·서명 키·API 자격증명은 필요 없다. npm lifecycle 스크립트가 Electron binary를 다운로드하므로 lockfile과 upstream 버전을 검토한다. `npm audit` 결과는 실제 실행 결과와 구분해 PR에 남긴다. 개발 도구 문제도 숨기지 않는다.
