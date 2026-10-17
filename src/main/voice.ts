@@ -59,7 +59,7 @@ export class VoiceService {
       if (!isVoiceRequest(value) || !this.active || this.active.operationId !== value.operationId || this.pending || this.active.permissionUntil !== 0 || !isOpusWebM(value.audio)) throw new VoiceError('INVALID_REQUEST');
       const active = this.active; this.current(active);
       let key: string;
-      try { key = this.credentials.keyForTranscription(); } catch { throw new VoiceError('AUTHENTICATION'); }
+      try { key = this.credentials.keyForAudio(); } catch { throw new VoiceError('AUTHENTICATION'); }
       if (this.used >= VOICE_LIMITS.requests) throw new VoiceError('BUDGET_EXHAUSTED');
       this.used++; controller = new AbortController(); this.pending = controller;
       const abort = controller;

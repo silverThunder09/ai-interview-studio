@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { AI_CALL_LIMIT, AI_ENDPOINTS, AI_NAMES, AI_PROVIDERS, isAIConfig, type AIInterviewConfig, type AIProvider, type AIStatus } from '../../shared/ai';
 
 export function AIKeySettings({ disabled = false, onStatus, fixedProvider, onConfigured }: { disabled?: boolean; onStatus?: (status: AIStatus) => void; fixedProvider?: AIProvider; onConfigured?: () => void }) {
+  const fieldId = useId();
   const [provider, setProvider] = useState<AIProvider>(fixedProvider ?? 'openai');
   const [status, setStatus] = useState<AIStatus>();
   const [message, setMessage] = useState('');
@@ -32,10 +33,10 @@ export function AIKeySettings({ disabled = false, onStatus, fixedProvider, onCon
   }
   return <div className="settings-card ai-keys"><h2>외부 AI API 키</h2>
     <p>키는 앱 실행 중에만 보관하며 종료·창 닫기 시 비웁니다. 재시작 후 다시 입력하세요. 등록만으로 인터넷 요청을 보내지 않습니다.</p>
-    <label htmlFor="key-provider">키를 등록할 서비스</label><select id="key-provider" value={provider} disabled={disabled || busy || !!fixedProvider} onChange={e => { setProvider(e.target.value as AIProvider); if (input.current) input.current.value = ''; setMessage(''); }}>
+    <label htmlFor={`${fieldId}-provider`}>키를 등록할 서비스</label><select id={`${fieldId}-provider`} value={provider} disabled={disabled || busy || !!fixedProvider} onChange={e => { setProvider(e.target.value as AIProvider); if (input.current) input.current.value = ''; setMessage(''); }}>
       {AI_PROVIDERS.map(p => <option key={p} value={p}>{AI_NAMES[p]}</option>)}
     </select>
-    <label htmlFor="ai-key">API 키 (저장 후 화면에서 비움)</label><input ref={input} id="ai-key" type="password" autoComplete="off" spellCheck={false} maxLength={512} disabled={disabled || busy} />
+    <label htmlFor={`${fieldId}-key`}>API 키 (저장 후 화면에서 비움)</label><input ref={input} id={`${fieldId}-key`} type="password" autoComplete="off" spellCheck={false} maxLength={512} disabled={disabled || busy} />
     <div className="resume-actions"><button className="secondary" disabled={disabled || busy} onClick={() => void update(false)}>이번 실행에 키 등록</button><button className="secondary" disabled={disabled || busy} onClick={() => void update(true)}>선택 서비스 키 비우기</button></div>
     <p className="hint">{status ? status.providers.map(p => `${AI_NAMES[p.provider]}: ${p.configured ? '등록됨' : '미등록'}`).join(' · ') : '설정 확인 중…'}</p>
     {status && <p className="hint">이번 실행의 남은 요청: {status.remainingRequests} / {AI_CALL_LIMIT}. 실패·취소도 사용량에 포함됩니다. 재시작하면 요청 한도는 초기화됩니다.</p>}
