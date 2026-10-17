@@ -22,7 +22,7 @@ test('desktop starts with secure boundaries, Korean UI and ephemeral settings', 
     expect(await page.evaluate(() => ({
       require: typeof Reflect.get(window, 'require'), process: typeof Reflect.get(window, 'process'),
       api: Object.keys(window.studio ?? {}).sort(),
-    }))).toEqual({ require: 'undefined', process: 'undefined', api: ['cancelInterviewOperation', 'deleteAllInterviews', 'deleteInterview', 'getInterview', 'getInterviewHistory', 'getSnapshot', 'selectResume', 'startInterview', 'submitInterviewAnswer', 'updateSettings'] });
+    }))).toEqual({ require: 'undefined', process: 'undefined', api: ['cancelInterviewOperation', 'clearAIKey', 'configureAIKey', 'deleteAllInterviews', 'deleteInterview', 'getAIStatus', 'getInterview', 'getInterviewHistory', 'getSnapshot', 'selectResume', 'startInterview', 'submitInterviewAnswer', 'updateSettings'] });
     const rendererMetric = await application.evaluate(({ app, BrowserWindow }) => {
       const pid = BrowserWindow.getAllWindows()[0]!.webContents.getOSProcessId();
       return app.getAppMetrics().find((metric) => metric.pid === pid);
@@ -73,10 +73,11 @@ test('desktop starts with secure boundaries, Korean UI and ephemeral settings', 
       } });
       try {
         await other.loadURL('app://studio/index.html');
-        return await other.webContents.executeJavaScript('Promise.all([window.studio.getSnapshot(), window.studio.getInterviewHistory(), window.studio.cancelInterviewOperation("00000000-0000-0000-0000-000000000000")])');
+        return await other.webContents.executeJavaScript('Promise.all([window.studio.getSnapshot(), window.studio.getInterviewHistory(), window.studio.cancelInterviewOperation("00000000-0000-0000-0000-000000000000"), window.studio.getAIStatus(), window.studio.configureAIKey({provider: "openai", key: "synthetic-api-key-not-real"}), window.studio.clearAIKey({provider: "openai"})])');
       } finally { other.destroy(); }
     });
-    expect(unauthorized).toMatchObject([{ ok: false, error: { code: 'UNAUTHORIZED' } }, { ok: false, error: { code: 'UNAUTHORIZED' } }, { ok: false, error: { code: 'UNAUTHORIZED' } }]);
+    expect(unauthorized).toHaveLength(6);
+    for (const result of unauthorized) expect(result).toMatchObject({ ok: false, error: { code: 'UNAUTHORIZED' } });
 
     await page.getByRole('button', { name: '시작하기', exact: true }).click();
     await page.screenshot({ path: 'test-results/desktop.png', fullPage: true });

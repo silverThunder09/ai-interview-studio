@@ -1,5 +1,6 @@
 import type { ResumeSection } from './resume';
 import { RESUME_LIMITS } from './resume';
+import { isAIConfig, type AIInterviewConfig } from './ai';
 
 export const INTERVIEW_LIMITS = Object.freeze({ sessions: 100, answerChars: 10_000, turns: 12 });
 export interface StartInterviewRequest {
@@ -7,8 +8,9 @@ export interface StartInterviewRequest {
   reviewedText: string;
   sourceSections: ResumeSection[];
   storageConsent: true;
+  ai?: AIInterviewConfig;
 }
-export interface SubmitAnswerRequest { sessionId: string; questionId: string; answer: string }
+export interface SubmitAnswerRequest { sessionId: string; questionId: string; answer: string; transmissionConsent?: true }
 export interface DeleteInterviewRequest { sessionId: string; confirm: true }
 export interface DeleteAllInterviewsRequest { confirm: 'DELETE_ALL_INTERVIEWS' }
 export interface EvidenceQuote { origin: 'source' | 'reviewed' | 'answer'; location: string; text: string }
@@ -20,10 +22,11 @@ export interface InterviewTurn { question: InterviewQuestion; answer: string | n
 export interface InterviewSession {
   id: string; createdAt: string; status: 'active' | 'completed';
   reviewedText: string; sourceSections: ResumeSection[]; turns: InterviewTurn[];
-  mode: 'local-practice';
+  mode: 'local-practice' | 'external-ai'; ai?: AIInterviewConfig;
 }
 export interface InterviewSummary {
   id: string; createdAt: string; status: 'active' | 'completed'; answered: number;
+  mode: InterviewSession['mode'];
 }
 export interface InterviewHistory { sessions: InterviewSummary[]; storagePath: string; limit: number }
 
@@ -38,9 +41,12 @@ function text(value: unknown, max: number): value is string {
   return typeof value === 'string' && value.trim().length > 0 && value.length <= max && !value.includes('\0');
 }
 export function isStartInterviewRequest(value: unknown): value is StartInterviewRequest {
-  if (!record(value, ['requestId', 'reviewedText', 'sourceSections', 'storageConsent']) ||
+  const keys = ['requestId', 'reviewedText', 'sourceSections', 'storageConsent'];
+  if (typeof value === 'object' && value !== null && Object.hasOwn(value, 'ai')) keys.push('ai');
+  if (!record(value, keys) ||
     !isInterviewId(value.requestId) || value.storageConsent !== true || !text(value.reviewedText, RESUME_LIMITS.textChars) ||
     !Array.isArray(value.sourceSections) || !value.sourceSections.length || value.sourceSections.length > 2_000) return false;
+  if (Object.hasOwn(value, 'ai') && (!isAIConfig(value.ai) || !value.reviewedText.includes(value.ai.quote))) return false;
   let length = (value.sourceSections.length - 1) * 2;
   return value.sourceSections.every((section: unknown) => {
     if (!record(section, ['location', 'text']) || typeof section.location !== 'string' ||
@@ -50,7 +56,9 @@ export function isStartInterviewRequest(value: unknown): value is StartInterview
   });
 }
 export function isSubmitAnswerRequest(value: unknown): value is SubmitAnswerRequest {
-  return record(value, ['sessionId', 'questionId', 'answer']) && isInterviewId(value.sessionId) &&
+  const consent = typeof value === 'object' && value !== null && Object.hasOwn(value, 'transmissionConsent');
+  return record(value, consent ? ['sessionId', 'questionId', 'answer', 'transmissionConsent'] : ['sessionId', 'questionId', 'answer']) &&
+    (!consent || value.transmissionConsent === true) && isInterviewId(value.sessionId) &&
     isInterviewId(value.questionId) && text(value.answer, INTERVIEW_LIMITS.answerChars);
 }
 export function isDeleteInterviewRequest(value: unknown): value is DeleteInterviewRequest {

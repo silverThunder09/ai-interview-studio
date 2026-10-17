@@ -107,4 +107,13 @@ summary { cursor: pointer; color: var(--accent); font-size: 13px; }
 .danger { color: #a83434; border-color: #d8a0a0; }
 .storage-location { color: var(--muted); font-size: 12px; line-height: 1.8; }
 .storage-location code { overflow-wrap: anywhere; user-select: text; }
+.ai-options { margin: 20px 0; }
+.ai-options label, .ai-keys label { display: block; margin: 14px 0 6px; }
+.ai-options input:not([type='checkbox']), .ai-options select, .ai-options textarea,
+.ai-keys input, .ai-keys select { width: 100%; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); font: inherit; }
+.ai-options textarea { min-height: 100px; resize: vertical; }
+.ai-options .consent, .ai-keys .consent { display: flex; gap: 8px; }
+.transmission-preview { margin: 20px 0; padding: 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); overflow-wrap: anywhere; }
+.transmission-preview pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; line-height: 1.8; }
+input:focus-visible, select:focus-visible { outline: 3px solid #7979ed; outline-offset: 2px; }
 @media (max-width: 1000px) { .history-list article { align-items: flex-start; flex-direction: column; } }

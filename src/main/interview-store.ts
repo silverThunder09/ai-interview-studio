@@ -5,9 +5,13 @@ import { DatabaseSync } from 'node:sqlite';
 import type { InterviewHistory, InterviewQuestion, InterviewSession, InterviewSummary, StartInterviewRequest, SubmitAnswerRequest } from '../shared/interview';
 import { INTERVIEW_LIMITS, isInterviewId, isInterviewQuestion, isStartInterviewRequest } from '../shared/interview';
 import { LocalQuestionProvider, type QuestionDraft, type QuestionProvider } from './questions';
+import { isAIConfig } from '../shared/ai';
 
 export class InterviewStoreError extends Error {}
-interface SessionRow { id: string; created_at: string; status: InterviewSession['status']; reviewed_text: string; sources: string; request_hash: string }
+interface SessionRow { id: string; created_at: string; status: InterviewSession['status']; reviewed_text: string; sources: string; request_hash: string; ai_config: string | null }
+function requestHash(request: StartInterviewRequest): string {
+  return createHash('sha256').update(JSON.stringify({ text: request.reviewedText, sources: request.sourceSections, ...(request.ai ? { ai: request.ai } : {}) })).digest('hex');
+}
 interface TurnRow { sequence: number; question_id: string; question: string; answer: string | null }
 
 export class InterviewStore {
@@ -17,7 +21,7 @@ export class InterviewStore {
     this.database = new DatabaseSync(path, { enableForeignKeyConstraints: true, enableDoubleQuotedStringLiterals: false, allowExtension: false });
     try {
       const version = Number(this.database.prepare('PRAGMA user_version').get()?.user_version);
-      if (version > 1) throw new InterviewStoreError('이 앱보다 새 버전의 기록 저장소입니다. 최신 앱으로 열어 주세요.');
+      if (version > 2) throw new InterviewStoreError('이 앱보다 새 버전의 기록 저장소입니다. 최신 앱으로 열어 주세요.');
       this.database.exec('PRAGMA journal_mode=DELETE; PRAGMA synchronous=FULL; PRAGMA secure_delete=ON; PRAGMA busy_timeout=1000;');
       if (version === 0) this.transaction(() => {
         this.database.exec(`
@@ -34,6 +38,9 @@ export class InterviewStore {
           ) STRICT;
           PRAGMA user_version=1;
         `);
+      });
+      if (version < 2) this.transaction(() => {
+        this.database.exec('ALTER TABLE sessions ADD COLUMN ai_config TEXT; PRAGMA user_version=2;');
       });
       if (process.platform !== 'win32') chmodSync(path, 0o600);
     } catch (error) { this.database.close(); throw error; }
@@ -53,7 +60,10 @@ export class InterviewStore {
     const damaged = () => new InterviewStoreError('저장된 기록의 형식이 손상되어 열 수 없습니다. 원본 파일은 자동 초기화하지 않습니다.');
     if (typeof row.sources !== 'string' || row.sources.length > 1_000_000 || !Number.isFinite(Date.parse(row.created_at)) || !['active', 'completed'].includes(row.status)) throw damaged();
     const sourceSections: unknown = JSON.parse(row.sources);
-    const resume = { requestId: row.id, reviewedText: row.reviewed_text, sourceSections, storageConsent: true };
+    if (row.ai_config !== null && (typeof row.ai_config !== 'string' || row.ai_config.length > 2_000)) throw damaged();
+    const ai: unknown = row.ai_config === null ? undefined : JSON.parse(row.ai_config);
+    if (ai !== undefined && !isAIConfig(ai)) throw damaged();
+    const resume = { requestId: row.id, reviewedText: row.reviewed_text, sourceSections, storageConsent: true, ...(ai ? { ai } : {}) };
     if (!isStartInterviewRequest(resume)) throw damaged();
     const rows = this.database.prepare('SELECT sequence,question_id,question,answer FROM turns WHERE session_id=? ORDER BY sequence').all(id) as unknown as TurnRow[];
     if (!rows.length || rows.length > INTERVIEW_LIMITS.turns) throw damaged();
@@ -62,15 +72,15 @@ export class InterviewStore {
       const question: unknown = JSON.parse(turn.question);
       if (!isInterviewQuestion(question) || question.id !== turn.question_id || turn.sequence !== index || question.number !== index + 1 || !isInterviewId(turn.question_id)) throw damaged();
       const pending = row.status === 'active' && index === rows.length - 1;
-      if (pending ? turn.answer !== null : typeof turn.answer !== 'string' || !turn.answer.trim() || turn.answer.includes('\0') || turn.answer.length > INTERVIEW_LIMITS.answerChars) throw damaged();
+      if (pending ? turn.answer !== null : typeof turn.answer !== 'string' || !turn.answer.trim() || turn.answer.includes('\0') || turn.answer.length > (ai ? 2_000 : INTERVIEW_LIMITS.answerChars)) throw damaged();
       return { question, answer: turn.answer };
     });
-    return { id: row.id, createdAt: row.created_at, status: row.status, mode: 'local-practice', reviewedText: row.reviewed_text, sourceSections: resume.sourceSections, turns };
+    return { id: row.id, createdAt: row.created_at, status: row.status, mode: ai ? 'external-ai' : 'local-practice', ...(isAIConfig(ai) ? { ai } : {}), reviewedText: row.reviewed_text, sourceSections: resume.sourceSections, turns };
   }
   history(): InterviewHistory {
-    const rows = this.database.prepare(`SELECT s.id,s.created_at,s.status,COUNT(t.answer) AS answered FROM sessions s
+    const rows = this.database.prepare(`SELECT s.id,s.created_at,s.status,s.ai_config,COUNT(t.answer) AS answered FROM sessions s
       LEFT JOIN turns t ON t.session_id=s.id GROUP BY s.id ORDER BY s.created_at DESC,s.id DESC LIMIT ?`).all(INTERVIEW_LIMITS.sessions);
-    const sessions: InterviewSummary[] = rows.map((row) => ({ id: String(row.id), createdAt: String(row.created_at), status: row.status as InterviewSummary['status'], answered: Number(row.answered) }));
+    const sessions: InterviewSummary[] = rows.map((row) => ({ id: String(row.id), createdAt: String(row.created_at), status: row.status as InterviewSummary['status'], answered: Number(row.answered), mode: row.ai_config === null ? 'local-practice' : 'external-ai' }));
     return { sessions, storagePath: this.path, limit: INTERVIEW_LIMITS.sessions };
   }
   private addQuestion(sessionId: string, draft: Omit<InterviewQuestion, 'id' | 'number'>, sequence: number) {
@@ -78,7 +88,7 @@ export class InterviewStore {
     this.database.prepare('INSERT INTO turns(session_id,sequence,question_id,question,answer) VALUES(?,?,?,?,NULL)').run(sessionId, sequence, question.id, JSON.stringify(question));
   }
   findStart(request: StartInterviewRequest): InterviewSession | null {
-    const hash = createHash('sha256').update(JSON.stringify({ text: request.reviewedText, sources: request.sourceSections })).digest('hex');
+    const hash = requestHash(request);
     const existing = this.database.prepare('SELECT id,request_hash FROM sessions WHERE request_id=?').get(request.requestId);
     if (existing) {
       if (existing.request_hash !== hash) throw new InterviewStoreError('다른 내용으로 같은 시작 요청을 다시 사용할 수 없습니다.');
@@ -92,11 +102,12 @@ export class InterviewStore {
     return this.transaction(() => {
       const existing = this.findStart(request);
       if (existing) return existing;
-      const hash = createHash('sha256').update(JSON.stringify({ text: request.reviewedText, sources: request.sourceSections })).digest('hex');
+      const hash = requestHash(request);
+      if (request.ai && !generated) throw new InterviewStoreError('AI 질문 생성이 필요합니다.');
       const question = generated ?? this.provider.next(request, []);
       if (!question) throw new Error('Missing first question');
       const id = randomUUID();
-      this.database.prepare('INSERT INTO sessions VALUES(?,?,?,?,?,?,?)').run(id, request.requestId, hash, new Date().toISOString(), 'active', request.reviewedText, JSON.stringify(request.sourceSections));
+      this.database.prepare('INSERT INTO sessions(id,request_id,request_hash,created_at,status,reviewed_text,sources,ai_config) VALUES(?,?,?,?,?,?,?,?)').run(id, request.requestId, hash, new Date().toISOString(), 'active', request.reviewedText, JSON.stringify(request.sourceSections), request.ai ? JSON.stringify(request.ai) : null);
       this.addQuestion(id, question, 0);
       return this.get(id);
     });
@@ -110,12 +121,14 @@ export class InterviewStore {
       return { session, pending: false };
     }
     if (session.status !== 'active' || turn !== session.turns.at(-1)) throw new InterviewStoreError('현재 답변할 질문이 아닙니다.');
+    if (session.ai && (request.transmissionConsent !== true || request.answer.length > 2_000)) throw new InterviewStoreError('AI 면접은 답변 2,000자 이하이며 매번 전송·비용 확인이 필요합니다.');
     return { session, pending: true };
   }
   answer(request: SubmitAnswerRequest, generated?: { next: QuestionDraft | null }): InterviewSession {
     return this.transaction(() => {
       const { session, pending } = this.prepareAnswer(request);
       if (!pending) return session;
+      if (session.ai && !generated) throw new InterviewStoreError('AI 질문 생성이 필요합니다.');
       const turn = session.turns.at(-1)!;
       turn.answer = request.answer;
       const next = generated ? generated.next : this.provider.next(session, session.turns);

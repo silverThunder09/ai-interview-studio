@@ -1,4 +1,5 @@
 import type { SelectedResume } from './resume';
+import type { AIKeyRequest, AIProvider, AIStatus } from './ai';
 import type { DeleteAllInterviewsRequest, DeleteInterviewRequest, InterviewHistory, InterviewSession, StartInterviewRequest, SubmitAnswerRequest } from './interview';
 
 export const CHANNELS = {
@@ -7,6 +8,7 @@ export const CHANNELS = {
   interviewStart: 'studio:interview-start', interviewAnswer: 'studio:interview-answer',
   interviewDelete: 'studio:interview-delete', interviewDeleteAll: 'studio:interview-delete-all',
   interviewCancel: 'studio:interview-cancel',
+  aiStatus: 'studio:ai-status', aiKey: 'studio:ai-key', aiClear: 'studio:ai-clear',
 } as const;
 export const THEMES = ['system', 'light', 'dark'] as const;
 export type Theme = (typeof THEMES)[number];
@@ -29,6 +31,9 @@ export interface DesktopAPI {
   cancelInterviewOperation(operationId: string): Promise<Result<boolean>>;
   deleteInterview(request: DeleteInterviewRequest): Promise<Result<null>>;
   deleteAllInterviews(request: DeleteAllInterviewsRequest): Promise<Result<null>>;
+  getAIStatus(): Promise<Result<AIStatus>>;
+  configureAIKey(request: AIKeyRequest): Promise<Result<AIStatus>>;
+  clearAIKey(request: { provider: AIProvider }): Promise<Result<AIStatus>>;
 }
 
 export function isSettings(value: unknown): value is Settings {
