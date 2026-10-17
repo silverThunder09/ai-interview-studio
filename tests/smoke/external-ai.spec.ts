@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { docxFixture } from '../fixtures/resume';
+import { startFixture } from '../fixtures/interview';
 
 test('external AI requires selected context and per-turn consent, uses main-only synthetic transport and forgets keys on restart', async () => {
   test.setTimeout(150_000);
@@ -69,6 +70,38 @@ test('external AI requires selected context and per-turn consent, uses main-only
     await expect(page.getByRole('heading', { name: '질문 2', exact: true })).toBeVisible();
     await expect(page.locator('.transmission-preview pre')).toContainText('개인 문맥 없이');
     await expect(next).toBeDisabled();
+    // Exhaust the process budget with synthetic failures. The UI starts with
+    // one request left and must refresh to zero after its own failed attempt.
+    await application!.evaluate(() => { globalThis.fetch = async () => new Response('', { status: 429 }); });
+    await page.evaluate(async request => {
+      const status = await window.studio!.getAIStatus();
+      if (!status.ok) throw new Error('Synthetic quota unavailable');
+      for (let n = 0; n < status.value.remainingRequests - 1; n++) {
+        const result = await window.studio!.startInterview({ ...request, requestId: crypto.randomUUID(), ai: { provider: 'openai', model: 'synthetic-model', quote: request.reviewedText, transmissionConsent: true } });
+        if (result.ok || result.error.code !== 'RATE_LIMITED') throw new Error('Expected synthetic 429');
+      }
+    }, startFixture());
+    await page.getByRole('button', { name: '이력서', exact: true }).click();
+    await page.getByRole('button', { name: '이력서 불러오기', exact: true }).click();
+    await expect(page.getByLabel('누락·읽기 순서를 원본과 비교하고 수정하세요.')).toHaveValue(quote);
+    await page.getByRole('button', { name: '검토 완료', exact: true }).click();
+    await page.getByLabel('외부 API로 AI 질문 생성', { exact: true }).check();
+    await expect(page.getByText('이번 실행의 남은 요청: 1 / 36.', { exact: false })).toBeVisible();
+    await page.getByLabel('모델 ID (서비스 콘솔에서 확인)', { exact: true }).fill('synthetic-model');
+    await page.getByLabel('첫 질문에 보낼 구절', { exact: false }).fill(quote);
+    await page.getByLabel('선택 서비스·모델·구절과 과금·보존 가능성', { exact: false }).check();
+    await page.getByLabel('이력서 검토 내용과 면접 기록의 로컬 저장에 동의합니다.').check();
+    const exhaustedStart = page.getByRole('button', { name: '동의한 내용으로 AI 면접 시작', exact: true });
+    await exhaustedStart.click();
+    await expect(page.getByText('이번 실행의 남은 요청: 0 / 36.', { exact: false })).toBeVisible();
+    await expect(exhaustedStart).toBeDisabled();
+    await expect(page.getByLabel('첫 질문에 보낼 구절', { exact: false })).toHaveValue(quote);
+    await page.getByRole('button', { name: '현재 연습', exact: true }).click();
+    await page.getByLabel('내 답변', { exact: true }).fill('예산 소진 뒤에도 보존할 합성 답변');
+    await page.getByLabel('위 전송 범위·비용 가능성을 확인했습니다.', { exact: false }).check();
+    await page.getByRole('button', { name: '답변 저장하고 다음 질문', exact: true }).click();
+    await expect(page.getByRole('alert')).toContainText('기다리거나 키를 재등록해도 복구되지 않습니다');
+    await expect(page.getByLabel('내 답변', { exact: true })).toHaveValue('예산 소진 뒤에도 보존할 합성 답변');
     expect(errors).toEqual([]);
     await close();
     page = await launch();

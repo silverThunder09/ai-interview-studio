@@ -126,7 +126,10 @@ it('caps even failed or cancelled requests across all providers and clearing/re-
   const input = { ...startFixture(), ai: config() };
   for (let n = 0; n < AI_CALL_LIMIT; n++) await expect(provider.next(input, [], new AbortController().signal)).rejects.toMatchObject({ code: 'RATE_LIMITED' });
   vault.clear('openai'); vault.set('openai', key);
-  await expect(provider.next(input, [], new AbortController().signal)).rejects.toMatchObject({ code: 'RATE_LIMITED' });
+  await expect(provider.next(input, [], new AbortController().signal)).rejects.toMatchObject({ code: 'BUDGET_EXHAUSTED', retryable: false });
+  const storage = store(), handlers = createInterviewHandlers(() => storage, new InterviewService(() => storage, provider));
+  expect(await handlers.start([input])).toMatchObject({ ok: false, error: { code: 'BUDGET_EXHAUSTED', message: expect.stringContaining('기다리거나 키를 재등록해도 복구되지 않습니다') } });
+  expect(storage.history().sessions).toEqual([]);
   expect(request).toHaveBeenCalledTimes(AI_CALL_LIMIT); expect(vault.status().remainingRequests).toBe(0);
 });
 it('migrates schema 1 without changing old request hashes, sessions or pending questions', () => {

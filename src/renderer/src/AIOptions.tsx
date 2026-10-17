@@ -9,12 +9,12 @@ export function AIKeySettings({ disabled = false, onStatus }: { disabled?: boole
   const [busy, setBusy] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   const live = useRef(true);
-  useEffect(() => { live.current = true; void window.studio?.getAIStatus().then(result => {
-    if (!live.current) return;
+  useEffect(() => { let current = true; live.current = true; if (!disabled) void window.studio?.getAIStatus().then(result => {
+    if (!current) return;
     if (result.ok) { setStatus(result.value); onStatus?.(result.value); } else setError(result.error.message);
-  }).catch(() => { if (live.current) setError('AI 설정을 읽지 못했습니다. 화면을 다시 열어 주세요.'); });
-    return () => { live.current = false; if (input.current) input.current.value = ''; };
-  }, [onStatus]);
+  }).catch(() => { if (current) setError('AI 설정을 읽지 못했습니다. 화면을 다시 열어 주세요.'); });
+    return () => { current = false; live.current = false; if (input.current) input.current.value = ''; };
+  }, [onStatus, disabled]);
   async function update(clear: boolean) {
     if (busy || disabled) return;
     setBusy(true); setError(''); setMessage('');

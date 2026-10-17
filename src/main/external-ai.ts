@@ -16,7 +16,7 @@ export class AICredentials {
   acquire(provider: AIProvider): string {
     const key = this.#keys.get(provider);
     if (!key) throw new AIQuestionError('AUTHENTICATION');
-    if (this.used >= AI_CALL_LIMIT) throw new AIQuestionError('RATE_LIMITED');
+    if (this.used >= AI_CALL_LIMIT) throw new AIQuestionError('BUDGET_EXHAUSTED');
     this.used++; return key;
   }
 }

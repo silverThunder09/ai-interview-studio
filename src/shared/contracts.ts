@@ -18,7 +18,7 @@ export const DEFAULT_SETTINGS: Readonly<Settings> = Object.freeze({
 });
 export interface Snapshot { version: string; settings: Settings; stage: 'mvp-1-local' }
 export type Result<T> = { ok: true; value: T } | {
-  ok: false; error: { code: 'INVALID_REQUEST' | 'UNAUTHORIZED' | 'UNAVAILABLE' | 'CANCELLED' | 'TIMEOUT' | 'RATE_LIMITED' | 'AUTHENTICATION'; message: string };
+  ok: false; error: { code: 'INVALID_REQUEST' | 'UNAUTHORIZED' | 'UNAVAILABLE' | 'CANCELLED' | 'TIMEOUT' | 'RATE_LIMITED' | 'BUDGET_EXHAUSTED' | 'AUTHENTICATION'; message: string };
 };
 export interface DesktopAPI {
   getSnapshot(): Promise<Result<Snapshot>>;
