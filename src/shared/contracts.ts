@@ -1,5 +1,6 @@
 import type { SelectedResume } from './resume';
 import type { VoiceRequest, VoiceStart, VoiceStatus } from './voice';
+import type { SpeechRequest, SpeechStatus } from './speech';
 import type { AIKeyRequest, AIProvider, AIStatus } from './ai';
 import type { DeleteAllInterviewsRequest, DeleteInterviewRequest, InterviewHistory, InterviewSession, StartInterviewRequest, SubmitAnswerRequest } from './interview';
 
@@ -12,6 +13,7 @@ export const CHANNELS = {
   aiStatus: 'studio:ai-status', aiKey: 'studio:ai-key', aiClear: 'studio:ai-clear',
   voiceBegin: 'studio:voice-begin', voiceStop: 'studio:voice-stop', voiceCancel: 'studio:voice-cancel',
   voiceTranscribe: 'studio:voice-transcribe', voiceStatus: 'studio:voice-status',
+  speechGenerate: 'studio:speech-generate', speechCancel: 'studio:speech-cancel', speechStatus: 'studio:speech-status',
 } as const;
 export const THEMES = ['system', 'light', 'dark'] as const;
 export type Theme = (typeof THEMES)[number];
@@ -42,6 +44,9 @@ export interface DesktopAPI {
   cancelVoice(operationId: string): Promise<Result<null>>;
   transcribeVoice(request: VoiceRequest): Promise<Result<string>>;
   getVoiceStatus(): Promise<Result<VoiceStatus>>;
+  generateSpeech(request: SpeechRequest): Promise<Result<Uint8Array>>;
+  cancelSpeech(operationId: string): Promise<Result<null>>;
+  getSpeechStatus(): Promise<Result<SpeechStatus>>;
 }
 
 export function isSettings(value: unknown): value is Settings {

@@ -1,6 +1,6 @@
 # AI Interview Studio
 
-개인용 Windows AI 면접 데스크톱 앱이며 Codex Cloud에서 개발합니다. PDF/DOCX 이력서 검토, 텍스트 연습·로컬 기록, OpenAI·Claude·Gemini 질문 생성과 선택한 음성의 OpenAI 전사를 제공합니다. 질문 음성 읽기·실시간 음성 대화·카메라는 아직 제공하지 않습니다.
+개인용 Windows AI 면접 데스크톱 앱이며 Codex Cloud에서 개발합니다. PDF/DOCX 이력서 검토, 텍스트 연습·로컬 기록, OpenAI·Claude·Gemini 질문 생성, 선택한 음성의 OpenAI 전사와 현재 질문의 음성 읽기를 제공합니다. 실시간 음성 대화·카메라는 아직 제공하지 않습니다.
 
 검증 결과는 **[최신 테스트 기록](harness/testing/latest.md)**, 과거 결과와 검색 방법은 **[테스트 색인·아카이브](harness/testing/README.md)**에서 확인합니다. 자동 테스트 성공과 실제 사용자 기기/API 확인은 구분합니다.
 

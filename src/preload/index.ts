@@ -3,6 +3,7 @@ import { CHANNELS, type DesktopAPI, type Settings } from '../shared/contracts';
 import type { DeleteAllInterviewsRequest, DeleteInterviewRequest, StartInterviewRequest, SubmitAnswerRequest } from '../shared/interview';
 import type { AIKeyRequest, AIProvider } from '../shared/ai';
 import type { VoiceRequest, VoiceStart } from '../shared/voice';
+import type { SpeechRequest } from '../shared/speech';
 
 const api: DesktopAPI = Object.freeze({
   getSnapshot: () => ipcRenderer.invoke(CHANNELS.snapshot),
@@ -23,5 +24,8 @@ const api: DesktopAPI = Object.freeze({
   cancelVoice: (id: string) => ipcRenderer.invoke(CHANNELS.voiceCancel, id),
   transcribeVoice: (request: VoiceRequest) => ipcRenderer.invoke(CHANNELS.voiceTranscribe, request),
   getVoiceStatus: () => ipcRenderer.invoke(CHANNELS.voiceStatus),
+  generateSpeech: (request: SpeechRequest) => ipcRenderer.invoke(CHANNELS.speechGenerate, request),
+  cancelSpeech: (id: string) => ipcRenderer.invoke(CHANNELS.speechCancel, id),
+  getSpeechStatus: () => ipcRenderer.invoke(CHANNELS.speechStatus),
 });
 contextBridge.exposeInMainWorld('studio', api);

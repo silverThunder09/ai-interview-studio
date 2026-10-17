@@ -10,7 +10,7 @@
 | 변조·다른 창·하위 프레임 IPC | 송신 webContents와 mainFrame, URL 확인; payload 키·값·개수 검사 | 부정 단위 테스트와 다른 창의 실제 IPC 거절 |
 | 임의 로컬 파일·외부 자산 | custom app protocol의 고정 entry/asset whitelist | traversal·오염 URL 거절 테스트 |
 | 팝업·탐색·다운로드·장치 | 기본 deny; 승인된 음성 입력의 한시적 audio-only 허용은 아래 경계 참조; 외부 shell 링크 미제공 | smoke·부정 테스트 및 코드 검토 |
-| renderer 외부 전송 | production CSP connect/media/frame/default none; 자체 script/style만 허용 | CSP 응답과 실제 fetch 차단 smoke |
+| renderer 외부 전송 | production CSP connect/frame/default none; media는 메모리 blob만 허용; 자체 script/style만 허용 | CSP 응답과 실제 fetch/외부 오디오 차단 smoke |
 | 민감정보 유입 | 선택한 문서만 메모리 검토; 녹음 없음; 키 입력은 아래 외부 API 경계; 테스트는 합성 값; gitignore | diff 및 패키지 내용 검토 |
 
 개발 CSP의 inline script/style와 loopback websocket 허용은 Vite HMR 전용이다. packaged 실행은 환경변수에 개발 URL이 있더라도 무시한다. Windows portable을 포함해 production 실행에는 HTTP 서버가 없다. CSP는 custom protocol 응답과 session 응답 헤더로 적용하며 `bypassCSP`를 사용하지 않는다. `session.fetch`는 webRequest 헤더 변경을 반영하지 않을 수 있으므로 protocol 응답에도 명시한다. 앱이 시작 시 보안 초기화나 화면 로드에 실패하면 한국어 오류와 실패 종료를 제공한다.
@@ -66,6 +66,14 @@ DB는 Electron 내장 `node:sqlite`로 사용자 profile의 `interviews.sqlite`�
 전사 요청은 30초·응답 64KiB·실행당 최대 36회(실패/취소/수동 재시도 포함), 동시 하나로 제한하며 기존 질문 생성 한도와 별도로 표시한다. 자동 재시도/공급자 대체는 없다. 오류 원문과 키는 반환하지 않는다. 키 변경/취소/화면 이탈/종료는 abort하고 늦은 응답을 폐기한다. 질문 변경/세션 삭제는 진행 중 전사를 취소하며 결과 반환 전에도 원래 미답변 질문을 재검증한다.
 
 전사 결과는 별도 검토란에 표시하고 기존 입력을 덮어쓰지 않는다. 사용자가 직접 적용하고 기존 입력 교체를 확인해야 답변으로 이동하며 저장/질문 생성은 별도 제출·동의가 필요하다. 원본 음성·미적용 전사는 DB·로그·artifact에 저장하지 않고 이탈/폐기 시 참조를 해제한다. OS 메모리 안전 삭제를 보장하지 않는다. 개발/Windows source·packaged smoke는 합성 마이크와 main fetch 대체만 사용하며 실제 기기의 권한/음질/전사 정확도는 사용자 수동 확인으로 남긴다.
+
+## 현재 질문 음성 읽기
+
+2026-10-18 KST 문서 작업 완료 후 사용자의 다음 단계 진행 지시에 따라 제안한 TTS 경계를 구현한다. 별도 UI 동의 전에는 보내지 않으며 개발 중 실제 유료 API·개인 자료를 사용하지 않는다. 전송 미리보기와 실제 DB의 현재 미답변 질문을 main에서 대조하고 고정 `https://api.openai.com/v1/audio/speech`에 질문·모델·기본 제공 voice·MP3 설정만 보낸다. 키는 main 메모리의 OpenAI 키를 header로만 사용한다. 질문 자체에 개인 내용이 포함될 수 있음을 알리고 생성 서비스·과금·보존·데이터를 확인받는다. 다른 생성/전사 동의를 재사용하지 않는다.
+
+질문 1,500자·30초·MP3 8MiB·실행당 별도 36회 상한과 MIME/ID3 길이/연속 MPEG Layer III frame 검사를 적용한다. malformed/과대 출력은 부분 재생 없이 실패하며 원문 오류를 노출하지 않는다. 전체 디코딩/품질은 보증하지 않는다. 요청 중복은 같은 promise/메모리 결과를 재사용하며 내용 충돌은 거절한다. 키 변경/취소/질문 변경/삭제/이탈/종료는 abort하고 늦은 결과를 버린다. 외부 대기 중 DB transaction이나 음성 기록 저장은 없다.
+
+renderer는 main bytes를 `audio/mpeg` Blob URL로만 재생한다. CSP는 `media-src blob:`만 허용하고 임의 HTTP/file 오디오 URL·외부 fetch·카메라·Node 접근은 차단한다. 자동 재생은 없고 재생은 최대 90초, 중지/완료/이탈 시 pause/src 해제·URL revoke·timer/listener 정리를 한다. 메모리 재생은 추가 API 호출이 없으며 모델/voice·질문 변경·폐기 때 bytes를 비운다. 녹음/음성 읽기 전환은 이전 component를 정리하고 답변 제출 중에는 생성/재생하지 않는다. 생성 음성은 파일/SQLite/export에 보존하지 않는다. 테스트는 합성 무음 MP3와 합성 provider 응답으로 실제 Windows 디코딩/중지·녹음 전환을 검증하며 사용자 스피커 품질/실제 요금을 대신하지 않는다.
 
 ## CI와 의존성 검토
 
