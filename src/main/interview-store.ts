@@ -4,7 +4,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import type { InterviewHistory, InterviewQuestion, InterviewSession, InterviewSummary, StartInterviewRequest, SubmitAnswerRequest } from '../shared/interview';
 import { INTERVIEW_LIMITS, isInterviewId, isInterviewQuestion, isStartInterviewRequest } from '../shared/interview';
-import { LocalQuestionProvider, type QuestionProvider } from './questions';
+import { LocalQuestionProvider, type QuestionDraft, type QuestionProvider } from './questions';
 
 export class InterviewStoreError extends Error {}
 interface SessionRow { id: string; created_at: string; status: InterviewSession['status']; reviewed_text: string; sources: string; request_hash: string }
@@ -77,17 +77,23 @@ export class InterviewStore {
     const question: InterviewQuestion = { ...draft, id: randomUUID(), number: sequence + 1 };
     this.database.prepare('INSERT INTO turns(session_id,sequence,question_id,question,answer) VALUES(?,?,?,?,NULL)').run(sessionId, sequence, question.id, JSON.stringify(question));
   }
-  start(request: StartInterviewRequest): InterviewSession {
+  findStart(request: StartInterviewRequest): InterviewSession | null {
     const hash = createHash('sha256').update(JSON.stringify({ text: request.reviewedText, sources: request.sourceSections })).digest('hex');
+    const existing = this.database.prepare('SELECT id,request_hash FROM sessions WHERE request_id=?').get(request.requestId);
+    if (existing) {
+      if (existing.request_hash !== hash) throw new InterviewStoreError('다른 내용으로 같은 시작 요청을 다시 사용할 수 없습니다.');
+      return this.get(String(existing.id));
+    }
+    const count = Number(this.database.prepare('SELECT COUNT(*) AS count FROM sessions').get()?.count);
+    if (count >= INTERVIEW_LIMITS.sessions) throw new InterviewStoreError('기록은 100개까지 저장할 수 있습니다. 필요 없는 기록을 삭제한 뒤 시작해 주세요.');
+    return null;
+  }
+  start(request: StartInterviewRequest, generated?: QuestionDraft): InterviewSession {
     return this.transaction(() => {
-      const existing = this.database.prepare('SELECT id,request_hash FROM sessions WHERE request_id=?').get(request.requestId);
-      if (existing) {
-        if (existing.request_hash !== hash) throw new InterviewStoreError('다른 내용으로 같은 시작 요청을 다시 사용할 수 없습니다.');
-        return this.get(String(existing.id));
-      }
-      const count = Number(this.database.prepare('SELECT COUNT(*) AS count FROM sessions').get()?.count);
-      if (count >= INTERVIEW_LIMITS.sessions) throw new InterviewStoreError('기록은 100개까지 저장할 수 있습니다. 필요 없는 기록을 삭제한 뒤 시작해 주세요.');
-      const question = this.provider.next(request, []);
+      const existing = this.findStart(request);
+      if (existing) return existing;
+      const hash = createHash('sha256').update(JSON.stringify({ text: request.reviewedText, sources: request.sourceSections })).digest('hex');
+      const question = generated ?? this.provider.next(request, []);
       if (!question) throw new Error('Missing first question');
       const id = randomUUID();
       this.database.prepare('INSERT INTO sessions VALUES(?,?,?,?,?,?,?)').run(id, request.requestId, hash, new Date().toISOString(), 'active', request.reviewedText, JSON.stringify(request.sourceSections));
@@ -95,18 +101,25 @@ export class InterviewStore {
       return this.get(id);
     });
   }
-  answer(request: SubmitAnswerRequest): InterviewSession {
+  prepareAnswer(request: SubmitAnswerRequest): { session: InterviewSession; pending: boolean } {
+    const session = this.get(request.sessionId);
+    const turn = session.turns.find((item) => item.question.id === request.questionId);
+    if (!turn) throw new InterviewStoreError('현재 면접의 질문이 아닙니다. 기록을 다시 열어 주세요.');
+    if (turn.answer !== null) {
+      if (turn.answer !== request.answer) throw new InterviewStoreError('이미 저장된 답변입니다. 기록을 다시 열어 주세요.');
+      return { session, pending: false };
+    }
+    if (session.status !== 'active' || turn !== session.turns.at(-1)) throw new InterviewStoreError('현재 답변할 질문이 아닙니다.');
+    return { session, pending: true };
+  }
+  answer(request: SubmitAnswerRequest, generated?: { next: QuestionDraft | null }): InterviewSession {
     return this.transaction(() => {
-      const session = this.get(request.sessionId);
-      const turn = session.turns.find((item) => item.question.id === request.questionId);
-      if (!turn) throw new InterviewStoreError('현재 면접의 질문이 아닙니다. 기록을 다시 열어 주세요.');
-      if (turn.answer !== null) {
-        if (turn.answer !== request.answer) throw new InterviewStoreError('이미 저장된 답변입니다. 기록을 다시 열어 주세요.');
-        return session; // exact retry is safe and cannot advance a second time
-      }
-      if (session.status !== 'active' || turn !== session.turns.at(-1)) throw new InterviewStoreError('현재 답변할 질문이 아닙니다.');
+      const { session, pending } = this.prepareAnswer(request);
+      if (!pending) return session;
+      const turn = session.turns.at(-1)!;
       turn.answer = request.answer;
-      const next = this.provider.next(session, session.turns);
+      const next = generated ? generated.next : this.provider.next(session, session.turns);
+      if ((!next && session.turns.length !== INTERVIEW_LIMITS.turns) || (next && session.turns.length >= INTERVIEW_LIMITS.turns)) throw new Error('Invalid question transition');
       this.database.prepare('UPDATE turns SET answer=? WHERE session_id=? AND question_id=? AND answer IS NULL').run(request.answer, session.id, request.questionId);
       if (next) this.addQuestion(session.id, next, session.turns.length);
       else this.database.prepare("UPDATE sessions SET status='completed' WHERE id=?").run(session.id);

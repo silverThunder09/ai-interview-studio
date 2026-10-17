@@ -6,6 +6,7 @@ export const CHANNELS = {
   interviewHistory: 'studio:interview-history', interviewGet: 'studio:interview-get',
   interviewStart: 'studio:interview-start', interviewAnswer: 'studio:interview-answer',
   interviewDelete: 'studio:interview-delete', interviewDeleteAll: 'studio:interview-delete-all',
+  interviewCancel: 'studio:interview-cancel',
 } as const;
 export const THEMES = ['system', 'light', 'dark'] as const;
 export type Theme = (typeof THEMES)[number];
@@ -15,7 +16,7 @@ export const DEFAULT_SETTINGS: Readonly<Settings> = Object.freeze({
 });
 export interface Snapshot { version: string; settings: Settings; stage: 'mvp-1-local' }
 export type Result<T> = { ok: true; value: T } | {
-  ok: false; error: { code: 'INVALID_REQUEST' | 'UNAUTHORIZED' | 'UNAVAILABLE'; message: string };
+  ok: false; error: { code: 'INVALID_REQUEST' | 'UNAUTHORIZED' | 'UNAVAILABLE' | 'CANCELLED' | 'TIMEOUT' | 'RATE_LIMITED' | 'AUTHENTICATION'; message: string };
 };
 export interface DesktopAPI {
   getSnapshot(): Promise<Result<Snapshot>>;
@@ -25,6 +26,7 @@ export interface DesktopAPI {
   getInterview(sessionId: string): Promise<Result<InterviewSession>>;
   startInterview(request: StartInterviewRequest): Promise<Result<InterviewSession>>;
   submitInterviewAnswer(request: SubmitAnswerRequest): Promise<Result<InterviewSession>>;
+  cancelInterviewOperation(operationId: string): Promise<Result<boolean>>;
   deleteInterview(request: DeleteInterviewRequest): Promise<Result<null>>;
   deleteAllInterviews(request: DeleteAllInterviewsRequest): Promise<Result<null>>;
 }

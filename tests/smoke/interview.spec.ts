@@ -72,7 +72,7 @@ test('local practice requires consent, survives restart, preserves failed answer
     fixture.close();
     await page.getByLabel('내 답변', { exact: true }).fill('저장 실패 후에도 남아야 하는 합성 답변');
     await page.getByRole('button', { name: '답변 저장하고 다음 질문', exact: true }).click();
-    await expect(page.getByRole('alert')).toContainText('기록 저장소에 접근하지 못했습니다');
+    await expect(page.getByRole('alert')).toContainText('기록 저장소나 질문 생성에 접근하지 못했습니다');
     await expect(page.getByLabel('내 답변', { exact: true })).toHaveValue('저장 실패 후에도 남아야 하는 합성 답변');
     await expect(page.getByRole('heading', { name: '질문 2', exact: true })).toBeVisible();
     const recovery = new DatabaseSync(databaseFile); recovery.exec('DROP TRIGGER synthetic_write_failure'); recovery.close();

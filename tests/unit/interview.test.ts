@@ -41,14 +41,18 @@ describe('interview IPC input and consent', () => {
     expect(isDeleteAllInterviewsRequest({ confirm: 'DELETE_ALL_INTERVIEWS' })).toBe(true);
     expect(isDeleteAllInterviewsRequest({ confirm: true })).toBe(false);
   });
-  it('validates before opening any database and redacts implementation errors', () => {
+  it('validates before opening any database and redacts implementation errors', async () => {
     let opened = 0;
     const handlers = createInterviewHandlers(() => { opened++; throw new Error('/private/synthetic-secret'); });
-    expect(handlers.start([{ ...startFixture(), storageConsent: false }])).toMatchObject({ ok: false, error: { code: 'INVALID_REQUEST' } });
+    expect(await handlers.start([{ ...startFixture(), storageConsent: false }])).toMatchObject({ ok: false, error: { code: 'INVALID_REQUEST' } });
     expect(handlers.history(['extra']).ok).toBe(false);
     expect(handlers.get(['../secret']).ok).toBe(false);
     expect(handlers.deleteAll([{}]).ok).toBe(false);
-    expect(handlers.answer([]).ok).toBe(false);
+    expect((await handlers.answer([])).ok).toBe(false);
+    expect(handlers.cancel(['../secret']).ok).toBe(false);
+    expect(handlers.cancel([]).ok).toBe(false);
+    expect(handlers.cancel([randomUUID(), 'extra']).ok).toBe(false);
+    expect(handlers.cancel([randomUUID()])).toEqual({ ok: true, value: false });
     expect(handlers.delete([{ sessionId: randomUUID(), confirm: false }]).ok).toBe(false);
     expect(opened).toBe(0);
     const failure = handlers.history([]);
