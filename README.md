@@ -1,17 +1,19 @@
 # AI Interview Studio
 
-AI 면접관 프로그램. 개인용 Windows 데스크톱 앱이며 Codex Cloud에서 개발합니다. **현재는 MVP 0**으로 한국어 홈·설정 화면과 실행/검증 기반만 제공합니다. AI 면접, 이력서 업로드, 기록 DB, 음성, 카메라는 아직 구현되지 않았습니다.
+개인용 Windows AI 면접 데스크톱 앱이며 Codex Cloud에서 개발합니다. PDF/DOCX 이력서 검토, 텍스트 연습·로컬 기록, OpenAI·Claude·Gemini 질문 생성과 선택한 음성의 OpenAI 전사를 제공합니다. 질문 음성 읽기·실시간 음성 대화·카메라는 아직 제공하지 않습니다.
+
+검증 결과는 **[최신 테스트 기록](harness/testing/latest.md)**, 과거 결과와 검색 방법은 **[테스트 색인·아카이브](harness/testing/README.md)**에서 확인합니다. 자동 테스트 성공과 실제 사용자 기기/API 확인은 구분합니다.
 
 ## Windows에서 사용
 
 1. PR의 **Windows build** Actions 실행이 성공했는지 확인합니다.
 2. 해당 실행의 `ai-interview-studio-windows-x64` artifact를 내려받아 압축을 풉니다. 다운로드에는 GitHub 로그인이 필요할 수 있습니다.
-3. `AI-Interview-Studio-0.1.0-win-x64.exe`를 실행합니다. 별도 Node.js·DB·웹 서버·API 키는 필요 없습니다.
+3. `AI-Interview-Studio-0.1.0-win-x64.exe`를 실행합니다. 별도 Node.js·DB 서버·웹 서버는 필요 없습니다. 준비된 질문으로 연습할 때는 API 키가 필요 없으며 외부 AI/전사는 본인 키·인터넷·전송 동의가 필요합니다.
 4. 홈 화면과 설정의 테마 변경을 확인하고 앱을 다시 실행해 기본값으로 돌아오는지 확인합니다.
 
 현재 빌드는 미서명 portable이며 Windows에서 실행 경고가 나올 수 있습니다. 신뢰하는 저장소의 CI artifact와 동봉 SHA-256을 확인하세요. 공개 release·자동 업데이트는 없습니다. CI 성공과 실제 사용자 Windows 기기 검증은 별도로 기록합니다. portable 추출/경로·권한과 실제 화면 확인은 수동 확인 항목입니다.
 
-MVP 0 화면은 인터넷 없이 실행됩니다. 개인정보 입력·전송·장치 접근은 제공하지 않으며 설정은 실행 중 메모리에만 유지됩니다. Electron 자체가 runtime 디렉터리와 캐시를 만들 수 있습니다. 향후 외부 AI는 인터넷과 사용량별 API 비용이 필요하며 도입 전에 전송 범위와 비용을 안내합니다.
+기본 화면·문서 검토·준비된 질문 연습은 인터넷 없이 실행됩니다. 동의 후 시작한 면접은 이력서 검토 내용과 질문·답변을 암호화되지 않은 로컬 SQLite 파일에 보관하며 기록 화면에서 삭제할 수 있습니다. 외부 AI/음성 전사는 사용자가 고른 내용만 별도 동의 후 전송하고 서비스 요금·보존 정책이 적용됩니다. API 키와 화면 설정은 실행 중 메모리에만 유지합니다. 마이크는 명시적 음성 입력 시작 후에만 사용하며 카메라는 차단합니다.
 
 ## 클라우드 개발과 검증
 
@@ -30,7 +32,7 @@ Linux 디스플레이가 없는 환경은 `xvfb-run -a npm run test:smoke`를 �
 
 | 명령 | 역할 |
 | --- | --- |
-| `npm run check` | strict typecheck + lint + unit tests |
+| `npm run check` | strict typecheck + lint + unit tests + 리뷰 정책 부정 테스트 |
 | `npm run build` | main/preload/renderer 번들 |
 | `npm run test:smoke` | 실제 Electron UI·보안·IPC smoke |
 | `npm run licenses` | 실제 production npm dependency 라이선스 수집 |
@@ -38,9 +40,9 @@ Linux 디스플레이가 없는 환경은 `xvfb-run -a npm run test:smoke`를 �
 
 ## 구조와 개발 규칙
 
-진입점은 공통 규칙만 담은 [AGENTS.md](AGENTS.md)입니다. main·preload·renderer·shared·tests·CI·harness의 하위 `AGENTS.md`는 해당 작업 영역에서만 읽습니다. [workflow](harness/workflow.md)는 작업/검증/PR 절차, [architecture](harness/architecture.md)는 경계와 MVP 0–4 로드맵, [security](harness/security.md)는 개인정보·Electron·REA·라이선스 검토를 소유합니다. [MVP 1 초안](harness/specs/mvp-01.md)은 다음 단계 승인용입니다.
+진입점은 공통 규칙만 담은 [AGENTS.md](AGENTS.md)입니다. main·preload·renderer·shared·tests·CI·harness의 하위 `AGENTS.md`는 해당 작업 영역에서만 읽습니다. [workflow](harness/workflow.md)는 작업/검증/PR 절차, [architecture](harness/architecture.md)는 경계와 MVP 0–4 로드맵, [security](harness/security.md)는 개인정보·Electron·REA·라이선스 검토를 소유합니다. 기능 범위는 [MVP 1](harness/specs/mvp-01.md)·[MVP 2](harness/specs/mvp-02.md)를, 실제 성공/미검증 기록은 [테스트 색인](harness/testing/README.md)을 참조합니다.
 
-`src/main`은 권한·수명주기, `src/preload`는 좁은 IPC, `src/renderer`는 React UI, `src/shared`는 검증 계약입니다. SQLite와 외부 AI adapter는 필요 시 이후 단계에서 추가합니다. REA는 문서만 검토했으며 설치/활성화되지 않은 개발 도구입니다.
+`src/main`은 권한·수명주기·SQLite·외부 AI/전사 adapter, `src/preload`는 좁은 IPC, `src/renderer`는 React UI, `src/shared`는 검증 계약입니다. REA는 문서만 검토했으며 설치/활성화되지 않은 개발 도구입니다.
 
 Validation workflow는 PR/push에 check와 build를 실행합니다. Windows build workflow는 Windows에서 같은 검증과 실제 Electron smoke를 실행하고, 패키징한 unpacked exe를 다시 검사한 뒤 portable exe·체크섬·notices를 14일 보존합니다. 실제 마이크·webcam·Windows 사용자 기기 테스트를 대신하지 않습니다.
 
