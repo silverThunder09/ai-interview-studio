@@ -115,8 +115,29 @@ test('external AI requires selected context and per-turn consent, uses main-only
     await expect(page.getByRole('alert')).toContainText('인증');
     await expect(page.getByLabel('내 답변', { exact: true })).toHaveValue('실패 후에도 남는 합성 입력');
     await expect(page.getByRole('heading', { name: '질문 2', exact: true })).toBeVisible();
-    await page.getByRole('button', { name: '설정', exact: true }).click();
     const status = await page.evaluate(() => window.studio!.getAIStatus());
     expect(status).toMatchObject({ ok: true, value: { providers: [{ provider: 'openai', configured: false }, { provider: 'claude', configured: false }, { provider: 'gemini', configured: false }] } });
+    const recovery = page.getByRole('region', { name: '답변을 유지하며 API 키 재등록', exact: true });
+    await expect(recovery).toBeVisible();
+    await expect(recovery.getByLabel('키를 등록할 서비스', { exact: true })).toHaveValue('openai');
+    await expect(recovery.getByLabel('키를 등록할 서비스', { exact: true })).toBeDisabled();
+    await recovery.getByLabel('API 키 (저장 후 화면에서 비움)', { exact: true }).fill('synthetic-api-key-not-real');
+    await recovery.getByRole('button', { name: '이번 실행에 키 등록', exact: true }).click();
+    await expect(recovery).toHaveCount(0);
+    await expect(page.getByLabel('내 답변', { exact: true })).toHaveValue('실패 후에도 남는 합성 입력');
+    await expect(page.getByRole('heading', { name: '질문 2', exact: true })).toBeVisible();
+    await expect(page.getByRole('status')).toContainText('직접 다시 제출');
+    const afterRegistration = await page.evaluate(() => window.studio!.getAIStatus());
+    expect(afterRegistration).toMatchObject({ ok: true, value: { remainingRequests: 36 } });
+    await page.getByRole('button', { name: '답변 저장하고 다음 질문', exact: true }).click();
+    await expect(page.getByRole('heading', { name: '질문 3', exact: true })).toBeVisible();
+    const saved = await page.evaluate(async () => {
+      const history = await window.studio!.getInterviewHistory();
+      if (!history.ok || history.value.sessions.length !== 1) throw new Error('Expected synthetic history');
+      const session = await window.studio!.getInterview(history.value.sessions[0]!.id);
+      if (!session.ok) throw new Error('Expected synthetic session');
+      return session.value.turns.at(-2)?.answer;
+    });
+    expect(saved).toBe('실패 후에도 남는 합성 입력');
   } finally { await close(); await rm(directory, { recursive: true, force: true }); }
 });

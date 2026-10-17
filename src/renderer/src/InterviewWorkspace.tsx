@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { InterviewSession } from '../../shared/interview';
 import { INTERVIEW_LIMITS } from '../../shared/interview';
 import { AI_NAMES } from '../../shared/ai';
+import { AIKeySettings } from './AIOptions';
 
 export function InterviewWorkspace({ session, onUpdate, onHistory }: {
   session: InterviewSession; onUpdate: (session: InterviewSession) => void; onHistory: () => void;
@@ -11,6 +12,8 @@ export function InterviewWorkspace({ session, onUpdate, onHistory }: {
   const [error, setError] = useState('');
   const [cancelling, setCancelling] = useState(false);
   const [transmissionConsent, setTransmissionConsent] = useState(false);
+  const [needsKey, setNeedsKey] = useState(false);
+  const [notice, setNotice] = useState('');
   const lock = useRef(false);
   const pendingId = useRef<string | undefined>(undefined);
   const live = useRef(true);
@@ -22,13 +25,13 @@ export function InterviewWorkspace({ session, onUpdate, onHistory }: {
   const answered = session.turns.filter((turn) => turn.answer !== null).length;
   async function submit() {
     if (!current || lock.current || !answer.trim() || (session.ai && !transmissionConsent)) return;
-    lock.current = true; pendingId.current = current.question.id; setSaving(true); setError('');
+    lock.current = true; pendingId.current = current.question.id; setSaving(true); setError(''); setNotice('');
     try {
       const result = await window.studio!.submitInterviewAnswer({ sessionId: session.id, questionId: current.question.id, answer, ...(session.ai ? { transmissionConsent: true } : {}) });
       // A save that completed just before navigation still updates the parent
       // snapshot, so returning to the session cannot show the old question.
       if (result.ok) { onUpdate(result.value); if (live.current) { setAnswer(''); setTransmissionConsent(false); } }
-      else if (live.current) setError(result.error.message);
+      else if (live.current) { setError(result.error.message); setNeedsKey(result.error.code === 'AUTHENTICATION'); }
     } catch { if (live.current) setError('답변을 저장하지 못했습니다. 입력한 내용은 유지됩니다. 다시 시도해 주세요.'); }
     finally { lock.current = false; pendingId.current = undefined; if (live.current) { setSaving(false); setCancelling(false); } }
   }
@@ -42,9 +45,11 @@ export function InterviewWorkspace({ session, onUpdate, onHistory }: {
   }
   return <section className="interview-workspace" aria-labelledby="interview-title">
     <p className="eyebrow">{session.ai ? 'EXTERNAL AI INTERVIEW' : 'LOCAL PRACTICE'}</p><h1 id="interview-title">백엔드 텍스트 연습</h1>
-    <p className="muted">{session.ai ? `${AI_NAMES[session.ai.provider]} · ${session.ai.model}에서 생성한 질문입니다. AI 문장은 사실 검증·채용 평가가 아닙니다. 답변 제출 때 전송 범위와 비용을 확인하세요. 재시작 후에는 설정에서 이 서비스의 키를 다시 등록해야 합니다.` : '준비된 질문과 답변 인용으로 진행합니다. AI 분석·평가가 아니며 외부 전송이나 비용은 없습니다.'}</p>
+    <p className="muted">{session.ai ? `${AI_NAMES[session.ai.provider]} · ${session.ai.model}에서 생성한 질문입니다. AI 문장은 사실 검증·채용 평가가 아닙니다. 답변 제출 때 전송 범위와 비용을 확인하세요. 재시작 후 키가 없거나 인증에 실패하면 이 화면에서 키를 다시 등록할 수 있습니다.` : '준비된 질문과 답변 인용으로 진행합니다. AI 분석·평가가 아니며 외부 전송이나 비용은 없습니다.'}</p>
     <div className="session-progress"><span>{answered} / {INTERVIEW_LIMITS.turns}개 답변 저장</span><button className="secondary" disabled={saving} onClick={onHistory}>저장된 기록 보기</button></div>
     {error && <p className="error" role="alert">{error}</p>}
+    {notice && <p role="status">{notice}</p>}
+    {needsKey && session.ai && <section aria-label="답변을 유지하며 API 키 재등록"><p>이 세션의 서비스는 {AI_NAMES[session.ai.provider]}입니다. 키를 다시 등록해도 답변을 자동 전송하지 않습니다.</p><AIKeySettings disabled={saving} fixedProvider={session.ai.provider} onConfigured={() => { setNeedsKey(false); setError(''); setNotice('키를 등록했습니다. 입력한 답변과 전송 범위를 확인하고 직접 다시 제출해 주세요.'); }} /></section>}
     {current ? <article className="question-card" aria-labelledby="current-question-title">
       <span className="tag">{current.question.kind === 'technical' ? '일반 기술 질문' : current.question.kind === 'follow-up' ? '내 답변에 대한 후속 질문' : current.question.evidence ? '이력서 관련 질문' : '일반 경험 질문'}</span>
       <h2 id="current-question-title">질문 {current.question.number}</h2><p className="question-copy">{current.question.text}</p>

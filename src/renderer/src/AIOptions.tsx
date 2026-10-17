@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { AI_CALL_LIMIT, AI_ENDPOINTS, AI_NAMES, AI_PROVIDERS, isAIConfig, type AIInterviewConfig, type AIProvider, type AIStatus } from '../../shared/ai';
 
-export function AIKeySettings({ disabled = false, onStatus }: { disabled?: boolean; onStatus?: (status: AIStatus) => void }) {
-  const [provider, setProvider] = useState<AIProvider>('openai');
+export function AIKeySettings({ disabled = false, onStatus, fixedProvider, onConfigured }: { disabled?: boolean; onStatus?: (status: AIStatus) => void; fixedProvider?: AIProvider; onConfigured?: () => void }) {
+  const [provider, setProvider] = useState<AIProvider>(fixedProvider ?? 'openai');
   const [status, setStatus] = useState<AIStatus>();
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -25,14 +25,14 @@ export function AIKeySettings({ disabled = false, onStatus }: { disabled?: boole
     try {
       const result = clear ? await window.studio!.clearAIKey({ provider }) : await window.studio!.configureAIKey({ provider, key });
       if (!live.current) return;
-      if (result.ok) { setStatus(result.value); onStatus?.(result.value); setMessage(clear ? '키를 비웠습니다.' : '키를 이번 실행에 등록했습니다. 실제 인증·연결은 질문 생성 때 확인합니다.'); }
+      if (result.ok) { setStatus(result.value); onStatus?.(result.value); setMessage(clear ? '키를 비웠습니다.' : '키를 이번 실행에 등록했습니다. 실제 인증·연결은 질문 생성 때 확인합니다.'); if (!clear) onConfigured?.(); }
       else setError(result.error.message);
     } catch { if (live.current) setError('키 설정을 적용하지 못했습니다. 다시 입력해 주세요.'); }
     finally { if (live.current) setBusy(false); }
   }
   return <div className="settings-card ai-keys"><h2>외부 AI API 키</h2>
     <p>키는 앱 실행 중에만 보관하며 종료·창 닫기 시 비웁니다. 재시작 후 다시 입력하세요. 등록만으로 인터넷 요청을 보내지 않습니다.</p>
-    <label htmlFor="key-provider">키를 등록할 서비스</label><select id="key-provider" value={provider} disabled={disabled || busy} onChange={e => { setProvider(e.target.value as AIProvider); if (input.current) input.current.value = ''; setMessage(''); }}>
+    <label htmlFor="key-provider">키를 등록할 서비스</label><select id="key-provider" value={provider} disabled={disabled || busy || !!fixedProvider} onChange={e => { setProvider(e.target.value as AIProvider); if (input.current) input.current.value = ''; setMessage(''); }}>
       {AI_PROVIDERS.map(p => <option key={p} value={p}>{AI_NAMES[p]}</option>)}
     </select>
     <label htmlFor="ai-key">API 키 (저장 후 화면에서 비움)</label><input ref={input} id="ai-key" type="password" autoComplete="off" spellCheck={false} maxLength={512} disabled={disabled || busy} />
