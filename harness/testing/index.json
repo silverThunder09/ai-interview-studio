@@ -1,31 +1,31 @@
 {
   "schema_version": 1,
   "repository": "silverThunder09/ai-interview-studio",
-  "recorded_at_kst": "2026-10-17T23:36:29+09:00",
-  "current_record_id": "tests-2026-10-17-pr19",
+  "recorded_at_kst": "2026-10-18T03:00:33.000+09:00",
+  "current_record_id": "tests-2026-10-18-pr21",
   "notes": [
     "Counts refer to each recorded SHA, not cumulative coverage.",
     "CI uses synthetic documents, provider responses and devices; real paid APIs and user hardware are unverified.",
     "Paths are relative to harness/testing/; historical observations do not authorize future merges."
   ],
   "main_verification": {
-    "head_sha": "a57bd7f23b852ba505b87d6f822cc4dffe89ddbd",
+    "head_sha": "91402798d2609c933f22a4ac8bee0ae550f074ce",
     "result": "passed",
     "validation": {
-      "run_id": 39041054743,
-      "job_id": 117420469843,
+      "run_id": 39055873704,
+      "job_id": 117463611019,
       "attempt": 1,
-      "unit": 186,
+      "unit": 201,
       "review_policy": 40,
-      "url": "https://github.com/silverThunder09/ai-interview-studio/actions/runs/39041054743/job/117420469843"
+      "url": "https://github.com/silverThunder09/ai-interview-studio/actions/runs/39055873704/job/117463611019"
     },
     "windows": {
-      "run_id": 39041054730,
-      "job_id": 117420469888,
+      "run_id": 39055873702,
+      "job_id": 117463610980,
       "attempt": 1,
-      "source_count": 5,
-      "packaged_count": 5,
-      "url": "https://github.com/silverThunder09/ai-interview-studio/actions/runs/39041054730/job/117420469888"
+      "source_count": 6,
+      "packaged_count": 6,
+      "url": "https://github.com/silverThunder09/ai-interview-studio/actions/runs/39055873702/job/117463610980"
     }
   },
   "records": [
@@ -583,11 +583,11 @@
     },
     {
       "id": "tests-2026-10-17-pr19",
-      "status": "current",
+      "status": "archived",
       "date_kst": "2026-10-17",
       "pr": 19,
       "title": "음성 입력·전사·답변 검토",
-      "path": "latest.md",
+      "path": "archive/2026-10-17/tests-2026-10-17-pr19.md",
       "tags": [
         "voice",
         "microphone",
@@ -657,6 +657,110 @@
             "head_sha": "fe4ecaf1007350a5aff6a1756fbb6751d17ddca6",
             "base_sha": "ffcbefabb363df86f30db85f85dbbce8cd357d24",
             "checkout_sha": "a1f04044edce0e342f470f1c16a12c609b0250c1"
+          }
+        }
+      ],
+      "main_verification": {
+        "head_sha": "a57bd7f23b852ba505b87d6f822cc4dffe89ddbd",
+        "result": "passed",
+        "validation": {
+          "run_id": 39041054743,
+          "job_id": 117420469843,
+          "attempt": 1,
+          "unit": 186,
+          "review_policy": 40,
+          "url": "https://github.com/silverThunder09/ai-interview-studio/actions/runs/39041054743/job/117420469843"
+        },
+        "windows": {
+          "run_id": 39041054730,
+          "job_id": 117420469888,
+          "attempt": 1,
+          "source_count": 5,
+          "packaged_count": 5,
+          "url": "https://github.com/silverThunder09/ai-interview-studio/actions/runs/39041054730/job/117420469888"
+        }
+      }
+    },
+    {
+      "id": "tests-2026-10-18-pr21",
+      "status": "current",
+      "date_kst": "2026-10-18",
+      "pr": 21,
+      "title": "질문 음성 읽기·재생/중지",
+      "path": "latest.md",
+      "tags": [
+        "tts",
+        "speech",
+        "openai",
+        "mp3",
+        "playback",
+        "consent",
+        "cleanup"
+      ],
+      "result": "passed",
+      "tested_head_sha": "af50d04ad9f50124c73ecfa129afabff13e1db54",
+      "tested_base_sha": "e32cd07673feb5b857a8732eb9b60f26d19ce43b",
+      "tested_checkout_sha": "a73980269dc609486c7bc02c1ae1082144af0891",
+      "merged_main_sha": "91402798d2609c933f22a4ac8bee0ae550f074ce",
+      "counts": {
+        "unit": 201,
+        "review_policy": 40,
+        "windows_source": 6,
+        "windows_packaged": 6
+      },
+      "evidence": [
+        {
+          "context": "checks",
+          "run_id": 39048702564,
+          "job_id": 117442577157,
+          "url": "https://github.com/silverThunder09/ai-interview-studio/actions/runs/39048702564/job/117442577157",
+          "result": "success",
+          "evidence_step": "success",
+          "attempt": 1,
+          "ci_evidence": {
+            "repository": "silverThunder09/ai-interview-studio",
+            "context": "checks",
+            "run_id": "39048702564",
+            "pr_number": 21,
+            "head_sha": "af50d04ad9f50124c73ecfa129afabff13e1db54",
+            "base_sha": "e32cd07673feb5b857a8732eb9b60f26d19ce43b",
+            "checkout_sha": "a73980269dc609486c7bc02c1ae1082144af0891"
+          }
+        },
+        {
+          "context": "package",
+          "run_id": 39048702429,
+          "job_id": 117442576664,
+          "url": "https://github.com/silverThunder09/ai-interview-studio/actions/runs/39048702429/job/117442576664",
+          "result": "success",
+          "evidence_step": "success",
+          "attempt": 1,
+          "ci_evidence": {
+            "repository": "silverThunder09/ai-interview-studio",
+            "context": "package",
+            "run_id": "39048702429",
+            "pr_number": 21,
+            "head_sha": "af50d04ad9f50124c73ecfa129afabff13e1db54",
+            "base_sha": "e32cd07673feb5b857a8732eb9b60f26d19ce43b",
+            "checkout_sha": "a73980269dc609486c7bc02c1ae1082144af0891"
+          }
+        },
+        {
+          "context": "pr-policy",
+          "run_id": 39055791738,
+          "job_id": 117463376987,
+          "url": "https://github.com/silverThunder09/ai-interview-studio/actions/runs/39055791738/job/117463376987",
+          "result": "success",
+          "evidence_step": "success",
+          "attempt": 1,
+          "ci_evidence": {
+            "repository": "silverThunder09/ai-interview-studio",
+            "context": "pr-policy",
+            "run_id": "39055791738",
+            "pr_number": 21,
+            "head_sha": "af50d04ad9f50124c73ecfa129afabff13e1db54",
+            "base_sha": "e32cd07673feb5b857a8732eb9b60f26d19ce43b",
+            "checkout_sha": "a73980269dc609486c7bc02c1ae1082144af0891"
           }
         }
       ]
