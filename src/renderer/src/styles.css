@@ -116,4 +116,8 @@ summary { cursor: pointer; color: var(--accent); font-size: 13px; }
 .transmission-preview { margin: 20px 0; padding: 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); overflow-wrap: anywhere; }
 .transmission-preview pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; line-height: 1.8; }
 input:focus-visible, select:focus-visible { outline: 3px solid #7979ed; outline-offset: 2px; }
+.voice-input { margin: 20px 0; padding: 20px; border: 1px solid var(--line); border-radius: 10px; }
+.voice-input input:not([type='checkbox']) { width: 100%; padding: 10px; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 8px; font: inherit; }
+.voice-input > .secondary { margin: 8px 12px 8px 0; }
+.voice-input p { font-size: 13px; line-height: 1.8; }
 @media (max-width: 1000px) { .history-list article { align-items: flex-start; flex-direction: column; } }

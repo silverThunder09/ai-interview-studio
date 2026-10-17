@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 import { CHANNELS, type DesktopAPI, type Settings } from '../shared/contracts';
 import type { DeleteAllInterviewsRequest, DeleteInterviewRequest, StartInterviewRequest, SubmitAnswerRequest } from '../shared/interview';
 import type { AIKeyRequest, AIProvider } from '../shared/ai';
+import type { VoiceRequest, VoiceStart } from '../shared/voice';
 
 const api: DesktopAPI = Object.freeze({
   getSnapshot: () => ipcRenderer.invoke(CHANNELS.snapshot),
@@ -17,5 +18,10 @@ const api: DesktopAPI = Object.freeze({
   getAIStatus: () => ipcRenderer.invoke(CHANNELS.aiStatus),
   configureAIKey: (request: AIKeyRequest) => ipcRenderer.invoke(CHANNELS.aiKey, request),
   clearAIKey: (request: { provider: AIProvider }) => ipcRenderer.invoke(CHANNELS.aiClear, request),
+  beginVoice: (request: VoiceStart) => ipcRenderer.invoke(CHANNELS.voiceBegin, request),
+  stopVoice: (id: string) => ipcRenderer.invoke(CHANNELS.voiceStop, id),
+  cancelVoice: (id: string) => ipcRenderer.invoke(CHANNELS.voiceCancel, id),
+  transcribeVoice: (request: VoiceRequest) => ipcRenderer.invoke(CHANNELS.voiceTranscribe, request),
+  getVoiceStatus: () => ipcRenderer.invoke(CHANNELS.voiceStatus),
 });
 contextBridge.exposeInMainWorld('studio', api);

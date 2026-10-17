@@ -8,6 +8,7 @@ import { createInterviewHandlers } from './interview-handlers';
 import { InterviewStore } from './interview-store';
 import { InterviewService } from './interview-service';
 import { AICredentials, createAIHandlers, InterviewProviderRouter } from './external-ai';
+import { createVoiceHandlers, VoiceService } from './voice';
 import { APP_URL, assetPath, DEVELOPMENT_CSP, developmentURL, isTrustedSender, PRODUCTION_CSP } from './policy';
 
 protocol.registerSchemesAsPrivileged([
@@ -23,8 +24,10 @@ async function start(): Promise<void> {
   const store = () => interviewStore ??= new InterviewStore(join(app.getPath('userData'), 'interviews.sqlite'));
   const credentials = new AICredentials();
   const interview = createInterviewHandlers(store, new InterviewService(store, new InterviewProviderRouter(credentials)));
-  const ai = createAIHandlers(credentials, () => interview.cancelPending());
-  app.on('will-quit', () => { interview.close(); credentials.clearAll(); interviewStore?.close(); });
+  const voiceService = new VoiceService(store, credentials);
+  const voice = createVoiceHandlers(voiceService);
+  const ai = createAIHandlers(credentials, () => { interview.cancelPending(); voiceService.cancel(); });
+  app.on('will-quit', () => { voiceService.cancel(); interview.close(); credentials.clearAll(); interviewStore?.close(); });
   const selectResume = createResumeSelector(async () => {
     if (!window) throw new Error('Window unavailable');
     const selected = await dialog.showOpenDialog(window, {
@@ -34,8 +37,12 @@ async function start(): Promise<void> {
     return selected.canceled ? undefined : selected.filePaths[0];
   });
   const browserSession = session.fromPartition('studio'); // in memory, no persistent web storage
-  browserSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
-  browserSession.setPermissionCheckHandler(() => false);
+  browserSession.setPermissionRequestHandler((contents, permission, callback, details) => {
+    const media = 'mediaTypes' in details ? details.mediaTypes : undefined;
+    callback(!!window && contents === window.webContents && voiceService.allows(permission, details.requestingUrl, details.isMainFrame, media, entry, true));
+  });
+  browserSession.setPermissionCheckHandler((contents, permission, _origin, details) =>
+    !!window && contents === window.webContents && voiceService.allows(permission, details.requestingUrl, details.isMainFrame, details.mediaType ? [details.mediaType] : undefined, entry, false));
   browserSession.setDevicePermissionHandler(() => false);
   browserSession.on('will-download', (event) => event.preventDefault());
   browserSession.webRequest.onHeadersReceived((details, callback) => callback({
@@ -57,6 +64,8 @@ async function start(): Promise<void> {
     [CHANNELS.interviewDelete, interview.delete], [CHANNELS.interviewDeleteAll, interview.deleteAll],
     [CHANNELS.interviewCancel, interview.cancel],
     [CHANNELS.aiStatus, ai.status], [CHANNELS.aiKey, ai.set], [CHANNELS.aiClear, ai.clear],
+    [CHANNELS.voiceBegin, voice.begin], [CHANNELS.voiceStop, voice.stop], [CHANNELS.voiceCancel, voice.cancel],
+    [CHANNELS.voiceTranscribe, voice.transcribe], [CHANNELS.voiceStatus, voice.status],
   ] as const) {
     ipcMain.handle(channel, (event, ...args: unknown[]): Result<unknown> | Promise<Result<unknown>> => {
       const frame = event.senderFrame;
@@ -64,6 +73,7 @@ async function start(): Promise<void> {
           !isTrustedSender(frame.url, entry, frame === window.webContents.mainFrame)) {
         return { ok: false, error: { code: 'UNAUTHORIZED', message: '허용되지 않은 요청입니다.' } };
       }
+      if ([CHANNELS.interviewAnswer, CHANNELS.interviewDelete, CHANNELS.interviewDeleteAll].some(value => value === channel)) voiceService.cancel();
       return handle(args);
     });
   }
@@ -81,7 +91,7 @@ async function start(): Promise<void> {
     window.webContents.on('will-navigate', (event) => event.preventDefault());
     window.webContents.on('will-redirect', (event) => event.preventDefault());
     window.webContents.on('will-attach-webview', (event) => event.preventDefault());
-    window.on('closed', () => { interview.cancelPending(); credentials.clearAll(); window = null; });
+    window.on('closed', () => { voiceService.cancel(); interview.cancelPending(); credentials.clearAll(); window = null; });
     void window.loadURL(entry).catch(() => {
       dialog.showErrorBox('시작 실패', '앱 화면을 불러오지 못했습니다. 앱을 다시 실행해 주세요.');
       app.exit(1);

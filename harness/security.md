@@ -9,7 +9,7 @@
 | renderer 코드가 OS 접근 | isolation/sandbox 켬, Node/webview 끔 | Node 부재와 Windows OS sandbox metric을 실제 smoke에서 확인 |
 | 변조·다른 창·하위 프레임 IPC | 송신 webContents와 mainFrame, URL 확인; payload 키·값·개수 검사 | 부정 단위 테스트와 다른 창의 실제 IPC 거절 |
 | 임의 로컬 파일·외부 자산 | custom app protocol의 고정 entry/asset whitelist | traversal·오염 URL 거절 테스트 |
-| 팝업·탐색·다운로드·장치 | 모두 deny, 외부 shell 링크 미제공 | smoke·부정 테스트 및 코드 검토 |
+| 팝업·탐색·다운로드·장치 | 기본 deny; 승인된 음성 입력의 한시적 audio-only 허용은 아래 경계 참조; 외부 shell 링크 미제공 | smoke·부정 테스트 및 코드 검토 |
 | renderer 외부 전송 | production CSP connect/media/frame/default none; 자체 script/style만 허용 | CSP 응답과 실제 fetch 차단 smoke |
 | 민감정보 유입 | 선택한 문서만 메모리 검토; 녹음 없음; 키 입력은 아래 외부 API 경계; 테스트는 합성 값; gitignore | diff 및 패키지 내용 검토 |
 
@@ -54,6 +54,18 @@ DB는 Electron 내장 `node:sqlite`로 사용자 profile의 `interviews.sqlite`�
 호출은 OpenAI `api.openai.com/v1/chat/completions`, Anthropic `api.anthropic.com/v1/messages`, Google `generativelanguage.googleapis.com/v1beta/models/{model}:generateContent`만 허용한다. 모델은 100자 이하 영문자·숫자·점·밑줄·하이픈 ID만 받으며 URL/경로를 받지 않는다. 키는 인증 header만 사용하고 query·body에 넣지 않는다. redirect error, cookie 생략, cache no-store, 도구/웹검색/stream 비활성, 출력 토큰 한도, JSON 구조화 출력과 응답 64KiB 제한을 적용한다. OpenAI store=false는 서비스 자체 보존/이용 정책 부재를 뜻하지 않는다. 부분 출력·거절·tool call·허구 근거·비JSON/과대 응답은 반영하지 않고 원문 오류는 반환하지 않는다.
 
 키나 모델을 자동 선택/검증하지 않으며 사용 가능한 JSON 출력 모델의 ID를 직접 입력한다. 타임아웃·취소·실패도 발생 비용을 되돌리지 못한다. 매 수동 제출은 최대 1회 요청, 실행당 36회 공통 상한이며 키를 비우거나 재등록해도 초기화하지 않는다. 앱 재시작 시 한도는 초기화되므로 화폐 예산 보장으로 표현하지 않는다. 사용자에게 서비스 콘솔의 요금·예산·보존 정책 확인을 안내한다. 테스트 transport는 외부 호출을 대체하며 실제 키·개인 이력서는 테스트/CI에 사용하지 않는다. renderer CSP connect-src none·sandbox·장치 차단은 유지한다.
+
+## 승인된 음성 입력 첫 단계
+
+2026-10-17 KST 사용자가 마이크 녹음·별도 전송 동의 후 OpenAI 전사·검토/명시 적용·기존 답변 제출 및 `specs/mvp-02.md`, architecture, 이 문서 갱신을 승인했다. 실제 개인 음성/유료 개발 호출과 실시간 음성 대화는 제외한다.
+
+정확한 앱 창/메인 프레임/URL의 `beginVoice`가 현재 미답변 질문·작업 ID·마이크 동의를 검증하면 15초 동안 audio-only 권한 경로를 연다. 카메라·혼합 미디어·다른 창/프레임·다른 URL·장치 권한은 계속 거절한다. 녹음 중지·취소·창 종료 시 권한을 닫는다. renderer의 MediaRecorder는 WebM/Opus 한 답변만 메모리에 모으고 60초에 중지하며 8MiB 초과·장치 중단은 부분 성공 없이 폐기한다. 타이머 상한은 비신뢰 renderer 오디오의 실제 재생 길이 증명이 아니다.
+
+중지한 버퍼 → 서비스/모델/길이·크기/과금·보존 고지 → 별도 전송 체크와 사용자 클릭 → 좁은 IPC → main의 8MiB·EBML/WebM header·audio-only Opus track/container 검사 → 고정 `https://api.openai.com/v1/audio/transcriptions` 요청으로 흐른다. 컨테이너 검사는 모든 오디오 packet의 재생 가능성을 보증하지 않는다. 음성·모델·한국어/JSON 설정만 보내고 이력서/기존 질문·답변/경로는 넣지 않는다. 키는 기존 main 메모리 OpenAI 키를 authorization header에만 사용한다. 새 SDK·임의 endpoint·renderer 외부 통신 허용은 없다.
+
+전사 요청은 30초·응답 64KiB·실행당 최대 36회(실패/취소/수동 재시도 포함), 동시 하나로 제한하며 기존 질문 생성 한도와 별도로 표시한다. 자동 재시도/공급자 대체는 없다. 오류 원문과 키는 반환하지 않는다. 키 변경/취소/화면 이탈/종료는 abort하고 늦은 응답을 폐기한다. 질문 변경/세션 삭제는 진행 중 전사를 취소하며 결과 반환 전에도 원래 미답변 질문을 재검증한다.
+
+전사 결과는 별도 검토란에 표시하고 기존 입력을 덮어쓰지 않는다. 사용자가 직접 적용하고 기존 입력 교체를 확인해야 답변으로 이동하며 저장/질문 생성은 별도 제출·동의가 필요하다. 원본 음성·미적용 전사는 DB·로그·artifact에 저장하지 않고 이탈/폐기 시 참조를 해제한다. OS 메모리 안전 삭제를 보장하지 않는다. 개발/Windows source·packaged smoke는 합성 마이크와 main fetch 대체만 사용하며 실제 기기의 권한/음질/전사 정확도는 사용자 수동 확인으로 남긴다.
 
 ## CI와 의존성 검토
 

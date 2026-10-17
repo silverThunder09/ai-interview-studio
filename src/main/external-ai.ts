@@ -13,6 +13,11 @@ export class AICredentials {
   set(provider: AIProvider, key: string): void { this.#keys.set(provider, key); }
   clear(provider: AIProvider): void { this.#keys.delete(provider); }
   clearAll(): void { this.#keys.clear(); }
+  keyForTranscription(): string {
+    const key = this.#keys.get('openai');
+    if (!key) throw new AIQuestionError('AUTHENTICATION');
+    return key;
+  }
   acquire(provider: AIProvider): string {
     const key = this.#keys.get(provider);
     if (!key) throw new AIQuestionError('AUTHENTICATION');
