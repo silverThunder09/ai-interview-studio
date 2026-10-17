@@ -19,7 +19,7 @@ async function start(): Promise<void> {
   const handlers = createHandlers(app.getVersion());
   let interviewStore: InterviewStore | undefined;
   const interview = createInterviewHandlers(() => interviewStore ??= new InterviewStore(join(app.getPath('userData'), 'interviews.sqlite')));
-  app.on('will-quit', () => { interviewStore?.close(); });
+  app.on('will-quit', () => { interview.close(); interviewStore?.close(); });
   const selectResume = createResumeSelector(async () => {
     if (!window) throw new Error('Window unavailable');
     const selected = await dialog.showOpenDialog(window, {
@@ -50,6 +50,7 @@ async function start(): Promise<void> {
     [CHANNELS.interviewHistory, interview.history], [CHANNELS.interviewGet, interview.get],
     [CHANNELS.interviewStart, interview.start], [CHANNELS.interviewAnswer, interview.answer],
     [CHANNELS.interviewDelete, interview.delete], [CHANNELS.interviewDeleteAll, interview.deleteAll],
+    [CHANNELS.interviewCancel, interview.cancel],
   ] as const) {
     ipcMain.handle(channel, (event, ...args: unknown[]): Result<unknown> | Promise<Result<unknown>> => {
       const frame = event.senderFrame;
@@ -74,7 +75,7 @@ async function start(): Promise<void> {
     window.webContents.on('will-navigate', (event) => event.preventDefault());
     window.webContents.on('will-redirect', (event) => event.preventDefault());
     window.webContents.on('will-attach-webview', (event) => event.preventDefault());
-    window.on('closed', () => { window = null; });
+    window.on('closed', () => { interview.cancelPending(); window = null; });
     void window.loadURL(entry).catch(() => {
       dialog.showErrorBox('시작 실패', '앱 화면을 불러오지 못했습니다. 앱을 다시 실행해 주세요.');
       app.exit(1);

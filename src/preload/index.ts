@@ -10,6 +10,7 @@ const api: DesktopAPI = Object.freeze({
   getInterview: (id: string) => ipcRenderer.invoke(CHANNELS.interviewGet, id),
   startInterview: (request: StartInterviewRequest) => ipcRenderer.invoke(CHANNELS.interviewStart, request),
   submitInterviewAnswer: (request: SubmitAnswerRequest) => ipcRenderer.invoke(CHANNELS.interviewAnswer, request),
+  cancelInterviewOperation: (id: string) => ipcRenderer.invoke(CHANNELS.interviewCancel, id),
   deleteInterview: (request: DeleteInterviewRequest) => ipcRenderer.invoke(CHANNELS.interviewDelete, request),
   deleteAllInterviews: (request: DeleteAllInterviewsRequest) => ipcRenderer.invoke(CHANNELS.interviewDeleteAll, request),
 });

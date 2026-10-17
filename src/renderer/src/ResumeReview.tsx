@@ -13,11 +13,15 @@ export function ResumeReview({ onStart }: { onStart: (session: InterviewSession)
   const [notice, setNotice] = useState('');
   const [storageConsent, setStorageConsent] = useState(false);
   const [starting, setStarting] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const startId = useRef<string | undefined>(undefined);
   const startLock = useRef(false);
   const live = useRef(true);
   const active = useRef<AbortController | null>(null);
-  useEffect(() => { live.current = true; return () => { live.current = false; active.current?.abort(); }; }, []);
+  useEffect(() => { live.current = true; return () => {
+    live.current = false; active.current?.abort();
+    if (startLock.current && startId.current) void window.studio?.cancelInterviewOperation(startId.current).catch(() => {});
+  }; }, []);
 
   async function select() {
     if (active.current) return;
@@ -57,7 +61,14 @@ export function ResumeReview({ onStart }: { onStart: (session: InterviewSession)
       if (result.ok) onStart(result.value);
       else setError(result.error.message);
     } catch { if (live.current) setError('연습을 시작하지 못했습니다. 검토 내용은 유지됩니다. 다시 시도해 주세요.'); }
-    finally { startLock.current = false; if (live.current) setStarting(false); }
+    finally { startLock.current = false; if (live.current) { setStarting(false); setCancelling(false); } }
+  }
+  async function cancelStart() {
+    if (!startLock.current || !startId.current || cancelling) return;
+    setCancelling(true);
+    try { const result = await window.studio!.cancelInterviewOperation(startId.current); if (live.current && !result.ok) setError(result.error.message); }
+    catch { if (live.current) setError('취소 요청을 전달하지 못했습니다. 처리 결과를 확인해 주세요.'); }
+    finally { if (live.current) setCancelling(false); }
   }
 
   return <section className="resume-review" aria-labelledby="resume-title">
@@ -78,6 +89,7 @@ export function ResumeReview({ onStart }: { onStart: (session: InterviewSession)
       </div>
     </>}
     {resume && confirmed && <div className="practice-start"><h2>로컬 텍스트 연습 시작</h2><p>이력서 추출 원문·수정본과 이후 질문·답변을 암호화되지 않은 로컬 SQLite 파일에 저장합니다. 앱을 꺼도 유지되며 면접 기록에서 삭제할 수 있습니다. AI 분석·외부 전송·과금은 없습니다.</p><label className="consent"><input type="checkbox" checked={storageConsent} disabled={starting} onChange={(event) => setStorageConsent(event.target.checked)} /> 이력서 검토 내용과 면접 기록의 로컬 저장에 동의합니다.</label><button className="primary" disabled={starting || !storageConsent || busy} onClick={() => void startPractice()}>{starting ? '연습 준비 중…' : '이 내용으로 연습 시작'}</button></div>}
+    {starting && <><button className="secondary" disabled={cancelling} onClick={() => void cancelStart()}>{cancelling ? '취소 요청 중…' : '연습 준비 취소'}</button><p className="hint">이미 완료된 저장은 취소되지 않습니다.</p></>}
     <p className="privacy-note">이력서 원본을 변경하지 않습니다. 문서의 지시문·링크는 실행하지 않습니다. 실제 AI 연결은 별도 동의 후 제공될 예정입니다.</p>
   </section>;
 }
