@@ -22,7 +22,7 @@ test('desktop starts with secure boundaries, Korean UI and ephemeral settings', 
     expect(await page.evaluate(() => ({
       require: typeof Reflect.get(window, 'require'), process: typeof Reflect.get(window, 'process'),
       api: Object.keys(window.studio ?? {}).sort(),
-    }))).toEqual({ require: 'undefined', process: 'undefined', api: ['cancelInterviewOperation', 'clearAIKey', 'configureAIKey', 'deleteAllInterviews', 'deleteInterview', 'getAIStatus', 'getInterview', 'getInterviewHistory', 'getSnapshot', 'selectResume', 'startInterview', 'submitInterviewAnswer', 'updateSettings'] });
+    }))).toEqual({ require: 'undefined', process: 'undefined', api: ['beginVoice', 'cancelInterviewOperation', 'cancelVoice', 'clearAIKey', 'configureAIKey', 'deleteAllInterviews', 'deleteInterview', 'getAIStatus', 'getInterview', 'getInterviewHistory', 'getSnapshot', 'getVoiceStatus', 'selectResume', 'startInterview', 'stopVoice', 'submitInterviewAnswer', 'transcribeVoice', 'updateSettings'] });
     const rendererMetric = await application.evaluate(({ app, BrowserWindow }) => {
       const pid = BrowserWindow.getAllWindows()[0]!.webContents.getOSProcessId();
       return app.getAppMetrics().find((metric) => metric.pid === pid);
@@ -73,10 +73,10 @@ test('desktop starts with secure boundaries, Korean UI and ephemeral settings', 
       } });
       try {
         await other.loadURL('app://studio/index.html');
-        return await other.webContents.executeJavaScript('Promise.all([window.studio.getSnapshot(), window.studio.getInterviewHistory(), window.studio.cancelInterviewOperation("00000000-0000-0000-0000-000000000000"), window.studio.getAIStatus(), window.studio.configureAIKey({provider: "openai", key: "synthetic-api-key-not-real"}), window.studio.clearAIKey({provider: "openai"})])');
+        return await other.webContents.executeJavaScript('Promise.all([window.studio.getSnapshot(), window.studio.getInterviewHistory(), window.studio.cancelInterviewOperation("00000000-0000-0000-0000-000000000000"), window.studio.getAIStatus(), window.studio.configureAIKey({provider: "openai", key: "synthetic-api-key-not-real"}), window.studio.clearAIKey({provider: "openai"}), window.studio.getVoiceStatus(), window.studio.beginVoice({}), window.studio.transcribeVoice({}), window.studio.stopVoice("00000000-0000-0000-0000-000000000000"), window.studio.cancelVoice("00000000-0000-0000-0000-000000000000")])');
       } finally { other.destroy(); }
     });
-    expect(unauthorized).toHaveLength(6);
+    expect(unauthorized).toHaveLength(11);
     for (const result of unauthorized) expect(result).toMatchObject({ ok: false, error: { code: 'UNAUTHORIZED' } });
 
     await page.getByRole('button', { name: '시작하기', exact: true }).click();
