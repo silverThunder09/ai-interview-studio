@@ -49,7 +49,9 @@ test('local practice requires consent, survives restart, preserves failed answer
       await expect(page.getByRole('heading', { name: '질문 1', exact: true })).toBeVisible();
     }
     await startFromResume();
-    await expect(page.getByText('준비된 질문과 답변 인용으로 진행합니다.', { exact: false })).toContainText('AI 분석·평가가 아니며');
+    const localNotice = page.getByText('기본 질문은 준비된 질문과 답변 인용이며', { exact: false });
+    await expect(localNotice).toContainText('AI 분석·평가가 아닙니다.');
+    await expect(localNotice).toContainText('별도로 선택하는 음성 입력·읽기는 OpenAI 전송과 비용이 발생할 수 있습니다.');
     await expect(page.locator('.question-card blockquote')).toContainText('추출 원문 · 단락 1');
     const initial = await page.evaluate(async () => {
       const history = await window.studio!.getInterviewHistory();
