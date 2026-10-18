@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { AI_CALL_LIMIT, AI_ENDPOINTS, AI_PROVIDERS, isAIConfig, isAIKeyRequest, type AIProvider } from '../../src/shared/ai';
+import { AI_CALL_LIMIT, AI_ENDPOINTS, AI_PROVIDERS, isAIConfig, isAIKeyRequest, isAIModelId, type AIProvider } from '../../src/shared/ai';
 import { isStartInterviewRequest } from '../../src/shared/interview';
 import { AICredentials, createAIHandlers, createExternalTransport, InterviewProviderRouter } from '../../src/main/external-ai';
 import { AIQuestionProvider, type AIQuestionPayload } from '../../src/main/ai-question-provider';
@@ -28,6 +28,16 @@ function store(file?: string) { const dir = mkdtempSync(join(tmpdir(), 'studio-a
 afterEach(() => { for (const s of stores.splice(0)) s.close(); for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }); });
 
 describe('write-only credentials and consent validation', () => {
+  it('rejects display labels and malformed model IDs without changing the accepted API ID contract', () => {
+    for (const model of ['synthetic-model', 'model_v1.2', 'a'.repeat(100)]) {
+      expect(isAIModelId(model)).toBe(true);
+      expect(isAIConfig({ ...config(), model })).toBe(true);
+    }
+    for (const model of ['', 'Gemini 3.8 Flash', ' model', 'model ', '-model', 'models/model', 'a'.repeat(101), null, 123]) {
+      expect(isAIModelId(model)).toBe(false);
+      expect(isAIConfig({ ...config(), model })).toBe(false);
+    }
+  });
   it('rejects arbitrary hosts, extra keys, missing consent, invented quotes and header injection', () => {
     expect(isAIConfig(config())).toBe(true);
     expect(isAIKeyRequest({ provider: 'claude', key })).toBe(true);

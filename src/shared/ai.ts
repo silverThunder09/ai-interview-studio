@@ -16,9 +16,12 @@ export function exactRecord(value: unknown, keys: string[]): value is Record<str
   return typeof value === 'object' && value !== null && !Array.isArray(value) && Object.keys(value).length === keys.length && keys.every(k => Object.hasOwn(value, k));
 }
 export function isAIProvider(value: unknown): value is AIProvider { return AI_PROVIDERS.some(p => p === value); }
+export function isAIModelId(value: unknown): value is string {
+  return typeof value === 'string' && /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,99}$/.test(value);
+}
 export function isAIConfig(value: unknown): value is AIInterviewConfig {
   return exactRecord(value, ['provider', 'model', 'quote', 'transmissionConsent']) && isAIProvider(value.provider) &&
-    typeof value.model === 'string' && /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,99}$/.test(value.model) &&
+    isAIModelId(value.model) &&
     typeof value.quote === 'string' && value.quote.trim().length > 0 && value.quote.length <= 180 && !value.quote.includes('\0') && value.transmissionConsent === true;
 }
 export function isAIKeyRequest(value: unknown): value is AIKeyRequest {
