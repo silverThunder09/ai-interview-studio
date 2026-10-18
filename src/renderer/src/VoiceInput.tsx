@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { VOICE_ENDPOINT, VOICE_LIMITS, VOICE_MIME } from '../../shared/voice';
 import { VoiceRecorder } from './voice-recorder';
-import { AIKeySettings } from './AIOptions';
+import { AIConnectionSummary } from './AIOptions';
 
 type Phase = 'idle' | 'permission' | 'recording' | 'review' | 'transcribing' | 'transcript';
 export function VoiceInput({ sessionId, questionId, answer, answerLimit, onApply, onBusy }: {
@@ -81,7 +81,7 @@ export function VoiceInput({ sessionId, questionId, answer, answerLimit, onApply
     <h3>음성으로 답변 입력</h3>
     <p>한 답변을 녹음한 뒤 OpenAI로 전사하고 직접 검토합니다. 원본 음성은 저장하지 않습니다. 질문 생성 서비스와 별도이며 텍스트 연습에서도 전사에는 인터넷·OpenAI 키가 필요합니다.</p>
     {error && <p role="alert" className="error">{error}</p>}
-    {phase === 'idle' && <><AIKeySettings fixedProvider="openai" onConfigured={() => void refresh()} /><label htmlFor="voice-model">음성 전사 모델 ID (OpenAI 콘솔에서 확인)</label><input id="voice-model" maxLength={100} value={model} onChange={e => { setModel(e.target.value); setTransmissionConsent(false); }} />
+    {phase === 'idle' && <><AIConnectionSummary fixedProvider="openai" onConfigured={() => void refresh()} /><label htmlFor="voice-model">음성 전사 모델 ID (OpenAI 콘솔에서 확인)</label><input id="voice-model" maxLength={100} value={model} onChange={e => { setModel(e.target.value); setTransmissionConsent(false); }} />
       <label className="consent"><input type="checkbox" checked={microphoneConsent} onChange={e => setMicrophoneConsent(e.target.checked)} /> 이 답변을 위해 마이크를 사용하고 음성을 메모리에서 준비하는 데 동의합니다.</label>
       <button className="secondary" disabled={!microphoneConsent || !/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,99}$/.test(model)} onClick={() => void start()}>녹음 시작</button></>}
     {phase === 'permission' && <p role="status">마이크 권한을 확인하는 중입니다.</p>}

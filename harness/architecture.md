@@ -6,12 +6,12 @@ Windows 우선 개인용 데스크톱 앱. Electron + React + strict TypeScript 
 
 | 경계 | 책임 | 제한 |
 | --- | --- | --- |
-| `src/main` | 수명주기, 리소스 제공, 권한, IPC, 메모리 설정·키, 고정 공급자 API | 선택 대화상자를 거친 파일 한 개만 제한적으로 읽기; 임의 경로·shell·URL API 미제공 |
+| `src/main` | 수명주기, 리소스 제공, 권한, IPC, 로컬 설정·OS 보호 키, 고정 공급자 API | 선택 대화상자를 거친 파일 한 개만 제한적으로 읽기; 임의 경로·shell·URL API 미제공 |
 | `src/preload` | 설정·이력서 선택·면접 시작/답변·기록 조회/삭제의 좁은 `window.studio` API | ipcRenderer 원본이나 범용 invoke 미노출 |
 | `src/renderer` | 한국어 화면, 상태·오류·테마 표시 | Node·파일·저장된 API 키 조회 없음; 비밀번호 입력을 main으로 일회 전달 후 즉시 비움 |
 | `src/shared` | 타입, 채널, 설정 검증 계약 | Electron/React 의존 없음 |
 
-설정은 `locale: ko-KR`, `interviewRole: backend`, `theme: system|light|dark`만 포함한다. main 메모리가 원본이고 변경은 완전한 객체 검증 후 적용한다. 앱 종료 시 초기화한다. 재시작 후 보존한다고 표현하지 않는다. Electron 자체 runtime 캐시·설정 디렉터리 생성 가능성과 제품 개인정보 저장 기능은 별개다.
+설정은 `locale: ko-KR`, `interviewRole: backend`, `theme: system|light|dark`만 포함한다. main이 설정을 검증하고 `LocalSettings`가 사용자 profile의 `settings.json`에 원자적으로 보관한다. 테마와 별도의 서비스별 모델 선택을 재시작 후 복원한다. 이력서·답변·전송 동의는 설정 파일에 넣지 않는다. Electron 자체 runtime 캐시·설정 디렉터리 생성 가능성과 제품 개인정보 저장 기능은 별개다.
 
 성공/실패는 판별 가능한 `Result<T>`로 반환하고 renderer는 오류와 재시도를 제공한다. 창·메인 프레임·정확한 URL을 모두 확인한다. 자산 경로는 index와 생성된 assets 이름만 허용한다. 팝업·탐색·webview·장치·다운로드는 차단한다. 상세 위협 모델과 출처는 security 문서를 따른다.
 
@@ -48,11 +48,11 @@ Electron에 내장된 `node:sqlite`를 main의 저장 adapter에서 사용한다
 2026-10-17 KST 사용자는 “외부 api쓸수있게 해줘 … claude,gemini,openai”라고 요청했다. 실제 계정·모델·키는 앱에서 사용자가 선택하며 개발 검증에는 합성 응답만 쓴다. 이 요청은 정책·CI·권한 변경, 실제 유료 검증, 새 음성/영상 기능을 승인하지 않는다.
 
 - `external-ai.ts`의 OpenAI Chat Completions, Claude Messages, Gemini generateContent REST adapter가 main의 native fetch만 사용한다. 새 SDK·의존성·backend·로컬 모델은 없다. 임의 endpoint나 프록시는 받지 않는다.
-- 키 등록은 비밀번호 입력 → 좁은 IPC → main 메모리의 write-only 보관이다. 입력은 즉시 비우고 저장된 키를 renderer에 반환하지 않는다. 앱/창 종료와 명시적 비우기로 참조를 해제한다. 디스크 저장/OS 자격증명 보존은 이번 범위에 없다.
+- 키 등록은 별도 설정 창의 비밀번호 입력 → 좁은 IPC → main의 write-only 보관이다. 입력은 즉시 비우고 저장된 키를 renderer에 반환하지 않는다. 2026-10-18 KST 사용자의 UI 개선·외부 API 입력 분리·재실행 보존 요청에 따라 선택한 키를 Electron safeStorage로 암호화해 `settings.json`에 보관한다. 암호화 불가/기본 평문 backend는 보존을 거절한다. 키 삭제는 디스크 저장본을 성공적으로 갱신한 후 메모리에도 반영하며 종료 시에는 메모리 참조만 해제한다.
 - 기본은 기존 비모델 로컬 연습이다. 외부 API 선택 시 서비스 키·모델 ID·검토본에 실제 포함된 짧은 구절·첫 전송 동의·별도 로컬 저장 동의가 있어야 시작한다. 매 답변 제출에도 해당 요청의 전송/과금 확인이 필요하다.
 - `InterviewService`가 DB 밖에서 기다리고 취소/30초/종료 후 늦은 응답을 버린다. 성공한 질문과 답변 전이는 SQLite에 원자적으로 저장한다. schema 2는 nullable AI 설정만 추가하고 schema 1 기록/기존 요청 hash를 보존한다. 공급자·모델은 세션에 고정하고 키는 저장하지 않는다.
 - 요청당 출력 최대 600토큰·응답 64KiB·30초, 세션 12문항, 실행당 최대 36요청(실패·취소·수동 재시도 포함), AI 답변 2,000자. 금액 상한을 보증하지 않으며 서비스 콘솔의 예산/과금/보존 확인을 안내한다. 자동 재시도·다른 공급자/로컬 질문으로의 대체는 없다.
-- 키 없는 재시작은 기존 질문을 읽을 수 있으나 새 생성은 인증 오류로 멈춘다. 외부 공급자·모델의 실제 권한/과금/생성 품질은 미검증이며 Windows smoke도 합성 요청/응답만 검증한다. 상세 전송/실패 AC는 `specs/mvp-01.md`, 위협 통제는 `security.md`를 따른다.
+- 저장한 키는 재시작 시 main에서 복원하고, 저장하지 않았거나 복호화할 수 없는 키는 다시 입력한다. 키 없는 재시작은 기존 질문을 읽을 수 있으나 새 생성은 인증 오류로 멈춘다. 외부 공급자·모델의 실제 권한/과금/생성 품질은 미검증이며 Windows smoke도 합성 요청/응답만 검증한다. 상세 전송/실패 AC는 `specs/mvp-01.md`, 위협 통제는 `security.md`를 따른다.
 
 ### MVP 2 — 음성 입력·질문 읽기 구현 및 자동 검증 완료
 
@@ -90,3 +90,9 @@ Electron에 내장된 `node:sqlite`를 main의 저장 adapter에서 사용한다
 - 자동 검증: 합성 transcript로 rubric·근거 연결, 허구 인용 거절, export path·실패·취소·삭제, 저장소 회귀.
 - Windows 수동: 긴 한국어 기록·내보내기·권한 오류·삭제·재시작 확인.
 - 보안·개인정보: 보고서 민감정보·export 고지, 외부 평가 전송 동의/비용, 근거와 AI 추정의 표시 확인.
+
+## 설정 UI와 보존 경계
+
+연결 설정은 native modal dialog로 분리해 키/모델 입력을 면접 폼에서 제거한다. 면접 화면은 선택된 서비스·모델과 설정 진입점만 보여주고, 설정을 열어도 검토본/작성 중 답변 component를 유지한다. 설정을 열면 음성 component를 정리해 녹음 트랙/재생/미적용 전사와 요청을 폐기하고, 닫아도 자동 재개하지 않는다. native dialog의 초점 격리·Escape·닫기 후 초점 복원을 사용한다. 저장된 연결 정보는 전송 동의를 대체하지 않으며 기존 세션의 공급자/모델도 바꾸지 않는다.
+
+main의 `LocalSettings`는 버전·허용 키·32KiB 파일 상한을 검사한다. 같은 디렉터리의 독점 생성 임시 파일을 flush/rename하고 성공 후 메모리를 반영한다. 충돌·권한·손상 시 기존 파일과 설정을 보존하고 정형 오류를 반환한다. 설정/자격증명은 SQLite와 분리한다. Windows DPAPI 보호는 같은 OS 계정의 악성 앱에 대한 격리가 아니다. 보존 범위는 테마·질문 생성 서비스별 모델·선택한 API 키이며 음성 모델/voice, 미제출 답변, 녹음, 전송 동의의 추가 보존은 포함하지 않는다.

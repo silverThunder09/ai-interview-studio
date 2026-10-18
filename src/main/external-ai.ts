@@ -1,15 +1,24 @@
 import type { Result } from '../shared/contracts';
-import { AI_CALL_LIMIT, AI_ENDPOINTS, AI_PROVIDERS, exactRecord, isAIKeyRequest, isAIProvider, type AIProvider, type AIStatus } from '../shared/ai';
+import { AI_CALL_LIMIT, AI_ENDPOINTS, AI_PROVIDERS, exactRecord, isAIKeyRequest, isAIProvider, isAIPreferences, type AIProvider, type AIStatus } from '../shared/ai';
+import type { LocalSettings } from './local-settings';
 import type { AIQuestionPayload, AIQuestionTransport, AITransportResult } from './ai-question-provider';
 import { AIQuestionError, AIQuestionProvider } from './ai-question-provider';
 import type { AsyncInterviewProvider } from './interview-service';
 import { LocalQuestionProvider } from './questions';
 
-// Keys are write-only across IPC, process-memory only, never stored in SQLite.
+// Keys are write-only across IPC. Optional OS-encrypted persistence stays in main.
 export class AICredentials {
   #keys = new Map<AIProvider, string>();
   private used = 0;
-  status(): AIStatus { return { providers: AI_PROVIDERS.map(provider => ({ provider, configured: this.#keys.has(provider) })), remainingRequests: AI_CALL_LIMIT - this.used }; }
+  constructor(private readonly persistence?: LocalSettings) {
+    const restored = persistence?.restore();
+    for (const provider of AI_PROVIDERS) { const key = restored?.[provider]; if (key) this.#keys.set(provider, key); }
+  }
+  status(): AIStatus { return { providers: AI_PROVIDERS.map(provider => ({ provider, configured: this.#keys.has(provider), ...(this.persistence ? { saved: this.persistence.saved(provider) } : {}) })), remainingRequests: AI_CALL_LIMIT - this.used,
+    ...(this.persistence ? { storage: this.persistence.status(), preferences: this.persistence.preferences() } : {}) }; }
+  persistKey(provider: AIProvider, key: string, remember: boolean): void { this.persistence?.setKey(provider, key, remember); }
+  removeSavedKey(provider: AIProvider): void { this.persistence?.clearKey(provider); }
+  updatePreferences(value: import('../shared/ai').AIPreferences): void { if (!this.persistence) throw new Error('Storage unavailable'); this.persistence.updatePreferences(value); }
   set(provider: AIProvider, key: string): void { this.#keys.set(provider, key); }
   clear(provider: AIProvider): void { this.#keys.delete(provider); }
   clearAll(): void { this.#keys.clear(); }
@@ -28,15 +37,22 @@ export class AICredentials {
 export function createAIHandlers(credentials: AICredentials, cancel: () => void) {
   const invalid = (): Result<never> => ({ ok: false, error: { code: 'INVALID_REQUEST', message: 'AI 설정 형식을 확인해 주세요.' } });
   const success = (): Result<AIStatus> => ({ ok: true, value: credentials.status() });
+  const failed = (): Result<never> => ({ ok: false, error: { code: 'UNAVAILABLE', message: '설정을 저장하지 못했습니다. OS 암호화 지원과 저장 권한을 확인해 주세요. 기존 설정은 유지됩니다.' } });
   return {
     status(args: unknown[]) { return args.length ? invalid() : success(); },
     set(args: unknown[]) {
       if (args.length !== 1 || !isAIKeyRequest(args[0])) return invalid();
+      try { credentials.persistKey(args[0].provider, args[0].key, args[0].remember === true); } catch { return failed(); }
       cancel(); credentials.set(args[0].provider, args[0].key); return success();
     },
     clear(args: unknown[]) {
       if (args.length !== 1 || !exactRecord(args[0], ['provider']) || !isAIProvider(args[0].provider)) return invalid();
+      try { credentials.removeSavedKey(args[0].provider); } catch { return failed(); }
       cancel(); credentials.clear(args[0].provider); return success();
+    },
+    preferences(args: unknown[]) {
+      if (args.length !== 1 || !isAIPreferences(args[0])) return invalid();
+      try { credentials.updatePreferences(args[0]); return success(); } catch { return failed(); }
     },
   };
 }

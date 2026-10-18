@@ -1,14 +1,17 @@
 import { _electron as electron, expect, test } from '@playwright/test';
-import { resolve } from 'node:path';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 
-test('desktop starts with secure boundaries, Korean UI and ephemeral settings', async () => {
+test('desktop starts with secure boundaries, Korean UI and persistent settings', async () => {
+  const profile = await mkdtemp(join(tmpdir(), 'studio-desktop-'));
   const env = Object.fromEntries(Object.entries(process.env).filter((item): item is [string, string] => typeof item[1] === 'string'));
   delete env.ELECTRON_RUN_AS_NODE;
   if (process.env.SMOKE_EXECUTABLE) env.ELECTRON_RENDERER_URL = 'https://example.invalid';
   const options = {
     chromiumSandbox: true,
     ...(process.env.SMOKE_EXECUTABLE ? { executablePath: resolve(process.env.SMOKE_EXECUTABLE) } : {}),
-    args: [...(process.env.SMOKE_EXECUTABLE ? [] : ['.']), '--use-fake-device-for-media-stream'], env,
+    args: [...(process.env.SMOKE_EXECUTABLE ? [] : ['.']), `--user-data-dir=${profile}`, '--use-fake-device-for-media-stream'], env,
   };
   const application = await electron.launch(options);
   try {
@@ -22,7 +25,7 @@ test('desktop starts with secure boundaries, Korean UI and ephemeral settings', 
     expect(await page.evaluate(() => ({
       require: typeof Reflect.get(window, 'require'), process: typeof Reflect.get(window, 'process'),
       api: Object.keys(window.studio ?? {}).sort(),
-    }))).toEqual({ require: 'undefined', process: 'undefined', api: ['beginVoice', 'cancelInterviewOperation', 'cancelSpeech', 'cancelVoice', 'clearAIKey', 'configureAIKey', 'deleteAllInterviews', 'deleteInterview', 'generateSpeech', 'getAIStatus', 'getInterview', 'getInterviewHistory', 'getSnapshot', 'getSpeechStatus', 'getVoiceStatus', 'selectResume', 'startInterview', 'stopVoice', 'submitInterviewAnswer', 'transcribeVoice', 'updateSettings'] });
+    }))).toEqual({ require: 'undefined', process: 'undefined', api: ['beginVoice', 'cancelInterviewOperation', 'cancelSpeech', 'cancelVoice', 'clearAIKey', 'configureAIKey', 'deleteAllInterviews', 'deleteInterview', 'generateSpeech', 'getAIStatus', 'getInterview', 'getInterviewHistory', 'getSnapshot', 'getSpeechStatus', 'getVoiceStatus', 'selectResume', 'startInterview', 'stopVoice', 'submitInterviewAnswer', 'transcribeVoice', 'updateAIPreferences', 'updateSettings'] });
     const rendererMetric = await application.evaluate(({ app, BrowserWindow }) => {
       const pid = BrowserWindow.getAllWindows()[0]!.webContents.getOSProcessId();
       return app.getAppMetrics().find((metric) => metric.pid === pid);
@@ -73,12 +76,13 @@ test('desktop starts with secure boundaries, Korean UI and ephemeral settings', 
       } });
       try {
         await other.loadURL('app://studio/index.html');
-        return await other.webContents.executeJavaScript('Promise.all([window.studio.getSnapshot(), window.studio.getInterviewHistory(), window.studio.cancelInterviewOperation("00000000-0000-0000-0000-000000000000"), window.studio.getAIStatus(), window.studio.configureAIKey({provider: "openai", key: "synthetic-api-key-not-real"}), window.studio.clearAIKey({provider: "openai"}), window.studio.getVoiceStatus(), window.studio.beginVoice({}), window.studio.transcribeVoice({}), window.studio.stopVoice("00000000-0000-0000-0000-000000000000"), window.studio.cancelVoice("00000000-0000-0000-0000-000000000000"), window.studio.getSpeechStatus(), window.studio.generateSpeech({}), window.studio.cancelSpeech("00000000-0000-0000-0000-000000000000")])');
+        return await other.webContents.executeJavaScript('Promise.all([window.studio.updateAIPreferences({}), window.studio.getSnapshot(), window.studio.getInterviewHistory(), window.studio.cancelInterviewOperation("00000000-0000-0000-0000-000000000000"), window.studio.getAIStatus(), window.studio.configureAIKey({provider: "openai", key: "synthetic-api-key-not-real"}), window.studio.clearAIKey({provider: "openai"}), window.studio.getVoiceStatus(), window.studio.beginVoice({}), window.studio.transcribeVoice({}), window.studio.stopVoice("00000000-0000-0000-0000-000000000000"), window.studio.cancelVoice("00000000-0000-0000-0000-000000000000"), window.studio.getSpeechStatus(), window.studio.generateSpeech({}), window.studio.cancelSpeech("00000000-0000-0000-0000-000000000000")])');
       } finally { other.destroy(); }
     });
-    expect(unauthorized).toHaveLength(14);
+    expect(unauthorized).toHaveLength(15);
     for (const result of unauthorized) expect(result).toMatchObject({ ok: false, error: { code: 'UNAUTHORIZED' } });
 
+    await page.getByRole('button', { name: '설정 닫기', exact: true }).click();
     await page.getByRole('button', { name: '시작하기', exact: true }).click();
     await page.screenshot({ path: 'test-results/desktop.png', fullPage: true });
     await page.evaluate(() => { window.open('https://example.invalid'); });
@@ -99,6 +103,6 @@ test('desktop starts with secure boundaries, Korean UI and ephemeral settings', 
   try {
     const page = await restarted.firstWindow();
     await page.getByRole('button', { name: '설정', exact: true }).click();
-    await expect(page.getByRole('button', { name: '시스템', exact: true })).toHaveAttribute('aria-pressed', 'true');
-  } finally { await restarted.close(); }
+    await expect(page.getByRole('button', { name: '다크', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  } finally { await restarted.close(); await rm(profile, { recursive: true, force: true }); }
 });

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { SPEECH_ENDPOINT, SPEECH_LIMITS, SPEECH_VOICES, type SpeechVoice } from '../../shared/speech';
-import { AIKeySettings } from './AIOptions';
+import { AIConnectionSummary } from './AIOptions';
 import { SpeechPlayer } from './speech-player';
 
 export function SpeechOutput({ sessionId, questionId, question, onBusy }: { sessionId: string; questionId: string; question: string; onBusy: (busy: boolean) => void }) {
@@ -38,7 +38,7 @@ export function SpeechOutput({ sessionId, questionId, question, onBusy }: { sess
   return <section className="settings-card voice-input speech-output" aria-label="질문 음성 읽기">
     <h3>질문 음성 읽기</h3><p>OpenAI가 만드는 AI 합성 음성입니다. 질문 생성·음성 전사와 별도 서비스 요청이며, 만들기와 재생은 직접 선택합니다.</p>
     {error && <p role="alert" className="error">{error}</p>}
-    {!cached.current && phase !== 'generating' && <AIKeySettings fixedProvider="openai" onConfigured={() => void refresh()} />}
+    {!cached.current && phase !== 'generating' && <AIConnectionSummary fixedProvider="openai" onConfigured={() => void refresh()} />}
     <label htmlFor="speech-model">음성 읽기 모델 ID (OpenAI 콘솔에서 확인)</label><input id="speech-model" maxLength={100} value={model} disabled={busy} onChange={e => { discard(); setModel(e.target.value); }} />
     <label htmlFor="speech-voice">읽기 음성</label><select id="speech-voice" value={voice} disabled={busy} onChange={e => { discard(); setVoice(e.target.value as SpeechVoice); }}>{SPEECH_VOICES.map(v => <option key={v} value={v}>{v}</option>)}</select>
     <div className="transmission-preview"><h4>질문 전송 미리보기</h4><p>OpenAI · {model || '모델 미선택'} · {voice} · {SPEECH_ENDPOINT}</p><pre>{question}</pre>
