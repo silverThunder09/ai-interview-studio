@@ -28,7 +28,7 @@ test('explicit audio capture and synthetic transcription preserve drafts and req
     const started = await page.evaluate(request => window.studio!.startInterview(request), startFixture()); expect(started.ok).toBe(true);
     await page.getByRole('button', { name: '면접 기록', exact: true }).click(); await page.getByRole('button', { name: '이어하기', exact: true }).click();
     await page.getByLabel('내 답변', { exact: true }).fill('기존에 입력한 합성 답변');
-    await page.getByLabel('음성 입력 사용 (OpenAI 전사)', { exact: true }).check();
+    await page.getByRole('button', { name: '2. 답변 녹음·전사', exact: true }).click();
     const voice = page.getByRole('region', { name: '음성 답변 입력', exact: true });
     await expect(voice.getByRole('button', { name: '녹음 시작', exact: true })).toBeDisabled();
     await voice.getByLabel('API 키 (저장 후 화면에서 비움)', { exact: true }).fill('synthetic-voice-key-not-real');
@@ -57,6 +57,9 @@ test('explicit audio capture and synthetic transcription preserve drafts and req
     const apply = voice.getByRole('button', { name: '답변 입력에 적용', exact: true }); await expect(apply).toBeDisabled();
     await reviewed.fill('직접 수정한 합성 전사'); await voice.getByLabel('현재 입력한 답변을 검토한 전사 내용으로 교체합니다.', { exact: true }).check(); await apply.click();
     await expect(page.getByLabel('내 답변', { exact: true })).toHaveValue('직접 수정한 합성 전사');
+    await expect(page.getByLabel('내 답변', { exact: true })).toBeFocused();
+    await expect(voice).toHaveCount(0);
+    await expect(page.getByRole('button', { name: '3. 답변 검토·제출', exact: true })).toHaveAttribute('aria-pressed', 'true');
     await expect(page.getByRole('heading', { name: '질문 1', exact: true })).toBeVisible();
     await page.getByRole('button', { name: '답변 저장하고 다음 질문', exact: true }).click(); await expect(page.getByRole('heading', { name: '질문 2', exact: true })).toBeVisible();
     expect(await application.evaluate(() => Reflect.get(globalThis, 'syntheticVoiceCalls'))).toBe(2);
