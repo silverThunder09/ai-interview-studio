@@ -14,7 +14,8 @@
 | 과거 | 2026-10-17 | [OpenAI·Claude·Gemini 텍스트 면접](archive/2026-10-17/pr-15.md) | [#15](https://github.com/silverThunder09/ai-interview-studio/pull/15) | 163 / 40 | 4 / 4 |
 | 과거 | 2026-10-17 | [답변을 유지하며 API 키 재등록](archive/2026-10-17/pr-18.md) | [#18](https://github.com/silverThunder09/ai-interview-studio/pull/18) | 163 / 40 | 4 / 4 |
 | 과거 | 2026-10-17 | [음성 입력·전사·답변 검토](archive/2026-10-17/tests-2026-10-17-pr19.md) | [#19](https://github.com/silverThunder09/ai-interview-studio/pull/19) | 186 / 40 | 5 / 5 |
-| 최신 | 2026-10-18 | [질문 음성 읽기·재생/중지](latest.md) | [#21](https://github.com/silverThunder09/ai-interview-studio/pull/21) | 201 / 40 | 6 / 6 |
+| 과거 | 2026-10-18 | [질문 음성 읽기·재생/중지](archive/2026-10-18/tests-2026-10-18-pr21.md) | [#21](https://github.com/silverThunder09/ai-interview-studio/pull/21) | 201 / 40 | 6 / 6 |
+| 최신 | 2026-10-18 | [통합 음성 연습·전사 검토·직접 제출](latest.md) | [#24](https://github.com/silverThunder09/ai-interview-studio/pull/24) | 201 / 40 | 6 / 6 |
 
 각 숫자는 해당 최종 SHA의 성공 실행에서 읽었다. Windows 숫자는 큰 사용자 흐름을 묶은 smoke 개수다. 각 테스트의 assertion 수·코드 커버리지 비율·실제 사용자 환경 성공률은 아니다. 모든 과거 개수를 합산해 현재 테스트 수로 제시하지 않는다.
 
@@ -31,7 +32,7 @@
 
 ## 찾는 방법
 
-- 사람은 위 표에서 기능·PR·날짜로 찾는다. 예: 질문 음성 읽기 → 최신 기록, 음성 입력 → PR #19, PDF → PR #5, 키 재등록 → PR #18.
+- 사람은 위 표에서 기능·PR·날짜로 찾는다. 예: 통합 음성 연습 → 최신 기록, 질문 음성 읽기 → PR #21, 음성 입력 → PR #19, PDF → PR #5, 키 재등록 → PR #18.
 - 텍스트 검색 예: `rg -n '음성|transcription' harness/testing`, `rg -n 'pr18|9ad35898' harness/testing`.
 - 인덱싱 도구는 [index.json](index.json)의 `records`를 읽는다. ID·상태·KST 날짜·PR·태그·문서 경로·검사 SHA·개수·실행 증거를 제공한다. 경로는 이 폴더 기준 상대 경로다.
 - 과거 SHA는 그때의 코드 기준이다. 현재 코드가 달라졌다면 현재 성공 증거로 사용하지 않는다.
@@ -45,6 +46,6 @@
 5. 단순 문서 CI·변경 없는 반복 실행은 앱의 새 기준 버전을 만들지 않는다. 해당 PR 검증 절에 결과를 남긴다. 문서 링크/diff/색인을 검사하고, 앱 코드를 다시 빌드하거나 같은 검사를 무한 반복하지 않는다.
 6. 로그/artifact는 삭제·만료될 수 있다. 실행/PR/commit 링크와 검증 당시 추출한 SHA·숫자·CI 증거를 이 문서와 JSON에 보존한다. 이 사본은 당시 관측 기록이며 GitHub 서명이나 미래 머지의 승인 근거를 대신하지 않는다. 실제 머지 시에는 항상 최신 API/로그 증거를 새로 확인한다.
 
-최초 이관은 기능 PR #1·#5·#8·#13·#14·#15·#18·#19의 최종 성공 head를 다뤘다. 이후 PR #21 기준과 실패/수정 이슈 #22를 추가했다. 모든 중간 실패·취소·로컬 반복 실행의 전수 로그를 복원한 것은 아니다. 알려진 수정 이슈는 해당 과거 기록에서 연결하고 최신 기록에는 Linux 환경 차단과 실제 하드웨어/API 미검증을 남겼다.
+최초 이관은 기능 PR #1·#5·#8·#13·#14·#15·#18·#19의 최종 성공 head를 다뤘다. 이후 PR #21·#24 기준과 실패/수정 이슈 #22를 추가했다. 모든 중간 실패·취소·로컬 반복 실행의 전수 로그를 복원한 것은 아니다. 알려진 수정 이슈는 해당 과거 기록에서 연결하고 최신 기록에는 Linux 환경 차단과 실제 하드웨어/API 미검증을 남겼다.
 
 개발/검증 절차의 기준은 [workflow](../workflow.md), 기능 범위는 [architecture](../architecture.md)와 [스펙](../specs/), 개인정보·장치 경계는 [security](../security.md)다. 이 기록은 검사·sandbox·승인 정책을 변경하지 않는다.
