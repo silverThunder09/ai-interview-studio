@@ -1,18 +1,47 @@
-import { useEffect, useId, useRef, useState } from 'react';
-import { AI_CALL_LIMIT, AI_ENDPOINTS, AI_NAMES, AI_PROVIDERS, isAIConfig, isAIModelId, type AIInterviewConfig, type AIProvider, type AIStatus } from '../../shared/ai';
+import { createContext, useContext, useEffect, useId, useRef, useState } from 'react';
+import { DEFAULT_AI_PREFERENCES, AI_CALL_LIMIT, AI_ENDPOINTS, AI_NAMES, AI_PROVIDERS, isAIConfig, isAIModelId, type AIInterviewConfig, type AIProvider, type AIStatus } from '../../shared/ai';
 
-export function AIKeySettings({ disabled = false, onStatus, fixedProvider, onConfigured }: { disabled?: boolean; onStatus?: (status: AIStatus) => void; fixedProvider?: AIProvider; onConfigured?: () => void }) {
+export const ConnectionContext = createContext<{ revision: number; open: (provider?: AIProvider) => void; changed: () => void }>({ revision: 0, open: () => {}, changed: () => {} });
+export function AIConnectionSummary({ disabled = false, onStatus, fixedProvider, onConfigured }: { disabled?: boolean; onStatus?: (status: AIStatus) => void; fixedProvider?: AIProvider; onConfigured?: () => void }) {
+  const connection = useContext(ConnectionContext);
+  const [status, setStatus] = useState<AIStatus>();
+  const [error, setError] = useState('');
+  const lastRevision = useRef(connection.revision);
+  useEffect(() => {
+    const changed = connection.revision !== lastRevision.current; lastRevision.current = connection.revision;
+    let current = true;
+    void window.studio?.getAIStatus().then(result => {
+      if (!current) return;
+      if (result.ok) { setStatus(result.value); onStatus?.(result.value); if (changed && result.value.providers.some(p => p.provider === fixedProvider && p.configured)) onConfigured?.(); }
+      else setError(result.error.message);
+    }).catch(() => { if (current) setError('연결 설정을 읽지 못했습니다. 설정을 다시 열어 주세요.'); });
+    return () => { current = false; };
+    // Callback identities change during typing; refresh on explicit settings completion only.
+  }, [connection.revision, fixedProvider, disabled]);
+  const selected = status?.preferences;
+  return <div className="connection-summary">
+    <div><strong>{fixedProvider ? AI_NAMES[fixedProvider] : selected ? AI_NAMES[selected.provider] : '외부 AI 연결'}</strong><p className="hint">{fixedProvider ? status?.providers.find(p => p.provider === fixedProvider)?.configured ? '키 등록됨' : '키 미등록' : selected?.models[selected.provider] || '설정에서 서비스와 모델을 선택하세요.'}</p></div>
+    <button className="secondary" disabled={disabled} onClick={() => connection.open(fixedProvider)}>API 연결 설정</button>
+    {status && <p className="hint request-budget">이번 실행의 남은 요청: {status.remainingRequests} / {AI_CALL_LIMIT}. 실패·취소도 포함됩니다.</p>}
+    {error && <p role="alert" className="error">{error}</p>}
+  </div>;
+}
+
+export function APISettings({ disabled = false, onStatus, fixedProvider, onConfigured }: { disabled?: boolean; onStatus?: (status: AIStatus) => void; fixedProvider?: AIProvider; onConfigured?: () => void }) {
   const fieldId = useId();
   const [provider, setProvider] = useState<AIProvider>(fixedProvider ?? 'openai');
   const [status, setStatus] = useState<AIStatus>();
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [remember, setRemember] = useState(true);
+  const [models, setModels] = useState({ ...DEFAULT_AI_PREFERENCES.models });
+  const connection = useContext(ConnectionContext);
   const input = useRef<HTMLInputElement>(null);
   const live = useRef(true);
   useEffect(() => { let current = true; live.current = true; if (!disabled) void window.studio?.getAIStatus().then(result => {
     if (!current) return;
-    if (result.ok) { setStatus(result.value); onStatus?.(result.value); } else setError(result.error.message);
+    if (result.ok) { setStatus(result.value); setModels(result.value.preferences?.models ?? { ...DEFAULT_AI_PREFERENCES.models }); setProvider(fixedProvider ?? result.value.preferences?.provider ?? 'openai'); onStatus?.(result.value); } else setError(result.error.message);
   }).catch(() => { if (current) setError('AI 설정을 읽지 못했습니다. 화면을 다시 열어 주세요.'); });
     return () => { current = false; live.current = false; if (input.current) input.current.value = ''; };
   }, [onStatus, disabled]);
@@ -24,21 +53,39 @@ export function AIKeySettings({ disabled = false, onStatus, fixedProvider, onCon
     const key = input.current?.value ?? '';
     if (input.current) input.current.value = '';
     try {
-      const result = clear ? await window.studio!.clearAIKey({ provider }) : await window.studio!.configureAIKey({ provider, key });
+      const result = clear ? await window.studio!.clearAIKey({ provider }) : await window.studio!.configureAIKey({ provider, key, remember: remember && !!status?.storage?.available });
       if (!live.current) return;
-      if (result.ok) { setStatus(result.value); onStatus?.(result.value); setMessage(clear ? '키를 비웠습니다.' : '키를 이번 실행에 등록했습니다. 실제 인증·연결은 질문 생성 때 확인합니다.'); if (!clear) onConfigured?.(); }
+      if (result.ok) { setStatus(result.value); onStatus?.(result.value); connection.changed(); setMessage(clear ? '저장된 키와 이번 실행의 키를 삭제했습니다.' : remember && status?.storage?.available ? '키를 이 기기에 암호화해 저장했습니다. 실제 연결은 질문 생성 때 확인합니다.' : '키를 이번 실행에 등록했습니다. 실제 인증·연결은 질문 생성 때 확인합니다.'); if (!clear) onConfigured?.(); }
       else setError(result.error.message);
     } catch { if (live.current) setError('키 설정을 적용하지 못했습니다. 다시 입력해 주세요.'); }
     finally { if (live.current) setBusy(false); }
   }
+  async function savePreferences() {
+    setBusy(true); setError(''); setMessage('');
+    try {
+      const result = await window.studio!.updateAIPreferences({ provider, models });
+      if (!live.current) return;
+      if (result.ok) { setStatus(result.value); connection.changed(); setMessage('서비스와 모델 설정을 저장했습니다. 전송 동의는 저장하지 않습니다.'); }
+      else setError(result.error.message);
+    } catch { if (live.current) setError('모델 설정을 저장하지 못했습니다. 다시 시도해 주세요.'); }
+    finally { if (live.current) setBusy(false); }
+  }
   return <div className="settings-card ai-keys"><h2>외부 AI API 키</h2>
-    <p>키는 앱 실행 중에만 보관하며 종료·창 닫기 시 비웁니다. 재시작 후 다시 입력하세요. 등록만으로 인터넷 요청을 보내지 않습니다.</p>
+    <p>OpenAI · Claude · Gemini 연결을 한곳에서 관리합니다. 키 등록이나 모델 저장만으로 인터넷 요청을 보내지 않습니다.</p>
     <label htmlFor={`${fieldId}-provider`}>키를 등록할 서비스</label><select id={`${fieldId}-provider`} value={provider} disabled={disabled || busy || !!fixedProvider} onChange={e => { setProvider(e.target.value as AIProvider); if (input.current) input.current.value = ''; setMessage(''); }}>
       {AI_PROVIDERS.map(p => <option key={p} value={p}>{AI_NAMES[p]}</option>)}
     </select>
+    <label htmlFor={`${fieldId}-model`}>모델 ID (서비스 콘솔에서 확인)</label><input id={`${fieldId}-model`} value={models[provider]} maxLength={100} disabled={busy} placeholder="예: gemini-3.8-flash" aria-invalid={models[provider] !== '' && !isAIModelId(models[provider])} onChange={e => setModels({ ...models, [provider]: e.target.value })} />
+    {models[provider] !== '' && !isAIModelId(models[provider]) && <p className="error" role="alert">모델 ID 형식이 맞지 않습니다. 표시 이름 대신 공백 없는 API 모델 ID를 입력하세요.</p>}
+    <p className="hint">사용 가능한 JSON 응답 모델 ID를 서비스 콘솔에서 복사하세요. 모델 접근 권한·실제 연결은 요청 때 확인합니다.</p>
+    <button className="secondary" disabled={busy || Object.values(models).some(model => model !== '' && !isAIModelId(model))} onClick={() => void savePreferences()}>서비스·모델 저장</button>
+    <hr />
     <label htmlFor={`${fieldId}-key`}>API 키 (저장 후 화면에서 비움)</label><input ref={input} id={`${fieldId}-key`} type="password" autoComplete="off" spellCheck={false} maxLength={512} disabled={disabled || busy} />
-    <div className="resume-actions"><button className="secondary" disabled={disabled || busy} onClick={() => void update(false)}>이번 실행에 키 등록</button><button className="secondary" disabled={disabled || busy} onClick={() => void update(true)}>선택 서비스 키 비우기</button></div>
-    <p className="hint">{status ? status.providers.map(p => `${AI_NAMES[p.provider]}: ${p.configured ? '등록됨' : '미등록'}`).join(' · ') : '설정 확인 중…'}</p>
+    <label className="consent"><input type="checkbox" checked={remember && !!status?.storage?.available} disabled={!status?.storage?.available || busy} onChange={e => setRemember(e.target.checked)} /> 이 기기에 키 저장 (OS 암호화)</label>
+    <p className="hint">Windows 사용자 계정의 보호 기능으로 저장합니다. 암호화를 사용할 수 없으면 이번 실행에만 등록할 수 있습니다. 같은 OS 계정의 악성 프로그램까지 차단하지는 않습니다.</p>
+    {status?.storage?.warning && <p className="error" role="alert">{status.storage.warning}</p>}
+    <div className="resume-actions"><button className="secondary" disabled={disabled || busy} onClick={() => void update(false)}>{remember && status?.storage?.available ? '키 저장' : '이번 실행에 키 등록'}</button><button className="secondary" disabled={disabled || busy} onClick={() => void update(true)}>선택 서비스 키 삭제</button></div>
+    <p className="hint">{status ? status.providers.map(p => `${AI_NAMES[p.provider]}: ${p.configured ? p.saved ? '저장됨' : '이번 실행에 등록됨' : '미등록'}`).join(' · ') : '설정 확인 중…'}</p>
     {status && <p className="hint">이번 실행의 남은 요청: {status.remainingRequests} / {AI_CALL_LIMIT}. 실패·취소도 사용량에 포함됩니다. 재시작하면 요청 한도는 초기화됩니다.</p>}
     {message && <p role="status">{message}</p>}{error && <p className="error" role="alert">{error}</p>}
   </div>;
@@ -52,18 +99,13 @@ export function AIStartOptions({ disabled, reviewedText, onChange, onEnabledChan
   const [consent, setConsent] = useState(false);
   const [status, setStatus] = useState<AIStatus>();
   const candidate = { provider, model, quote, transmissionConsent: true as const };
-  const modelError = model.length > 0 && !isAIModelId(model);
   const valid = isAIConfig(candidate) && reviewedText.includes(quote);
   const ready = enabled && consent && valid && status?.providers.some(p => p.provider === provider && p.configured) && status.remainingRequests > 0;
   useEffect(() => { onChange(ready ? { provider, model, quote, transmissionConsent: true } : undefined); }, [ready, provider, model, quote, onChange]);
   return <div className="ai-options">
     <label className="consent"><input type="checkbox" checked={enabled} disabled={disabled} onChange={e => { setEnabled(e.target.checked); onEnabledChange(e.target.checked); setConsent(false); }} /> 외부 API로 AI 질문 생성</label>
     {enabled && <>
-      <AIKeySettings disabled={disabled} onStatus={setStatus} />
-      <label htmlFor="ai-provider">면접 서비스</label><select id="ai-provider" value={provider} disabled={disabled} onChange={e => { setProvider(e.target.value as AIProvider); setModel(''); setConsent(false); }}>{AI_PROVIDERS.map(p => <option key={p} value={p}>{AI_NAMES[p]}</option>)}</select>
-      <label htmlFor="ai-model">모델 ID (서비스 콘솔에서 확인)</label><input id="ai-model" value={model} maxLength={100} disabled={disabled} placeholder="사용 가능한 텍스트 모델 ID" aria-invalid={modelError} aria-describedby={modelError ? 'ai-model-help ai-model-error' : 'ai-model-help'} onChange={e => { setModel(e.target.value); setConsent(false); }} />
-      <p id="ai-model-help" className="hint">표시 이름 대신 서비스 콘솔의 API 모델 ID를 그대로 복사하세요. 입력 형식이 맞아도 실제 모델 접근 가능 여부는 질문 생성 요청 때 확인합니다.</p>
-      {modelError && <p id="ai-model-error" className="error" role="alert">모델 ID 형식이 맞지 않습니다. 공백 없이 영문·숫자로 시작하고 영문·숫자·점(.)·밑줄(_)·하이픈(-)만 사용하세요. 올바른 모델 ID를 입력해야 전송 동의를 선택할 수 있습니다.</p>}
+      <AIConnectionSummary disabled={disabled} onStatus={value => { setStatus(value); setProvider(value.preferences?.provider ?? 'openai'); setModel(value.preferences?.models[value.preferences.provider] ?? ''); setConsent(false); }} />
       <label htmlFor="ai-quote">첫 질문에 보낼 구절 — 위 수정본에서 직접 복사 (최대 180자)</label><textarea id="ai-quote" value={quote} maxLength={180} disabled={disabled} onChange={e => { setQuote(e.target.value); setConsent(false); }} />
       {quote && !reviewedText.includes(quote) && <p className="error">수정본에 그대로 포함된 구절을 선택해 주세요.</p>}
       <div className="transmission-preview"><h3>첫 요청 전송 미리보기</h3><p>{AI_NAMES[provider]} · {model || '모델 미선택'} · {AI_ENDPOINTS[provider]}{provider === 'gemini' ? `${model}:generateContent` : ''}</p><pre>{quote || '선택한 구절이 없습니다.'}</pre><p>이 구절·출처 표시·질문 번호·한국어 면접 질문 생성 지시를 전송합니다. 이력서 전체·연락처를 자동 선택하지 않습니다. 이후 후속 질문은 직전 답변만 별도로 확인받아 전송합니다.</p></div>

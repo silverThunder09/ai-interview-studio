@@ -1,3 +1,4 @@
+import { openAPISettings, registerTemporaryKey, selectModel } from './settings-helpers';
 import { _electron as electron, expect, test, type ElectronApplication } from '@playwright/test';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
@@ -17,8 +18,7 @@ test('external AI requires selected context and per-turn consent, uses main-only
   let application: ElectronApplication | undefined;
   async function launch() {
     application = await electron.launch({ chromiumSandbox: true, env,
-      ...(process.env.SMOKE_EXECUTABLE ? { executablePath: resolve(process.env.SMOKE_EXECUTABLE) } : {}), args: process.env.SMOKE_EXECUTABLE ? [] : ['.'] });
-    await application.evaluate(({ app }, path) => { app.setPath('userData', path); }, profile);
+      ...(process.env.SMOKE_EXECUTABLE ? { executablePath: resolve(process.env.SMOKE_EXECUTABLE) } : {}), args: [...(process.env.SMOKE_EXECUTABLE ? [] : ['.']), `--user-data-dir=${profile}`] });
     // Runtime interception in the test process only. There is no product test
     // flag, synthetic provider option, external call or real API key in this test.
     await application.evaluate(() => {
@@ -42,35 +42,31 @@ test('external AI requires selected context and per-turn consent, uses main-only
     await expect(page.getByLabel('누락·읽기 순서를 원본과 비교하고 수정하세요.')).toHaveValue(quote);
     await page.getByRole('button', { name: '검토 완료', exact: true }).click();
     await page.getByLabel('외부 API로 AI 질문 생성', { exact: true }).check();
-    await expect(page.getByLabel('면접 서비스', { exact: true }).locator('option')).toHaveCount(3);
     await page.getByLabel('이력서 검토 내용과 면접 기록의 로컬 저장에 동의합니다.').check();
     const start = page.getByRole('button', { name: '동의한 내용으로 AI 면접 시작', exact: true });
     await expect(start).toBeDisabled();
-    await page.getByLabel('API 키 (저장 후 화면에서 비움)', { exact: true }).fill('synthetic-api-key-not-real');
-    await page.getByRole('button', { name: '이번 실행에 키 등록', exact: true }).click();
-    await expect(page.getByLabel('API 키 (저장 후 화면에서 비움)', { exact: true })).toHaveValue('');
-    await expect(page.getByText('키를 이번 실행에 등록했습니다.', { exact: false })).toBeVisible();
-    // A provider's display label used as an API ID must explain why consent is disabled.
-    // No external request or automatic model selection is allowed during correction.
-    const model = page.getByLabel('모델 ID (서비스 콘솔에서 확인)', { exact: true });
-    const consent = page.getByLabel('선택 서비스·모델·구절과 과금·보존 가능성', { exact: false });
-    await page.getByLabel('면접 서비스', { exact: true }).selectOption('gemini');
+    await registerTemporaryKey(page, 'synthetic-api-key-not-real', 'openai');
+    const dialog = await openAPISettings(page);
+    const provider = dialog.getByLabel('키를 등록할 서비스', { exact: true });
+    await expect(provider.locator('option')).toHaveCount(3);
+    await provider.selectOption('gemini');
+    const model = dialog.getByLabel('모델 ID (서비스 콘솔에서 확인)', { exact: true });
     await model.fill('Gemini 3.8 Flash');
-    await page.getByLabel('첫 질문에 보낼 구절', { exact: false }).fill(quote);
     await expect(model).toHaveAttribute('aria-invalid', 'true');
-    await expect(model).toHaveAttribute('aria-describedby', 'ai-model-help ai-model-error');
-    await expect(page.getByRole('alert')).toContainText('모델 ID 형식이 맞지 않습니다');
-    await expect(consent).toBeDisabled();
-    await expect(start).toBeDisabled();
+    await expect(dialog.getByRole('alert')).toContainText('모델 ID 형식이 맞지 않습니다');
+    await expect(dialog.getByRole('button', { name: '서비스·모델 저장', exact: true })).toBeDisabled();
     await model.fill('synthetic-model');
-    await expect(page.locator('#ai-model-error')).toHaveCount(0);
     await expect(model).toHaveAttribute('aria-invalid', 'false');
+    await dialog.getByRole('button', { name: '서비스·모델 저장', exact: true }).click();
+    await expect(dialog.getByText('서비스와 모델 설정을 저장했습니다.', { exact: false })).toBeVisible();
+    await dialog.getByRole('button', { name: '설정 닫기', exact: true }).click();
+    const consent = page.getByLabel('선택 서비스·모델·구절과 과금·보존 가능성', { exact: false });
+    await page.getByLabel('첫 질문에 보낼 구절', { exact: false }).fill(quote);
     await expect(consent).toBeEnabled();
     await expect(consent).not.toBeChecked();
     await expect(start).toBeDisabled(); // Gemini key has not been registered.
     expect(await page.evaluate(() => window.studio!.getAIStatus())).toMatchObject({ ok: true, value: { remainingRequests: 36 } });
-    await page.getByLabel('면접 서비스', { exact: true }).selectOption('openai');
-    await model.fill('synthetic-model');
+    await selectModel(page, 'openai', 'synthetic-model');
     await page.getByLabel('첫 질문에 보낼 구절', { exact: false }).fill('없는 합성 경력');
     await expect(start).toBeDisabled();
     await page.getByLabel('첫 질문에 보낼 구절', { exact: false }).fill(quote);
@@ -107,7 +103,6 @@ test('external AI requires selected context and per-turn consent, uses main-only
     await page.getByRole('button', { name: '검토 완료', exact: true }).click();
     await page.getByLabel('외부 API로 AI 질문 생성', { exact: true }).check();
     await expect(page.getByText('이번 실행의 남은 요청: 1 / 36.', { exact: false })).toBeVisible();
-    await page.getByLabel('모델 ID (서비스 콘솔에서 확인)', { exact: true }).fill('synthetic-model');
     await page.getByLabel('첫 질문에 보낼 구절', { exact: false }).fill(quote);
     await page.getByLabel('선택 서비스·모델·구절과 과금·보존 가능성', { exact: false }).check();
     await page.getByLabel('이력서 검토 내용과 면접 기록의 로컬 저장에 동의합니다.').check();
@@ -139,10 +134,7 @@ test('external AI requires selected context and per-turn consent, uses main-only
     expect(status).toMatchObject({ ok: true, value: { providers: [{ provider: 'openai', configured: false }, { provider: 'claude', configured: false }, { provider: 'gemini', configured: false }] } });
     const recovery = page.getByRole('region', { name: '답변을 유지하며 API 키 재등록', exact: true });
     await expect(recovery).toBeVisible();
-    await expect(recovery.getByLabel('키를 등록할 서비스', { exact: true })).toHaveValue('openai');
-    await expect(recovery.getByLabel('키를 등록할 서비스', { exact: true })).toBeDisabled();
-    await recovery.getByLabel('API 키 (저장 후 화면에서 비움)', { exact: true }).fill('synthetic-api-key-not-real');
-    await recovery.getByRole('button', { name: '이번 실행에 키 등록', exact: true }).click();
+    await registerTemporaryKey(page, 'synthetic-api-key-not-real', undefined, recovery);
     await expect(recovery).toHaveCount(0);
     await expect(page.getByLabel('내 답변', { exact: true })).toHaveValue('실패 후에도 남는 합성 입력');
     await expect(page.getByRole('heading', { name: '질문 2', exact: true })).toBeVisible();

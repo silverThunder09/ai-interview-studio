@@ -1,3 +1,4 @@
+import { registerTemporaryKey } from './settings-helpers';
 import { _electron as electron, expect, test } from '@playwright/test';
 import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
@@ -11,9 +12,8 @@ test('explicit audio capture and synthetic transcription preserve drafts and req
   if (process.env.SMOKE_EXECUTABLE) env.ELECTRON_RENDERER_URL = 'https://example.invalid';
   const application = await electron.launch({ chromiumSandbox: true, env,
     ...(process.env.SMOKE_EXECUTABLE ? { executablePath: resolve(process.env.SMOKE_EXECUTABLE) } : {}),
-    args: [...(process.env.SMOKE_EXECUTABLE ? [] : ['.']), '--use-fake-device-for-media-stream'] });
+    args: [...(process.env.SMOKE_EXECUTABLE ? [] : ['.']), `--user-data-dir=${profile}`, '--use-fake-device-for-media-stream'] });
   try {
-    await application.evaluate(({ app }, path) => { app.setPath('userData', path); }, profile);
     await application.evaluate(() => {
       Reflect.set(globalThis, 'syntheticVoiceCalls', 0);
       globalThis.fetch = async (url, init) => {
@@ -31,9 +31,7 @@ test('explicit audio capture and synthetic transcription preserve drafts and req
     await page.getByRole('button', { name: '2. 답변 녹음·전사', exact: true }).click();
     const voice = page.getByRole('region', { name: '음성 답변 입력', exact: true });
     await expect(voice.getByRole('button', { name: '녹음 시작', exact: true })).toBeDisabled();
-    await voice.getByLabel('API 키 (저장 후 화면에서 비움)', { exact: true }).fill('synthetic-voice-key-not-real');
-    await voice.getByRole('button', { name: '이번 실행에 키 등록', exact: true }).click();
-    await expect(voice.getByLabel('API 키 (저장 후 화면에서 비움)', { exact: true })).toHaveValue('');
+    await registerTemporaryKey(page, 'synthetic-voice-key-not-real', undefined, voice);
     await voice.getByLabel('음성 전사 모델 ID (OpenAI 콘솔에서 확인)', { exact: true }).fill('synthetic-transcribe');
     await voice.getByLabel('이 답변을 위해 마이크를 사용하고', { exact: false }).check();
     await voice.getByRole('button', { name: '녹음 시작', exact: true }).click();

@@ -1,3 +1,4 @@
+import { registerTemporaryKey, selectModel } from './settings-helpers';
 import { _electron as electron, expect, test, type ElectronApplication } from '@playwright/test';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
@@ -18,8 +19,7 @@ test('Gemini uses the REST MIME enum and distinguishes safe request/model/respon
   try {
     app = await electron.launch({ chromiumSandbox: true, env,
       ...(process.env.SMOKE_EXECUTABLE ? { executablePath: resolve(process.env.SMOKE_EXECUTABLE) } : {}),
-      args: process.env.SMOKE_EXECUTABLE ? [] : ['.'] });
-    await app.evaluate(({ app }, path) => { app.setPath('userData', path); }, profile);
+      args: [...(process.env.SMOKE_EXECUTABLE ? [] : ['.']), `--user-data-dir=${profile}`] });
     // Strict synthetic REST endpoint; nothing reaches Google and there is no product test flag.
     await app.evaluate(() => {
       globalThis.fetch = async (url, init) => {
@@ -45,12 +45,8 @@ test('Gemini uses the REST MIME enum and distinguishes safe request/model/respon
     await expect(page.getByLabel('누락·읽기 순서를 원본과 비교하고 수정하세요.')).toHaveValue(quote);
     await page.getByRole('button', { name: '검토 완료', exact: true }).click();
     await page.getByLabel('외부 API로 AI 질문 생성', { exact: true }).check();
-    await page.getByLabel('키를 등록할 서비스', { exact: true }).selectOption('gemini');
-    await page.getByLabel('API 키 (저장 후 화면에서 비움)', { exact: true }).fill('synthetic-gemini-key-never-real');
-    await page.getByRole('button', { name: '이번 실행에 키 등록', exact: true }).click();
-    await expect(page.getByText('키를 이번 실행에 등록했습니다.', { exact: false })).toBeVisible();
-    await page.getByLabel('면접 서비스', { exact: true }).selectOption('gemini');
-    await page.getByLabel('모델 ID (서비스 콘솔에서 확인)', { exact: true }).fill('synthetic-gemini-model');
+    await registerTemporaryKey(page, 'synthetic-gemini-key-never-real', 'gemini');
+    await selectModel(page, 'gemini', 'synthetic-gemini-model');
     await page.getByLabel('첫 질문에 보낼 구절', { exact: false }).fill(quote);
     await page.getByLabel('선택 서비스·모델·구절과 과금·보존 가능성', { exact: false }).check();
     await page.getByLabel('이력서 검토 내용과 면접 기록의 로컬 저장에 동의합니다.').check();

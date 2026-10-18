@@ -1,4 +1,5 @@
-import { app, BrowserWindow, dialog, ipcMain, net, protocol, session } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, net, protocol, safeStorage, session } from 'electron';
+import { LocalSettings } from './local-settings';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { CHANNELS, type Result } from '../shared/contracts';
@@ -20,10 +21,11 @@ let window: BrowserWindow | null = null;
 async function start(): Promise<void> {
   const devURL = app.isPackaged ? undefined : developmentURL(process.env.ELECTRON_RENDERER_URL);
   const entry = devURL ?? APP_URL;
-  const handlers = createHandlers(app.getVersion());
+  const localSettings = new LocalSettings(() => join(app.getPath('userData'), 'settings.json'), safeStorage);
+  const handlers = createHandlers(app.getVersion(), localSettings);
   let interviewStore: InterviewStore | undefined;
   const store = () => interviewStore ??= new InterviewStore(join(app.getPath('userData'), 'interviews.sqlite'));
-  const credentials = new AICredentials();
+  const credentials = new AICredentials(localSettings);
   const interview = createInterviewHandlers(store, new InterviewService(store, new InterviewProviderRouter(credentials)));
   const voiceService = new VoiceService(store, credentials);
   const voice = createVoiceHandlers(voiceService);
@@ -67,6 +69,7 @@ async function start(): Promise<void> {
     [CHANNELS.interviewDelete, interview.delete], [CHANNELS.interviewDeleteAll, interview.deleteAll],
     [CHANNELS.interviewCancel, interview.cancel],
     [CHANNELS.aiStatus, ai.status], [CHANNELS.aiKey, ai.set], [CHANNELS.aiClear, ai.clear],
+    [CHANNELS.aiPreferences, ai.preferences],
     [CHANNELS.voiceBegin, voice.begin], [CHANNELS.voiceStop, voice.stop], [CHANNELS.voiceCancel, voice.cancel],
     [CHANNELS.voiceTranscribe, voice.transcribe], [CHANNELS.voiceStatus, voice.status],
     [CHANNELS.speechGenerate, speech.generate], [CHANNELS.speechCancel, speech.cancel], [CHANNELS.speechStatus, speech.status],

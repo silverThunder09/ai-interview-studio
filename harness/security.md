@@ -15,9 +15,9 @@
 
 개발 CSP의 inline script/style와 loopback websocket 허용은 Vite HMR 전용이다. packaged 실행은 환경변수에 개발 URL이 있더라도 무시한다. Windows portable을 포함해 production 실행에는 HTTP 서버가 없다. CSP는 custom protocol 응답과 session 응답 헤더로 적용하며 `bypassCSP`를 사용하지 않는다. `session.fetch`는 webRequest 헤더 변경을 반영하지 않을 수 있으므로 protocol 응답에도 명시한다. 앱이 시작 시 보안 초기화나 화면 로드에 실패하면 한국어 오류와 실패 종료를 제공한다.
 
-Electron/Chromium 자체가 OS 캐시·로그·runtime profile을 생성할 수 있다. 제품 설정은 메모리로만 유지하며, 제품 개인정보 저장이 구현됐다는 의미는 아니다. 서명·자동 업데이트는 초기 범위에 없고 Windows에서 미서명 실행 경고가 발생할 수 있다. 배포 범위 확대 전에 코드 서명·업데이트 무결성·Electron fuses 강화와 runtime 보안 업데이트를 검토한다.
+Electron/Chromium 자체가 OS 캐시·로그·runtime profile을 생성할 수 있다. 제품 설정과 선택한 키의 로컬 보존은 아래 보호 저장 경계를 따르며, Electron runtime 파일과 구분한다. 서명·자동 업데이트는 초기 범위에 없고 Windows에서 미서명 실행 경고가 발생할 수 있다. 배포 범위 확대 전에 코드 서명·업데이트 무결성·Electron fuses 강화와 runtime 보안 업데이트를 검토한다.
 
-API 키의 디스크 보존은 이번 범위에 없다. 향후 보존할 때 OS 보호 저장을 우선 검토하며 평문 fallback은 두지 않는다. 저장된 키를 renderer에 반환하거나 Git·CI artifact·로그에 노출하지 않는다. 이력서/음성/transcript의 전송 데이터·provider·인터넷 의존성·사용량 비용을 사전에 표시하고 사용자 동작으로 전송한다. remote AI는 offline 기능으로 표현하지 않는다. 마이크/카메라는 명시적 시작/중지·거절·종료 해제·보존/삭제 테스트 없이는 활성화하지 않는다. 얼굴로 정직성·성격·감정·채용 적합성을 추론하지 않는다.
+사용자가 선택한 API 키는 Electron safeStorage의 OS 암호화를 거쳐 보존한다. 암호화를 사용할 수 없거나 Linux backend가 `basic_text`이면 보존을 거절하며 평문 fallback을 두지 않는다. 저장된 키를 renderer에 반환하거나 Git·CI artifact·로그에 노출하지 않는다. 이력서/음성/transcript의 전송 데이터·provider·인터넷 의존성·사용량 비용을 사전에 표시하고 사용자 동작으로 전송한다. remote AI는 offline 기능으로 표현하지 않는다. 마이크/카메라는 명시적 시작/중지·거절·종료 해제·보존/삭제 테스트 없이는 활성화하지 않는다. 얼굴로 정직성·성격·감정·채용 적합성을 추론하지 않는다.
 
 ## 로컬 이력서 검토의 데이터 흐름
 
@@ -27,7 +27,7 @@ PDF는 텍스트 추출만 수행하며 문서 JavaScript/링크/첨부를 실�
 
 파일·페이지·텍스트·압축 팽창·항목·XML 중첩 한도를 적용한다. 15초 타임아웃·취소·화면 이탈 시 전용 worker를 종료하고 Chromium이 하위 worker도 종료한다. 이 경계는 비신뢰 파서를 main 권한에서 분리하지만 별도 OS 메모리 quota를 제공하지 않는다. 문서를 입력한 프로세스 메모리의 즉시 안전 삭제를 보장한다고 표현하지 않는다.
 
-검토만 하는 동안 제품은 파일 내용·추출 결과·수정본을 저장/로깅/외부 전송하지 않는다. 연습 시작 후 동의한 보존은 아래 기록 정책을 따른다. 화면 비우기·이탈·앱 종료 시 참조를 해제하며 원본 파일은 보존한다. Chromium의 crash/OS 진단 메커니즘까지 완전한 무기록을 보장하지 않는다. 테스트/스크린샷/artifact에는 합성 문서만 쓴다. 검토 화면 자체는 외부 전송하지 않는다. API 키의 디스크 저장은 제공하지 않으며 외부 API 단계는 아래 명시적 동의 경계를 따른다.
+검토만 하는 동안 제품은 파일 내용·추출 결과·수정본을 저장/로깅/외부 전송하지 않는다. 연습 시작 후 동의한 보존은 아래 기록 정책을 따른다. 화면 비우기·이탈·앱 종료 시 참조를 해제하며 원본 파일은 보존한다. Chromium의 crash/OS 진단 메커니즘까지 완전한 무기록을 보장하지 않는다. 테스트/스크린샷/artifact에는 합성 문서만 쓴다. 검토 화면 자체는 외부 전송하지 않는다. API 키의 별도 보호 저장과 외부 API 단계는 아래 명시적 동의 경계를 따른다.
 
 ## 로컬 텍스트 연습·기록
 
@@ -47,7 +47,9 @@ DB는 Electron 내장 `node:sqlite`로 사용자 profile의 `interviews.sqlite`�
 
 ### 현재 외부 API 데이터 흐름
 
-사용자 비밀번호 입력 → 같은 창/메인 프레임/URL 검사 + 키 형식/인수 개수 검사 → main 메모리 키 보관. 입력 직후 DOM을 비우며 React state·브라우저 storage·SQLite에는 키를 넣지 않는다. 상태 API는 등록 여부와 남은 요청 수만 반환한다. 설정 변경/키 비우기는 진행 중 생성을 취소하고, 창 닫기/종료 시 모든 키 참조를 해제한다. JS/OS 메모리의 즉시 안전 삭제는 보장하지 않는다. 키 등록은 인증 확인이나 외부 호출을 하지 않는다.
+사용자 비밀번호 입력 → 같은 창/메인 프레임/URL 검사 + 키 형식/인수 개수 검사 → main 메모리 키 보관 및 명시적으로 선택한 OS 보호 저장. 입력 직후 DOM을 비우며 React state·브라우저 storage·SQLite에는 키를 넣지 않는다. 상태 API는 등록/저장 여부·암호화 가용성·선택 모델과 남은 요청 수만 반환하고 키·암호문은 반환하지 않는다. 설정 변경/키 비우기는 진행 중 생성을 취소하고, 창 닫기/종료 시 모든 키 참조를 해제한다. JS/OS 메모리의 즉시 안전 삭제는 보장하지 않는다. 키 등록은 인증 확인이나 외부 호출을 하지 않는다.
+
+2026-10-18 KST 사용자가 설정 분리·재실행 보존을 요청했다. `settings.json`에는 허용된 테마/서비스별 모델과 OS 암호문만 보관한다. Windows는 DPAPI를 사용하며 같은 OS 계정으로 실행되는 다른 프로그램까지 차단하지 않는다. 파일은 지원 OS에서 0600, 새 디렉터리는 0700이며 Windows에서는 사용자 profile ACL을 따른다. 임시 파일 독점 생성·flush·rename 성공 후 메모리 값을 변경한다. 실패 시 이전 설정/키를 유지한다. 손상·미래 버전 파일은 덮어쓰지 않으며 복호화 실패는 해당 키를 미등록으로 표시하고 재입력/삭제를 안내한다. 저장 해제 후 임시 키 등록은 이전의 저장된 키도 제거한다. 삭제는 앱의 현재 저장본/메모리만 대상으로 하며 OS 백업·메모리 안전 소거를 보증하지 않는다. 새 IPC는 허용된 공급자와 모델 ID만 정확한 키/개수로 검증하고 기존 송신자 검사를 그대로 적용한다. 사용자 전송/마이크/로컬 기록 동의는 설정으로 저장하거나 자동 복원하지 않는다.
 
 검토본에서 사용자가 직접 복사한 180자 이하 구절 → main이 실제 검토본 substring과 동의 확인 → 서비스·모델/수신 endpoint·데이터·과금·서비스 보존 고지 → 사용자 시작 → main 고정 HTTPS 요청. 첫 요청은 선택 구절 1개, 원문과 다를 수 있는 수정본 출처/위치, 질문 번호와 비신뢰 데이터/질문 생성 지시만 전송한다. 후속 질문은 명시적으로 확인한 직전 답변 최대 2,000자와 그 처음 180자의 인용만 전송한다. 일반 기술 질문에는 이력서·답변·과거 대화를 보내지 않는다. 마지막 12번 답변은 로컬 저장만 한다. 각각의 전송 미리보기와 동의는 내용 변경 시 해제한다. 전체 원문/파일 경로·세션 ID를 provider payload에 넣지 않는다.
 
@@ -108,3 +110,5 @@ GitHub Actions는 `contents: read`, commit SHA 고정 actions, `npm ci`, timeout
 초기 검증에서 electron-builder 26.15.3의 간접 `global-agent@3` → `roarr` → `sprintf-js` 경로가 GHSA-hp3w-g68c-fv3c(중간)에 해당했다. 구버전 builder로 회피하면 tar 관련 더 높은 위험이 생겨 사용하지 않았다. builder는 현재 버전으로 유지하고 Node 24 호환 `global-agent@4.1.3` override로 취약 경로를 제거한다. lockfile 설치·Windows 패키징으로 호환성을 검증하며 의존성 갱신 때 override 필요성을 재평가한다. npm audit는 Electron binary 자체와 모든 공급망 위험을 증명하는 검사가 아니다.
 
 [Electron security](https://www.electronjs.org/docs/latest/tutorial/security), [sandbox](https://www.electronjs.org/docs/latest/tutorial/sandbox), [protocol](https://www.electronjs.org/docs/latest/api/protocol), [IPC](https://www.electronjs.org/docs/latest/tutorial/ipc), [electron-vite](https://electron-vite.org/guide/), [electron-builder portable](https://www.electron.build/portable.html), [GitHub Actions security](https://docs.github.com/en/actions/security-for-github-actions/security-guides/security-hardening-for-github-actions).
+
+설정 키 보호의 출처: [Electron safeStorage 공식 문서](https://www.electronjs.org/docs/latest/api/safe-storage)의 플랫폼별 보호 범위와 Linux `basic_text` 제한을 확인했다.

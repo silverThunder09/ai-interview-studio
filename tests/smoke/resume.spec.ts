@@ -13,7 +13,7 @@ test('selected local documents are extracted, reviewed and cleared inside the sa
   const application = await electron.launch({
     chromiumSandbox: true, env,
     ...(process.env.SMOKE_EXECUTABLE ? { executablePath: resolve(process.env.SMOKE_EXECUTABLE) } : {}),
-    args: process.env.SMOKE_EXECUTABLE ? [] : ['.'],
+    args: [...(process.env.SMOKE_EXECUTABLE ? [] : ['.']), `--user-data-dir=${join(directory, 'profile')}`],
   });
   try {
     const page = await application.firstWindow();

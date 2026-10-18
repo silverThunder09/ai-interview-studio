@@ -21,11 +21,9 @@ test('local practice requires consent, survives restart, preserves failed answer
     application = await electron.launch({
       chromiumSandbox: true, env,
       ...(process.env.SMOKE_EXECUTABLE ? { executablePath: resolve(process.env.SMOKE_EXECUTABLE) } : {}),
-      args: process.env.SMOKE_EXECUTABLE ? [] : ['.'],
+      args: [...(process.env.SMOKE_EXECUTABLE ? [] : ['.']), `--user-data-dir=${profile}`],
     });
-    // Store creation is lazy. Select an isolated profile before any history or
-    // interview request; never read or delete a user's real application records.
-    await application.evaluate(({ app }, path) => { app.setPath('userData', path); }, profile);
+    // Launch with an isolated profile before any settings/history request.
     const page = await application.firstWindow();
     page.on('pageerror', (error) => runtimeErrors.push(error.message));
     return page;

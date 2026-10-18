@@ -1,3 +1,4 @@
+import { registerTemporaryKey } from './settings-helpers';
 import { _electron as electron, expect, test } from '@playwright/test';
 import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
@@ -11,9 +12,8 @@ test('guided voice practice plays MP3, cleans up between stages and requires rev
   const env = Object.fromEntries(Object.entries(process.env).filter((x): x is [string,string] => typeof x[1] === 'string')); delete env.ELECTRON_RUN_AS_NODE;
   if (process.env.SMOKE_EXECUTABLE) env.ELECTRON_RENDERER_URL = 'https://example.invalid';
   const app = await electron.launch({ chromiumSandbox: true, env, ...(process.env.SMOKE_EXECUTABLE ? { executablePath: resolve(process.env.SMOKE_EXECUTABLE) } : {}),
-    args: [...(process.env.SMOKE_EXECUTABLE ? [] : ['.']), '--use-fake-device-for-media-stream', '--mute-audio'] });
+    args: [...(process.env.SMOKE_EXECUTABLE ? [] : ['.']), `--user-data-dir=${profile}`, '--use-fake-device-for-media-stream', '--mute-audio'] });
   try {
-    await app.evaluate(({ app }, path) => app.setPath('userData', path), profile);
     await app.evaluate((_electron, bytes) => {
       Reflect.set(globalThis, 'syntheticSpeechCalls', 0);
       Reflect.set(globalThis, 'syntheticTranscriptionCalls', 0);
@@ -43,8 +43,7 @@ test('guided voice practice plays MP3, cleans up between stages and requires rev
     await page.getByLabel('내 답변', { exact: true }).fill('음성 재생 중에도 보존할 합성 답변');
     await page.getByRole('button', { name: '1. 질문 듣기', exact: true }).click();
     const speech = page.getByRole('region', { name: '질문 음성 읽기', exact: true });
-    await speech.getByLabel('API 키 (저장 후 화면에서 비움)', { exact: true }).fill('synthetic-speech-key-not-real');
-    await speech.getByRole('button', { name: '이번 실행에 키 등록', exact: true }).click();
+    await registerTemporaryKey(page, 'synthetic-speech-key-not-real', undefined, speech);
     await speech.getByLabel('음성 읽기 모델 ID (OpenAI 콘솔에서 확인)', { exact: true }).fill('synthetic-tts');
     const generate = speech.getByRole('button', { name: '질문 음성 만들기', exact: true }); await expect(generate).toBeDisabled();
     expect(await app.evaluate(() => Reflect.get(globalThis, 'syntheticSpeechCalls'))).toBe(0);
