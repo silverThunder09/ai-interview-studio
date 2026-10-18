@@ -50,7 +50,27 @@ test('external AI requires selected context and per-turn consent, uses main-only
     await page.getByRole('button', { name: '이번 실행에 키 등록', exact: true }).click();
     await expect(page.getByLabel('API 키 (저장 후 화면에서 비움)', { exact: true })).toHaveValue('');
     await expect(page.getByText('키를 이번 실행에 등록했습니다.', { exact: false })).toBeVisible();
-    await page.getByLabel('모델 ID (서비스 콘솔에서 확인)', { exact: true }).fill('synthetic-model');
+    // A provider's display label used as an API ID must explain why consent is disabled.
+    // No external request or automatic model selection is allowed during correction.
+    const model = page.getByLabel('모델 ID (서비스 콘솔에서 확인)', { exact: true });
+    const consent = page.getByLabel('선택 서비스·모델·구절과 과금·보존 가능성', { exact: false });
+    await page.getByLabel('면접 서비스', { exact: true }).selectOption('gemini');
+    await model.fill('Gemini 3.8 Flash');
+    await page.getByLabel('첫 질문에 보낼 구절', { exact: false }).fill(quote);
+    await expect(model).toHaveAttribute('aria-invalid', 'true');
+    await expect(model).toHaveAttribute('aria-describedby', 'ai-model-help ai-model-error');
+    await expect(page.getByRole('alert')).toContainText('모델 ID 형식이 맞지 않습니다');
+    await expect(consent).toBeDisabled();
+    await expect(start).toBeDisabled();
+    await model.fill('synthetic-model');
+    await expect(page.locator('#ai-model-error')).toHaveCount(0);
+    await expect(model).toHaveAttribute('aria-invalid', 'false');
+    await expect(consent).toBeEnabled();
+    await expect(consent).not.toBeChecked();
+    await expect(start).toBeDisabled(); // Gemini key has not been registered.
+    expect(await page.evaluate(() => window.studio!.getAIStatus())).toMatchObject({ ok: true, value: { remainingRequests: 36 } });
+    await page.getByLabel('면접 서비스', { exact: true }).selectOption('openai');
+    await model.fill('synthetic-model');
     await page.getByLabel('첫 질문에 보낼 구절', { exact: false }).fill('없는 합성 경력');
     await expect(start).toBeDisabled();
     await page.getByLabel('첫 질문에 보낼 구절', { exact: false }).fill(quote);

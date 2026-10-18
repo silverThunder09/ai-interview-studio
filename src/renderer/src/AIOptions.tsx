@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import { AI_CALL_LIMIT, AI_ENDPOINTS, AI_NAMES, AI_PROVIDERS, isAIConfig, type AIInterviewConfig, type AIProvider, type AIStatus } from '../../shared/ai';
+import { AI_CALL_LIMIT, AI_ENDPOINTS, AI_NAMES, AI_PROVIDERS, isAIConfig, isAIModelId, type AIInterviewConfig, type AIProvider, type AIStatus } from '../../shared/ai';
 
 export function AIKeySettings({ disabled = false, onStatus, fixedProvider, onConfigured }: { disabled?: boolean; onStatus?: (status: AIStatus) => void; fixedProvider?: AIProvider; onConfigured?: () => void }) {
   const fieldId = useId();
@@ -52,6 +52,7 @@ export function AIStartOptions({ disabled, reviewedText, onChange, onEnabledChan
   const [consent, setConsent] = useState(false);
   const [status, setStatus] = useState<AIStatus>();
   const candidate = { provider, model, quote, transmissionConsent: true as const };
+  const modelError = model.length > 0 && !isAIModelId(model);
   const valid = isAIConfig(candidate) && reviewedText.includes(quote);
   const ready = enabled && consent && valid && status?.providers.some(p => p.provider === provider && p.configured) && status.remainingRequests > 0;
   useEffect(() => { onChange(ready ? { provider, model, quote, transmissionConsent: true } : undefined); }, [ready, provider, model, quote, onChange]);
@@ -60,7 +61,9 @@ export function AIStartOptions({ disabled, reviewedText, onChange, onEnabledChan
     {enabled && <>
       <AIKeySettings disabled={disabled} onStatus={setStatus} />
       <label htmlFor="ai-provider">면접 서비스</label><select id="ai-provider" value={provider} disabled={disabled} onChange={e => { setProvider(e.target.value as AIProvider); setModel(''); setConsent(false); }}>{AI_PROVIDERS.map(p => <option key={p} value={p}>{AI_NAMES[p]}</option>)}</select>
-      <label htmlFor="ai-model">모델 ID (서비스 콘솔에서 확인)</label><input id="ai-model" value={model} maxLength={100} disabled={disabled} placeholder="사용 가능한 텍스트 모델 ID" onChange={e => { setModel(e.target.value); setConsent(false); }} />
+      <label htmlFor="ai-model">모델 ID (서비스 콘솔에서 확인)</label><input id="ai-model" value={model} maxLength={100} disabled={disabled} placeholder="사용 가능한 텍스트 모델 ID" aria-invalid={modelError} aria-describedby={modelError ? 'ai-model-help ai-model-error' : 'ai-model-help'} onChange={e => { setModel(e.target.value); setConsent(false); }} />
+      <p id="ai-model-help" className="hint">표시 이름 대신 서비스 콘솔의 API 모델 ID를 그대로 복사하세요. 입력 형식이 맞아도 실제 모델 접근 가능 여부는 질문 생성 요청 때 확인합니다.</p>
+      {modelError && <p id="ai-model-error" className="error" role="alert">모델 ID 형식이 맞지 않습니다. 공백 없이 영문·숫자로 시작하고 영문·숫자·점(.)·밑줄(_)·하이픈(-)만 사용하세요. 올바른 모델 ID를 입력해야 전송 동의를 선택할 수 있습니다.</p>}
       <label htmlFor="ai-quote">첫 질문에 보낼 구절 — 위 수정본에서 직접 복사 (최대 180자)</label><textarea id="ai-quote" value={quote} maxLength={180} disabled={disabled} onChange={e => { setQuote(e.target.value); setConsent(false); }} />
       {quote && !reviewedText.includes(quote) && <p className="error">수정본에 그대로 포함된 구절을 선택해 주세요.</p>}
       <div className="transmission-preview"><h3>첫 요청 전송 미리보기</h3><p>{AI_NAMES[provider]} · {model || '모델 미선택'} · {AI_ENDPOINTS[provider]}{provider === 'gemini' ? `${model}:generateContent` : ''}</p><pre>{quote || '선택한 구절이 없습니다.'}</pre><p>이 구절·출처 표시·질문 번호·한국어 면접 질문 생성 지시를 전송합니다. 이력서 전체·연락처를 자동 선택하지 않습니다. 이후 후속 질문은 직전 답변만 별도로 확인받아 전송합니다.</p></div>
