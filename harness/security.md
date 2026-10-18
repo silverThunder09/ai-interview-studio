@@ -77,6 +77,12 @@ DB는 Electron 내장 `node:sqlite`로 사용자 profile의 `interviews.sqlite`�
 
 renderer는 main bytes를 `audio/mpeg` Blob URL로만 재생한다. CSP는 `media-src blob:`만 허용하고 임의 HTTP/file 오디오 URL·외부 fetch·카메라·Node 접근은 차단한다. 자동 재생은 없고 재생은 최대 90초, 중지/완료/이탈 시 pause/src 해제·URL revoke·timer/listener 정리를 한다. 메모리 재생은 추가 API 호출이 없으며 모델/voice·질문 변경·폐기 때 bytes를 비운다. 녹음/음성 읽기 전환은 이전 component를 정리하고 답변 제출 중에는 생성/재생하지 않는다. 생성 음성은 파일/SQLite/export에 보존하지 않는다. 테스트는 합성 무음 MP3와 합성 provider 응답으로 실제 Windows 디코딩/중지·녹음 전환을 검증하며 사용자 스피커 품질/실제 요금을 대신하지 않는다.
 
+## 개발 이벤트 실행기의 별도 경계
+
+2026-10-19 KST 사용자는 이벤트 수신기·작업 실행기 구현/검증 후 머지를 요청하고 별도 API 과금 없이 기존 Codex Cloud 사용을 선택했다. 제품의 사용자 API 키·이력서·음성·기록은 사용하지 않는다. GitHub 이벤트/댓글은 성공·승인 증거가 아니며 main의 기존 리뷰·머지 정책을 유지한다.
+
+새 Event worker만 main의 검증한 코드에 GitHub contents:write(automation/event-ledger)·issues:write(한정 댓글·보류 이슈)를 부여한다. 토큰은 저장소 범위라 코드 경로 제한이 중요하다. fork/PR 코드·artifact·npm script를 이 job에서 실행하지 않으며 main checkout SHA를 재조회한다. 기본 CI는 read-only, 별도 모델 API·외부 webhook 서버·쿠키/숨겨진 API·추가 키는 없다. Cloud는 기존 연결/계정 사용 한도를 따른다. 자세한 상태·중복 방지·차단 기준은 [event-loop.md](event-loop.md)를 따른다.
+
 ## CI와 의존성 검토
 
 GitHub Actions는 `contents: read`, commit SHA 고정 actions, `npm ci`, timeout, artifact 보존 14일을 사용한다. release 업로드·서명 키·API 자격증명은 필요 없다. npm lifecycle 스크립트가 Electron binary를 다운로드하므로 lockfile과 upstream 버전을 검토한다. `npm audit` 결과는 실제 실행 결과와 구분해 PR에 남긴다. 개발 도구 문제도 숨기지 않는다.

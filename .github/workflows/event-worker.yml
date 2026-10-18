@@ -1,0 +1,39 @@
+name: Event worker
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review, closed]
+  issue_comment:
+    types: [created]
+  workflow_run:
+    workflows: [Validation, Windows build, PR policy, Review wake-up]
+    types: [completed]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: event-worker-${{ github.repository }}
+  cancel-in-progress: false
+jobs:
+  reconcile:
+    if: >-
+      github.repository == 'silverThunder09/ai-interview-studio' &&
+      (github.event_name != 'issue_comment' || startsWith(github.event.comment.body, '<!-- ais-cloud-result:'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write # Only automation/event-ledger; needed for atomic non-force ref updates.
+      issues: write # Bounded PR comments and deduplicated pause issues; no merge API.
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .node-version
+      - name: Reconcile current PRs and deliver durable Cloud requests
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          export AIS_CHECKOUT_SHA="$(git rev-parse HEAD)"
+          node --experimental-strip-types scripts/review/event-worker.ts

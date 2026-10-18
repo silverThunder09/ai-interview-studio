@@ -16,13 +16,15 @@
 | 과거 | 2026-10-17 | [음성 입력·전사·답변 검토](archive/2026-10-17/tests-2026-10-17-pr19.md) | [#19](https://github.com/silverThunder09/ai-interview-studio/pull/19) | 186 / 40 | 5 / 5 |
 | 과거 | 2026-10-18 | [질문 음성 읽기·재생/중지](archive/2026-10-18/tests-2026-10-18-pr21.md) | [#21](https://github.com/silverThunder09/ai-interview-studio/pull/21) | 201 / 40 | 6 / 6 |
 | 과거 | 2026-10-18 | [통합 음성 연습·전사 검토·직접 제출](archive/2026-10-18/tests-2026-10-18-pr24.md) | [#24](https://github.com/silverThunder09/ai-interview-studio/pull/24) | 201 / 40 | 6 / 6 |
-| 최신 | 2026-10-18 | [UI·API 설정 분리와 OS 보호 저장](latest.md) | [#31](https://github.com/silverThunder09/ai-interview-studio/pull/31) | 220 / 40 | 8 / 8 |
+| 과거 | 2026-10-18 | [UI·API 설정 분리와 OS 보호 저장](archive/2026-10-19/tests-2026-10-18-pr31.md) | [#31](https://github.com/silverThunder09/ai-interview-studio/pull/31) | 220 / 40 | 8 / 8 |
+
+| 최신 | 2026-10-19 | [전체 시각 디자인·테마·최소 창 크기](latest.md) | [#34](https://github.com/silverThunder09/ai-interview-studio/pull/34) | 220 / 40 | 9 / 9 |
 
 각 숫자는 해당 최종 SHA의 성공 실행에서 읽었다. Windows 숫자는 큰 사용자 흐름을 묶은 smoke 개수다. 각 테스트의 assertion 수·코드 커버리지 비율·실제 사용자 환경 성공률은 아니다. 모든 과거 개수를 합산해 현재 테스트 수로 제시하지 않는다.
 
 ## 여기서 말하는 테스트
 
-앱 기준 기록과 별도로 [이벤트 루프의 오프라인 합성 검증](../event-loop.md#이번-오프라인-검증-기록)을 관리한다. 실제 이벤트 수신·AI 실행 성공을 뜻하지 않으며 앱의 최신/과거 기준을 교체하지 않는다.
+앱 기준 기록과 별도로 [이벤트 루프·실행기의 검증과 한계](../event-loop.md#실제-검증과-한계)을 관리한다. 실제 이벤트 수신·AI 실행 성공을 뜻하지 않으며 앱의 최신/과거 기준을 교체하지 않는다.
 
 | 종류 | 의미 | 해석할 때 주의할 점 |
 | --- | --- | --- |
