@@ -1,3 +1,4 @@
+import { openAPISettings, registerTemporaryKey } from './settings-helpers';
 import { _electron as electron, expect, test } from '@playwright/test';
 import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
@@ -11,9 +12,8 @@ test('guided voice practice plays MP3, cleans up between stages and requires rev
   const env = Object.fromEntries(Object.entries(process.env).filter((x): x is [string,string] => typeof x[1] === 'string')); delete env.ELECTRON_RUN_AS_NODE;
   if (process.env.SMOKE_EXECUTABLE) env.ELECTRON_RENDERER_URL = 'https://example.invalid';
   const app = await electron.launch({ chromiumSandbox: true, env, ...(process.env.SMOKE_EXECUTABLE ? { executablePath: resolve(process.env.SMOKE_EXECUTABLE) } : {}),
-    args: [...(process.env.SMOKE_EXECUTABLE ? [] : ['.']), '--use-fake-device-for-media-stream', '--mute-audio'] });
+    args: [...(process.env.SMOKE_EXECUTABLE ? [] : ['.']), `--user-data-dir=${profile}`, '--use-fake-device-for-media-stream', '--mute-audio'] });
   try {
-    await app.evaluate(({ app }, path) => app.setPath('userData', path), profile);
     await app.evaluate((_electron, bytes) => {
       Reflect.set(globalThis, 'syntheticSpeechCalls', 0);
       Reflect.set(globalThis, 'syntheticTranscriptionCalls', 0);
@@ -43,8 +43,8 @@ test('guided voice practice plays MP3, cleans up between stages and requires rev
     await page.getByLabel('내 답변', { exact: true }).fill('음성 재생 중에도 보존할 합성 답변');
     await page.getByRole('button', { name: '1. 질문 듣기', exact: true }).click();
     const speech = page.getByRole('region', { name: '질문 음성 읽기', exact: true });
-    await speech.getByLabel('API 키 (저장 후 화면에서 비움)', { exact: true }).fill('synthetic-speech-key-not-real');
-    await speech.getByRole('button', { name: '이번 실행에 키 등록', exact: true }).click();
+    await registerTemporaryKey(page, 'synthetic-speech-key-not-real', undefined, speech);
+    await page.getByRole('button', { name: '1. 질문 듣기', exact: true }).click();
     await speech.getByLabel('음성 읽기 모델 ID (OpenAI 콘솔에서 확인)', { exact: true }).fill('synthetic-tts');
     const generate = speech.getByRole('button', { name: '질문 음성 만들기', exact: true }); await expect(generate).toBeDisabled();
     expect(await app.evaluate(() => Reflect.get(globalThis, 'syntheticSpeechCalls'))).toBe(0);
@@ -60,14 +60,22 @@ test('guided voice practice plays MP3, cleans up between stages and requires rev
     expect(await page.evaluate(() => { const audio = (Reflect.get(window, 'syntheticPlaybackElements') as HTMLAudioElement[]).at(-1)!; return audio.paused && !audio.getAttribute('src'); })).toBe(true);
     await speech.getByRole('button', { name: '질문 음성 재생', exact: true }).click();
     expect(await app.evaluate(() => Reflect.get(globalThis, 'syntheticSpeechCalls'))).toBe(2);
-    await page.getByRole('button', { name: '답변 녹음 단계로 이동', exact: true }).click(); await expect(speech).toHaveCount(0);
+    const settingsDuringPlayback = await openAPISettings(page);
+    await expect(speech).toHaveCount(0);
+    await settingsDuringPlayback.getByRole('button', { name: '설정 닫기', exact: true }).click();
+    await expect(page.getByLabel('내 답변', { exact: true })).toHaveValue('음성 재생 중에도 보존할 합성 답변');
+    await page.getByRole('button', { name: '2. 답변 녹음·전사', exact: true }).click();
     expect(await page.evaluate(() => (Reflect.get(window, 'syntheticPlaybackElements') as HTMLAudioElement[]).every(a => a.paused && !a.getAttribute('src')))).toBe(true);
     expect(await page.evaluate(() => (Reflect.get(window, 'syntheticCaptureTracks') as MediaStreamTrack[]).length)).toBe(0);
     const voice = page.getByRole('region', { name: '음성 답변 입력', exact: true });
     await voice.getByLabel('음성 전사 모델 ID (OpenAI 콘솔에서 확인)', { exact: true }).fill('synthetic-transcribe');
     await voice.getByLabel('이 답변을 위해 마이크를 사용하고', { exact: false }).check(); await voice.getByRole('button', { name: '녹음 시작', exact: true }).click();
     await expect(voice.getByRole('status')).toContainText('녹음 중');
-    await page.getByRole('button', { name: '1. 질문 듣기', exact: true }).click(); await expect(voice).toHaveCount(0);
+    const settingsDuringRecording = await openAPISettings(page);
+    await expect(voice).toHaveCount(0);
+    await settingsDuringRecording.getByRole('button', { name: '설정 닫기', exact: true }).click();
+    await expect(page.getByLabel('내 답변', { exact: true })).toHaveValue('음성 재생 중에도 보존할 합성 답변');
+    await page.getByRole('button', { name: '1. 질문 듣기', exact: true }).click();
     await expect.poll(() => page.evaluate(() => { const tracks = Reflect.get(window, 'syntheticCaptureTracks') as MediaStreamTrack[]; return tracks.length > 0 && tracks.every(t => t.readyState === 'ended'); })).toBe(true);
     expect(await app.evaluate(() => Reflect.get(globalThis, 'syntheticSpeechCalls'))).toBe(2);
     await page.getByRole('button', { name: '2. 답변 녹음·전사', exact: true }).click();

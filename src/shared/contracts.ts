@@ -1,7 +1,7 @@
 import type { SelectedResume } from './resume';
 import type { VoiceRequest, VoiceStart, VoiceStatus } from './voice';
 import type { SpeechRequest, SpeechStatus } from './speech';
-import type { AIKeyRequest, AIProvider, AIStatus } from './ai';
+import type { AIPreferences, AIKeyRequest, AIProvider, AIStatus } from './ai';
 import type { DeleteAllInterviewsRequest, DeleteInterviewRequest, InterviewHistory, InterviewSession, StartInterviewRequest, SubmitAnswerRequest } from './interview';
 
 export const CHANNELS = {
@@ -11,6 +11,7 @@ export const CHANNELS = {
   interviewDelete: 'studio:interview-delete', interviewDeleteAll: 'studio:interview-delete-all',
   interviewCancel: 'studio:interview-cancel',
   aiStatus: 'studio:ai-status', aiKey: 'studio:ai-key', aiClear: 'studio:ai-clear',
+  aiPreferences: 'studio:ai-preferences',
   voiceBegin: 'studio:voice-begin', voiceStop: 'studio:voice-stop', voiceCancel: 'studio:voice-cancel',
   voiceTranscribe: 'studio:voice-transcribe', voiceStatus: 'studio:voice-status',
   speechGenerate: 'studio:speech-generate', speechCancel: 'studio:speech-cancel', speechStatus: 'studio:speech-status',
@@ -37,6 +38,7 @@ export interface DesktopAPI {
   deleteInterview(request: DeleteInterviewRequest): Promise<Result<null>>;
   deleteAllInterviews(request: DeleteAllInterviewsRequest): Promise<Result<null>>;
   getAIStatus(): Promise<Result<AIStatus>>;
+  updateAIPreferences(request: AIPreferences): Promise<Result<AIStatus>>;
   configureAIKey(request: AIKeyRequest): Promise<Result<AIStatus>>;
   clearAIKey(request: { provider: AIProvider }): Promise<Result<AIStatus>>;
   beginVoice(request: VoiceStart): Promise<Result<null>>;

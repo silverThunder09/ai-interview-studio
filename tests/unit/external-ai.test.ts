@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { AI_CALL_LIMIT, AI_ENDPOINTS, AI_PROVIDERS, isAIConfig, isAIKeyRequest, type AIProvider } from '../../src/shared/ai';
+import { AI_CALL_LIMIT, AI_ENDPOINTS, AI_PROVIDERS, isAIConfig, isAIKeyRequest, isAIModelId, type AIProvider } from '../../src/shared/ai';
 import { isStartInterviewRequest } from '../../src/shared/interview';
 import { AICredentials, createAIHandlers, createExternalTransport, InterviewProviderRouter } from '../../src/main/external-ai';
 import { AIQuestionProvider, type AIQuestionPayload } from '../../src/main/ai-question-provider';
@@ -28,6 +28,16 @@ function store(file?: string) { const dir = mkdtempSync(join(tmpdir(), 'studio-a
 afterEach(() => { for (const s of stores.splice(0)) s.close(); for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }); });
 
 describe('write-only credentials and consent validation', () => {
+  it('rejects display labels and malformed model IDs without changing the accepted API ID contract', () => {
+    for (const model of ['synthetic-model', 'model_v1.2', 'a'.repeat(100)]) {
+      expect(isAIModelId(model)).toBe(true);
+      expect(isAIConfig({ ...config(), model })).toBe(true);
+    }
+    for (const model of ['', 'Gemini 3.8 Flash', ' model', 'model ', '-model', 'models/model', 'a'.repeat(101), null, 123]) {
+      expect(isAIModelId(model)).toBe(false);
+      expect(isAIConfig({ ...config(), model })).toBe(false);
+    }
+  });
   it('rejects arbitrary hosts, extra keys, missing consent, invented quotes and header injection', () => {
     expect(isAIConfig(config())).toBe(true);
     expect(isAIKeyRequest({ provider: 'claude', key })).toBe(true);
@@ -67,20 +77,23 @@ describe.each(AI_PROVIDERS)('%s REST adapter with synthetic fetch', provider => 
     expect(body).not.toHaveProperty('tools');
     if (provider === 'openai') expect(body).toMatchObject({ max_completion_tokens: 600, store: false, stream: false, messages: [{ role: 'system', content: payload.instructions }, { role: 'user', content: JSON.stringify(payload.data) }] });
     if (provider === 'claude') expect(body).toMatchObject({ max_tokens: 600, stream: false, system: payload.instructions });
-    if (provider === 'gemini') expect(body).toMatchObject({ generationConfig: { maxOutputTokens: 600, responseFormat: { text: { mimeType: 'application/json' } } } });
+    if (provider === 'gemini') expect(body).toMatchObject({ generationConfig: { maxOutputTokens: 600, responseFormat: { text: { mimeType: 'APPLICATION_JSON' } } } });
     expect(request).toHaveBeenCalledTimes(1);
   });
-  it.each([401, 403, 429, 400, 500])('redacts HTTP %i and does not retry or change providers', async status => {
+  it.each([401, 403, 429, 400, 404, 500])('redacts HTTP %i and does not retry or change providers', async status => {
     const request = vi.fn<typeof fetch>().mockResolvedValue(new Response('secret error ' + key, { status }));
     const result = await createExternalTransport(provider, 'synthetic-model', key, request)(payload, new AbortController().signal);
-    expect(result).toEqual({ ok: false, reason: status === 429 ? 'rate-limit' : status === 401 || status === 403 ? 'authentication' : 'unavailable' });
+    expect(result).toEqual({ ok: false, reason: status === 429 ? 'rate-limit' : status === 401 || status === 403 ? 'authentication'
+      : status === 400 ? 'bad-request' : status === 404 ? 'not-found' : 'unavailable' });
     expect(JSON.stringify(result)).not.toContain(key); expect(request).toHaveBeenCalledTimes(1);
   });
   it('rejects malformed, truncated, blocked, tool and oversized responses without returning raw bodies', async () => {
     const bad = provider === 'openai' ? [ { choices: [{ finish_reason: 'length', message: { content: JSON.stringify(answer) } }] }, { choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(answer), refusal: 'refused' } }] }, { choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(answer), tool_calls: [{}] } }] } ] : provider === 'claude' ? [ { stop_reason: 'max_tokens', content: [{ type: 'text', text: JSON.stringify(answer) }] }, { stop_reason: 'end_turn', content: [{ type: 'tool_use' }] }, { stop_reason: 'end_turn', stop_details: { type: 'refusal' }, content: [{ type: 'text', text: JSON.stringify(answer) }] } ] : [ { candidates: [{ finishReason: 'MAX_TOKENS', content: { parts: [{ text: JSON.stringify(answer) }] } }] }, { promptFeedback: { blockReason: 'SAFETY' }, candidates: [] }, { candidates: [{ finishReason: 'STOP', content: { parts: [{ functionCall: {} }] } }] } ];
     for (const res of [...bad.map(response), response(null), new Response('bad ' + key, { headers: { 'content-type': 'application/json' } }), response({ content: 'a'.repeat(65_537) }), new Response('not JSON')]) {
       const fetcher = vi.fn<typeof fetch>().mockResolvedValue(res);
-      await expect(new AIQuestionProvider(createExternalTransport(provider, 'synthetic-model', key, fetcher)).next({ questionNumber: 1, evidence: [], answer: null })).rejects.toMatchObject({ code: 'UNAVAILABLE' });
+      const error = await new AIQuestionProvider(createExternalTransport(provider, 'synthetic-model', key, fetcher)).next({ questionNumber: 1, evidence: [], answer: null }).catch(error => error);
+      expect(error).toMatchObject({ code: 'INVALID_RESPONSE' });
+      expect(error.message).not.toContain(key);
     }
   });
   it('drives SQLite AI sessions with exact context, per-answer consent, durable retry and restored provider', async () => {
@@ -140,6 +153,34 @@ it('migrates schema 1 without changing old request hashes, sessions or pending q
   expect(migrated.get(first.id)).toEqual(first); expect(migrated.start(input)).toEqual(first);
   const check = new DatabaseSync(storage.path); expect(check.prepare('PRAGMA user_version').get()?.user_version).toBe(2); check.close();
 });
+it('accepts Gemini output only after a strict synthetic REST endpoint accepts the documented MIME enum', async () => {
+  const request = vi.fn<typeof fetch>().mockImplementation(async (_url, init) => {
+    const body = JSON.parse(String(init?.body));
+    // Google TextResponseFormat.mimeType is a protobuf enum, not the legacy MIME string field.
+    if (body.generationConfig?.responseFormat?.text?.mimeType !== 'APPLICATION_JSON') {
+      return new Response('Synthetic invalid enum', { status: 400 });
+    }
+    return response(envelope('gemini'));
+  });
+  const provider = new AIQuestionProvider(createExternalTransport('gemini', 'gemini-3.8-flash', key, request));
+  const result = await provider.next({ questionNumber: 1, evidence: [{ origin: 'reviewed', location: '합성 구절', text: '합성 경험' }], answer: null });
+  expect(result.text).toBe(answer.text);
+  expect(request).toHaveBeenCalledTimes(1);
+});
+it.each([[400, 'HTTP 400'], [404, 'HTTP 404'], [200, 'AI 응답의 형식']] as const)(
+  'returns a safe IPC error for HTTP %i without persisting a failed first question', async (status, message) => {
+    const storage = store(), vault = new AICredentials(); vault.set('gemini', key);
+    const request = vi.fn<typeof fetch>().mockResolvedValue(status === 200
+      ? response({ candidates: [{ finishReason: 'MAX_TOKENS' }] })
+      : new Response('private synthetic resume ' + key, { status }));
+    const service = new InterviewService(() => storage, new InterviewProviderRouter(vault, request));
+    const result = await createInterviewHandlers(() => storage, service).start([{ ...startFixture(), ai: config('gemini') }]);
+    expect(result).toMatchObject({ ok: false, error: { code: 'UNAVAILABLE', message: expect.stringContaining(message) } });
+    expect(JSON.stringify(result)).not.toContain(key);
+    expect(JSON.stringify(result)).not.toContain('private synthetic resume');
+    expect(storage.history().sessions).toEqual([]);
+    expect(request).toHaveBeenCalledTimes(1); service.close();
+  });
 it('keeps interrupted network answers atomic and redacts raw transport failures through IPC', async () => {
   const storage = store(), vault = new AICredentials(); vault.set('openai', key);
   const request = vi.fn<typeof fetch>().mockResolvedValueOnce(response(envelope('openai'))).mockRejectedValue(new Error(key + ' private resume'));

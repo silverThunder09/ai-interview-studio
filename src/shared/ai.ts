@@ -10,17 +10,32 @@ export const AI_CALL_LIMIT = 36;
 export interface AIInterviewConfig {
   provider: AIProvider; model: string; quote: string; transmissionConsent: true;
 }
-export interface AIStatus { providers: { provider: AIProvider; configured: boolean }[]; remainingRequests: number }
-export interface AIKeyRequest { provider: AIProvider; key: string }
+export interface AIStatus {
+  providers: { provider: AIProvider; configured: boolean; saved?: boolean }[];
+  remainingRequests: number;
+  storage?: { available: boolean; warning: string };
+  preferences?: AIPreferences;
+}
+export interface AIPreferences { provider: AIProvider; models: Record<AIProvider, string> }
+export const DEFAULT_AI_PREFERENCES: AIPreferences = { provider: 'openai', models: { openai: '', claude: '', gemini: '' } };
+export function isAIPreferences(value: unknown): value is AIPreferences {
+  if (!exactRecord(value, ['provider', 'models']) || !isAIProvider(value.provider)) return false;
+  const models = value.models;
+  return exactRecord(models, [...AI_PROVIDERS]) && AI_PROVIDERS.every(p => models[p] === '' || isAIModelId(models[p]));
+}
+export interface AIKeyRequest { provider: AIProvider; key: string; remember?: boolean }
 export function exactRecord(value: unknown, keys: string[]): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value) && Object.keys(value).length === keys.length && keys.every(k => Object.hasOwn(value, k));
 }
 export function isAIProvider(value: unknown): value is AIProvider { return AI_PROVIDERS.some(p => p === value); }
+export function isAIModelId(value: unknown): value is string {
+  return typeof value === 'string' && /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,99}$/.test(value);
+}
 export function isAIConfig(value: unknown): value is AIInterviewConfig {
   return exactRecord(value, ['provider', 'model', 'quote', 'transmissionConsent']) && isAIProvider(value.provider) &&
-    typeof value.model === 'string' && /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,99}$/.test(value.model) &&
+    isAIModelId(value.model) &&
     typeof value.quote === 'string' && value.quote.trim().length > 0 && value.quote.length <= 180 && !value.quote.includes('\0') && value.transmissionConsent === true;
 }
 export function isAIKeyRequest(value: unknown): value is AIKeyRequest {
-  return exactRecord(value, ['provider', 'key']) && isAIProvider(value.provider) && typeof value.key === 'string' && /^[\x21-\x7e]{8,512}$/.test(value.key);
+  return (exactRecord(value, ['provider', 'key']) || (exactRecord(value, ['provider', 'key', 'remember']) && typeof value.remember === 'boolean')) && isAIProvider(value.provider) && typeof value.key === 'string' && /^[\x21-\x7e]{8,512}$/.test(value.key);
 }
