@@ -87,34 +87,40 @@ export function createExternalTransport(provider: AIProvider, model: string, key
     } else {
       headers['x-goog-api-key'] = key; url += `${encodeURIComponent(model)}:generateContent`;
       body = { systemInstruction: { parts: [{ text: payload.instructions }] }, contents: [{ role: 'user', parts: [{ text: data }] }],
-        generationConfig: { maxOutputTokens: payload.maxOutputTokens, responseFormat: { text: { mimeType: 'application/json', schema } } } };
+        generationConfig: { maxOutputTokens: payload.maxOutputTokens, responseFormat: { text: { mimeType: 'APPLICATION_JSON', schema } } } };
     }
     const response = await request(url, { method: 'POST', headers, body: JSON.stringify(body), signal, redirect: 'error', credentials: 'omit', cache: 'no-store' });
     if (!response.ok) {
       await response.body?.cancel().catch(() => {});
-      return { ok: false, reason: response.status === 429 ? 'rate-limit' : [401, 403].includes(response.status) ? 'authentication' : 'unavailable' };
+      return { ok: false, reason: response.status === 429 ? 'rate-limit' : [401, 403].includes(response.status) ? 'authentication'
+        : response.status === 400 ? 'bad-request' : response.status === 404 ? 'not-found' : 'unavailable' };
     }
-    const result = object(await boundedJSON(response, signal));
-    let value: unknown;
-    if (provider === 'openai') {
-      const choices = items(result.choices);
-      if (choices.length !== 1 || object(choices[0]).finish_reason !== 'stop') throw new AIQuestionError('INVALID_RESPONSE');
-      const message = object(object(choices[0]).message);
-      if (message.refusal || message.tool_calls || message.function_call) throw new AIQuestionError('INVALID_RESPONSE');
-      value = parseText(message.content);
-    } else if (provider === 'claude') {
-      const content = items(result.content);
-      if (result.stop_reason !== 'end_turn' || result.stop_details || content.length !== 1 || object(content[0]).type !== 'text') throw new AIQuestionError('INVALID_RESPONSE');
-      value = parseText(object(content[0]).text);
-    } else {
-      if (result.promptFeedback && object(result.promptFeedback).blockReason) throw new AIQuestionError('INVALID_RESPONSE');
-      const candidates = items(result.candidates);
-      if (candidates.length !== 1 || object(candidates[0]).finishReason !== 'STOP') throw new AIQuestionError('INVALID_RESPONSE');
-      const parts = items(object(object(candidates[0]).content).parts);
-      if (parts.length !== 1 || object(parts[0]).thought === true || typeof object(parts[0]).text !== 'string' || object(parts[0]).functionCall) throw new AIQuestionError('INVALID_RESPONSE');
-      value = parseText(object(parts[0]).text);
+    try {
+      const result = object(await boundedJSON(response, signal));
+      let value: unknown;
+      if (provider === 'openai') {
+        const choices = items(result.choices);
+        if (choices.length !== 1 || object(choices[0]).finish_reason !== 'stop') throw new AIQuestionError('INVALID_RESPONSE');
+        const message = object(object(choices[0]).message);
+        if (message.refusal || message.tool_calls || message.function_call) throw new AIQuestionError('INVALID_RESPONSE');
+        value = parseText(message.content);
+      } else if (provider === 'claude') {
+        const content = items(result.content);
+        if (result.stop_reason !== 'end_turn' || result.stop_details || content.length !== 1 || object(content[0]).type !== 'text') throw new AIQuestionError('INVALID_RESPONSE');
+        value = parseText(object(content[0]).text);
+      } else {
+        if (result.promptFeedback && object(result.promptFeedback).blockReason) throw new AIQuestionError('INVALID_RESPONSE');
+        const candidates = items(result.candidates);
+        if (candidates.length !== 1 || object(candidates[0]).finishReason !== 'STOP') throw new AIQuestionError('INVALID_RESPONSE');
+        const parts = items(object(object(candidates[0]).content).parts);
+        if (parts.length !== 1 || object(parts[0]).thought === true || typeof object(parts[0]).text !== 'string' || object(parts[0]).functionCall) throw new AIQuestionError('INVALID_RESPONSE');
+        value = parseText(object(parts[0]).text);
+      }
+      return { ok: true, value };
+    } catch {
+      // Fixed classification only: never forward response bodies, stream errors or secrets.
+      return { ok: false, reason: 'invalid-response' };
     }
-    return { ok: true, value };
   };
 }
 export class InterviewProviderRouter implements AsyncInterviewProvider {

@@ -18,21 +18,25 @@ export interface AIQuestionPayload {
     answer: string | null;
   };
 }
-export type AITransportResult = { ok: true; value: unknown } | { ok: false; reason: 'rate-limit' | 'authentication' | 'unavailable' };
+export type AITransportResult = { ok: true; value: unknown } | { ok: false; reason: 'rate-limit' | 'authentication' | 'bad-request' | 'not-found' | 'invalid-response' | 'unavailable' };
 // No transport is installed by this module. Only an explicitly selected adapter
 // may implement this boundary; tests inject synthetic results without networking.
 export type AIQuestionTransport = (payload: AIQuestionPayload, signal: AbortSignal) => Promise<AITransportResult>;
-type ErrorCode = 'INVALID_INPUT' | 'INVALID_RESPONSE' | 'TIMEOUT' | 'CANCELLED' | 'RATE_LIMITED' | 'BUDGET_EXHAUSTED' | 'AUTHENTICATION' | 'UNAVAILABLE';
+type ErrorCode = 'INVALID_INPUT' | 'INVALID_RESPONSE' | 'TIMEOUT' | 'CANCELLED' | 'RATE_LIMITED' | 'BUDGET_EXHAUSTED' | 'AUTHENTICATION' | 'BAD_REQUEST' | 'MODEL_NOT_FOUND' | 'UNAVAILABLE';
 const messages: Record<ErrorCode, string> = {
   INVALID_INPUT: 'AI 질문에 사용할 선택 내용과 길이를 확인해 주세요.',
-  INVALID_RESPONSE: 'AI 응답의 형식이나 근거를 확인하지 못했습니다. 답변은 진행하지 않았습니다.',
+  INVALID_RESPONSE: 'AI 응답의 형식·출력 길이 또는 근거를 확인하지 못했습니다. 답변은 진행하지 않았습니다.',
   TIMEOUT: '질문 생성 시간이 초과되었습니다. 입력을 유지하고 다시 시도해 주세요.',
   CANCELLED: '질문 생성을 취소했습니다.',
   RATE_LIMITED: 'AI 서비스의 요청 한도에 도달했습니다. 잠시 후 직접 다시 시도해 주세요.',
   BUDGET_EXHAUSTED: `이번 앱 실행의 AI 요청 ${AI_CALL_LIMIT}회를 모두 사용했습니다. 기다리거나 키를 재등록해도 복구되지 않습니다. 추가 사용 전 서비스의 사용량·예산을 확인해 주세요. 앱을 재시작하면 실행 한도가 초기화됩니다.`,
   AUTHENTICATION: 'AI 서비스 인증을 확인해 주세요.',
+  BAD_REQUEST: 'AI 서비스가 요청을 거절했습니다 (HTTP 400). 모델 ID·API 키 설정·요청 형식을 확인해 주세요.',
+  MODEL_NOT_FOUND: '선택한 모델 또는 API 경로를 찾지 못했습니다 (HTTP 404). 모델 ID와 해당 API의 사용 가능 여부를 확인해 주세요.',
   UNAVAILABLE: 'AI 서비스에 연결하지 못했습니다. 입력을 유지하고 다시 시도해 주세요.',
 };
+const transportErrors = { 'rate-limit': 'RATE_LIMITED', authentication: 'AUTHENTICATION',
+  'bad-request': 'BAD_REQUEST', 'not-found': 'MODEL_NOT_FOUND', 'invalid-response': 'INVALID_RESPONSE', unavailable: 'UNAVAILABLE' } as const;
 export class AIQuestionError extends Error {
   readonly retryable: boolean;
   constructor(readonly code: ErrorCode) {
@@ -98,8 +102,8 @@ export class AIQuestionProvider {
       const result = await Promise.race([operation, stopped]);
       if (!record(result, result?.ok === true ? ['ok', 'value'] : ['ok', 'reason'])) throw new AIQuestionError('INVALID_RESPONSE');
       if (result.ok !== true) {
-        if (result.ok !== false || typeof result.reason !== 'string' || !['rate-limit', 'authentication', 'unavailable'].includes(result.reason)) throw new AIQuestionError('INVALID_RESPONSE');
-        const code = result.reason === 'rate-limit' ? 'RATE_LIMITED' : result.reason === 'authentication' ? 'AUTHENTICATION' : 'UNAVAILABLE';
+        if (result.ok !== false || typeof result.reason !== 'string' || !Object.hasOwn(transportErrors, result.reason)) throw new AIQuestionError('INVALID_RESPONSE');
+        const code = transportErrors[result.reason as keyof typeof transportErrors];
         throw new AIQuestionError(code);
       }
       return question(result.value, citations);
