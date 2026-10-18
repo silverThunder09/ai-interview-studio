@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useContext, useEffect, useState } from 'react';
+import { ConnectionContext } from './AIOptions';
 import { SpeechOutput } from './SpeechOutput';
 import { VoiceInput } from './VoiceInput';
 
@@ -8,6 +9,8 @@ export function InterviewAudio({ sessionId, questionId, question, answer, answer
   onBusy: (busy: boolean) => void; onApply: (text: string) => void; onReviewAnswer: () => void;
 }) {
   const [mode, setMode] = useState<Mode>();
+  const { settingsOpen } = useContext(ConnectionContext);
+  useEffect(() => { if (settingsOpen) setMode(undefined); }, [settingsOpen]);
   function select(next: Mode) { setMode(next); if (next === 'text') onReviewAnswer(); }
   return <section className="audio-flow" aria-label="음성 연습 도우미">
     <h3>질문을 듣고, 내 답변을 검토하세요</h3>

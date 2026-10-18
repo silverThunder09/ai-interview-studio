@@ -52,7 +52,7 @@ export function App() {
   }
   function openSession(session: InterviewSession) { setActiveSession(session); setPage('interview'); }
 
-  return <ConnectionContext.Provider value={{ revision, open: openSettings, changed }}><div className="app">
+  return <ConnectionContext.Provider value={{ revision, settingsOpen, open: openSettings, changed }}><div className="app">
     <aside className="sidebar">
       <a className="brand" href="#" onClick={(e) => { e.preventDefault(); setPage('home'); }}>
         <span className="brand-mark" aria-hidden="true">ai</span>

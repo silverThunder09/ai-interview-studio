@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useId, useRef, useState } from 'react';
 import { DEFAULT_AI_PREFERENCES, AI_CALL_LIMIT, AI_ENDPOINTS, AI_NAMES, AI_PROVIDERS, isAIConfig, isAIModelId, type AIInterviewConfig, type AIProvider, type AIStatus } from '../../shared/ai';
 
-export const ConnectionContext = createContext<{ revision: number; open: (provider?: AIProvider) => void; changed: () => void }>({ revision: 0, open: () => {}, changed: () => {} });
+export const ConnectionContext = createContext<{ revision: number; settingsOpen: boolean; open: (provider?: AIProvider) => void; changed: () => void }>({ revision: 0, settingsOpen: false, open: () => {}, changed: () => {} });
 export function AIConnectionSummary({ disabled = false, onStatus, fixedProvider, onConfigured }: { disabled?: boolean; onStatus?: (status: AIStatus) => void; fixedProvider?: AIProvider; onConfigured?: () => void }) {
   const connection = useContext(ConnectionContext);
   const [status, setStatus] = useState<AIStatus>();
