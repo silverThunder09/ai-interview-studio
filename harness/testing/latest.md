@@ -1,102 +1,86 @@
-# 최신 앱 테스트 기록 — 통합 음성 연습까지
+# 최신 앱 테스트 기록 — UI·API 설정 분리와 보호 저장
 
-[전체 목록·찾는 방법](README.md) · [검색용 JSON](index.json) · [PR #24](https://github.com/silverThunder09/ai-interview-studio/pull/24)
+[전체 목록·찾는 방법](README.md) · [검색용 JSON](index.json) · [기능 PR #31](https://github.com/silverThunder09/ai-interview-studio/pull/31)
 
-**2026-10-18 KST, main `cab1ef0250b11169ab1e345d89e7cb4437bdad87`의 일반 검사와 Windows 원본·패키지 앱 검사가 성공했다.** 실제 사용자 하드웨어와 유료 API는 검증하지 않았다.
+**2026-10-18 KST, main `9c09e63ee0850b7bb58f413543eb3f20db16382f`에서 단위 220개·리뷰 정책 40개·Windows 원본/패키지 각 8개가 통과했다.** 실제 유료 API·개인 자료·사용자 하드웨어는 검증하지 않았다.
 
-- 기록 ID: `tests-2026-10-18-pr24`
-- 적용 기능: 이력서 PDF/DOCX 검토, 텍스트 면접·기록, 외부 API 질문 생성, 음성 전사·답변 검토, 현재 질문의 음성 읽기·재생/중지, 듣기 → 녹음·전사 → 검토·직접 제출의 통합 흐름.
-- 판정: **자동 검증 통과**. 이후 코드 변경이나 실제 사용자 환경까지 보장하는 뜻은 아니다.
-- 이 기록은 해당 SHA의 고정 스냅샷이다. 문서 PR의 CI는 해당 PR에서 확인하며 앱 검증 기준을 자동으로 바꾸지 않는다.
-- 이전 [PR #21 질문 음성 읽기 기준](archive/2026-10-18/tests-2026-10-18-pr21.md)은 ID·SHA·실행 링크를 보존해 아카이브로 옮겼다.
+- 기록 ID: `tests-2026-10-18-pr31` · 판정: **자동 검증 통과**.
+- 적용 기능: 이력서 검토, 로컬/외부 AI 면접·기록, 음성 입력/읽기와 기존 흐름, 별도 API 설정 창, 테마·서비스별 질문 모델·선택한 키의 재실행 복원/삭제.
+- 이 기록은 위 앱 SHA의 고정 스냅샷이다. 문서 PR의 CI와 이후 코드 변경은 이 앱 기준을 바꾸지 않는다.
+- 이전 [PR #24 통합 음성 연습 기준](archive/2026-10-18/tests-2026-10-18-pr24.md)은 ID·SHA·실행 링크와 당시 결과를 보존했다. 테스트 수를 과거 기록과 합산하지 않는다.
 
-## 성공한 검사 — 무엇이 통과했나
+## 성공한 검사
 
-| 검사 | 결과 | 무엇을 확인했나 |
+| 검사 | 결과 | 확인 내용 |
 | --- | --- | --- |
-| TypeScript / ESLint | 성공 | 타입·정적 규칙 위반 없음 |
-| 단위 테스트 | 201개 통과 | 입력·권한·파서·저장·AI/음성 실패 경로, TTS 생성·재생 자원 |
-| 리뷰/머지 정책 테스트 | 40개 통과 | 미해결 변경 요청·이전 SHA·누락 증거 등 거절 |
-| 앱 번들 build | 성공 | main/preload/renderer 번들 생성 |
-| Windows 원본 앱 smoke | 6개 통과 · 37.3s | 실제 Electron에서 아래 6개 흐름 실행 |
-| Windows 패키지 앱 smoke | 6개 통과 · 27.0s | 패키징한 실행 파일에서 같은 흐름 실행 |
-| Windows portable 패키징 | 성공 | exe·체크섬·라이선스 artifact 생성 |
+| strict TypeScript / ESLint | 성공 | 타입·정적 규칙 |
+| 단위 테스트 | 220개 통과 | 13개 파일의 입력·문서·SQLite·AI/음성·설정 보존과 실패 경로 |
+| 리뷰/머지 정책 테스트 | 40개 통과 | 변경 요청 집계·이전 SHA·누락/위조 CI 증거·보호 변경 거절 |
+| 앱 번들·Windows portable | 성공 | main/preload/renderer·exe·체크섬·라이선스 |
+| Windows 원본 앱 smoke | 8개 · 50.7초 | 실제 Electron UI·IPC·보안·저장 |
+| Windows 패키지 앱 smoke | 8개 · 45초 | 패키징한 앱에서 같은 8개 흐름 |
 
-201 + 40 = 241은 단위/정책 검사의 합계다. Windows의 6개 흐름을 원본·패키지에서 각각 실행한 것이므로 서로 다른 기능 12개로 세지 않는다. 과거 개수도 합산하지 않는다.
+단위 220개와 정책 40개, 원본/패키지의 8개 흐름은 서로 다른 종류의 수치다. assertion 수·커버리지 비율·사용자 환경 성공률이 아니다. 로컬에서도 `npm run check`, `npm run build`, `git diff --check`를 실행했고 성공했다. Windows CI는 lockfile 설치부터 패키징까지 별도로 수행했다.
 
-## 단위 테스트 — 어떤 문제를 막는 검사인가
+## 실제 Windows에서 실행한 8개 흐름
 
-| 영역 | 주요 확인 내용 | 세부 케이스 |
+| 흐름 | 이번에 확인한 내용 | 테스트 |
 | --- | --- | --- |
-| 설정 | 잘못된 테마·추가 필드 거절, 설정 변경·초기값 | [contracts.test.ts](../../tests/unit/contracts.test.ts) |
-| 자산·IPC 송신자 | 경로 탈출/위장 URL 거절, 정확한 창·프레임·개발 주소 | [policy.test.ts](../../tests/unit/policy.test.ts) |
-| 문서 입력·파싱 | 문서 서명·크기·ZIP/XML 한도와 손상·빈 문서·한글 추출 | [resume.test.ts](../../tests/unit/resume.test.ts) |
-| 파서 수명주기 | 취소·시간 초과·worker 정리와 오래된 응답 | [resume-worker.test.ts](../../tests/unit/resume-worker.test.ts) |
-| 면접·실제 SQLite | 동의·질문 순서·중복/충돌·rollback·복원·삭제·근거 출처 | [interview.test.ts](../../tests/unit/interview.test.ts) |
-| AI 질문 계약 | 선택 문맥만 전송, 허구 근거/잘못된 응답 거절, 오류 비노출·취소 | [ai-question-provider.test.ts](../../tests/unit/ai-question-provider.test.ts) |
-| 비동기 면접 서비스 | DB 밖에서 생성 대기, 중복 병합·취소·저장 원자성 | [interview-service.test.ts](../../tests/unit/interview-service.test.ts) |
-| 외부 API adapter | 세 서비스 요청/응답, 메모리 키·예산·합성 인증/429·stream 취소 | [external-ai.test.ts](../../tests/unit/external-ai.test.ts) |
-| 음성 전사 경계 | audio-only 권한·WebM/Opus·한도·현재 질문·최소 payload·늦은 결과 | [voice.test.ts](../../tests/unit/voice.test.ts) |
-| 녹음 리소스 | 권한 거절/장치 없음·중지·이탈 후 늦은 허용·트랙 해제 | [voice-recorder.test.ts](../../tests/unit/voice-recorder.test.ts) |
-| 질문 음성 생성 | 현재 질문/동의·고정 endpoint·별도 예산·오류 정제·MP3/크기·중복·취소/timeout·늦은 결과 | [speech.test.ts](../../tests/unit/speech.test.ts) |
-| 질문 음성 재생 | 자동 재생 없음·stop/end/90초 제한·URL 해제·캐시 재생·디코더 실패·늦은 play 거절 | [speech-player.test.ts](../../tests/unit/speech-player.test.ts) |
+| 데스크톱·보안 | 한국어·테마 재실행 복원, 좁은 API·다른 창 거절·sandbox·CSP·장치 거절 | [desktop.spec.ts](../../tests/smoke/desktop.spec.ts) |
+| 이력서 검토 | 합성 PDF/DOCX·한글, 수정/검토·취소·실패 후 내용 보존 | [resume.spec.ts](../../tests/smoke/resume.spec.ts) |
+| 로컬 연습·기록 | 저장 동의, 질문/답변 순서·실패 보존·12개 답변·재시작·삭제 | [interview.spec.ts](../../tests/smoke/interview.spec.ts) |
+| 외부 AI 면접 | 별도 설정에서 모델 ID 형식 검사, 선택 구절/매 전송 동의, 예산·임시 키의 재시작 재등록과 답변 보존 | [external-ai.spec.ts](../../tests/smoke/external-ai.spec.ts) |
+| Gemini 회귀 | strict 합성 REST의 JSON MIME enum·HTTP 400/404·불완전 응답 구분과 답변 유지 | [gemini.spec.ts](../../tests/smoke/gemini.spec.ts) |
+| 설정 보호 저장 | 실제 Electron safeStorage 암복호화·파일/IPC 평문 부재, 키/모델/테마 복원, 서비스별 삭제 후 재실행, dialog 초점/Escape | [settings.spec.ts](../../tests/smoke/settings.spec.ts) |
+| 음성 입력 | 실제 합성 마이크/MediaRecorder·개별 동의·429/재시도·검토/교체/적용·직접 제출 | [voice.spec.ts](../../tests/smoke/voice.spec.ts) |
+| 통합 음성 연습 | 합성 MP3 디코딩/재생/중지, 설정 열기 시 재생·녹음 정리와 답변 보존, 동의 재확인·직접 제출·외부 media 차단 | [speech.spec.ts](../../tests/smoke/speech.spec.ts) |
 
-서비스 응답·장치는 합성이며 SQLite는 임시 파일을 실제로 사용한다. TTS 단위 15개를 포함한 총 201개다. 이번 UI 작업은 새 단위 테스트를 추가하지 않고 기존 Windows smoke의 통합 검증 범위를 넓혔다. 자동 검증은 모든 결함을 발견한다는 보증이 아니다.
+Windows 보호 저장은 실제 OS의 safeStorage를 사용했다. 개인 키 대신 합성 키만 사용하고 외부 AI/음성 응답은 main fetch를 대체했다. MP3는 합성 무음이며 실제 스피커 출력·음질 확인이 아니다. OS sandbox·renderer 네트워크 차단을 유지하고 각 테스트는 별도 임시 profile을 사용했다.
 
-## Windows에서 실행한 6개 흐름
+새 [local-settings.test.ts](../../tests/unit/local-settings.test.ts)의 8개 단위 케이스는 암호화 불가/`basic_text`, 임시 등록과 기존 저장본 삭제, 쓰기·삭제 충돌, 손상/미래/과대 파일, 복호화 실패, 엄격한 IPC를 검증한다. 단위 검사의 crypto adapter는 합성이며 실제 OS 보호 검증은 Windows smoke와 구분한다. 나머지 계약·파서·SQLite·AI/음성 단위 테스트도 현재 SHA에서 다시 통과했다.
 
-| 흐름 | 확인 내용 | 테스트 파일 |
-| --- | --- | --- |
-| 데스크톱 기본·보안 | 한국어·테마·재시작, Node 격리·다른 창 IPC 거절·탐색·네트워크·장치 거절 | [desktop.spec.ts](../../tests/smoke/desktop.spec.ts) |
-| 이력서 검토 | 합성 PDF/DOCX·한글 추출, 수정/검토·취소·실패 후 보존·비우기 | [resume.spec.ts](../../tests/smoke/resume.spec.ts) |
-| 로컬 연습·기록 | 저장 동의·12개 답변·실패 보존·재시작 이어하기·삭제·선택 음성 비용 안내 | [interview.spec.ts](../../tests/smoke/interview.spec.ts) |
-| 외부 AI 면접 | 선택 구절/동의·합성 질문·예산·키 재등록·입력 보존 | [external-ai.spec.ts](../../tests/smoke/external-ai.spec.ts) |
-| 음성 입력 | 합성 마이크의 실제 MediaRecorder, 개별 동의·합성 429/재시도·검토/교체·적용 후 포커스와 직접 제출 | [voice.spec.ts](../../tests/smoke/voice.spec.ts) |
-| 통합 음성 연습 | MP3 재생/중지 → 녹음 전환과 트랙 해제 → 새 동의 후 전사 → 수정/교체 → 답변 포커스·DB 미저장 → 직접 제출·다음 질문 단계 초기화, 외부 media CSP 차단 | [speech.spec.ts](../../tests/smoke/speech.spec.ts) |
-
-TTS는 직접 만든 합성 무음 MP3를 실제 HTMLAudioElement로 디코딩/재생한다. CI는 `--mute-audio`를 사용하므로 실제 스피커 출력/음질 검증으로 표현하지 않는다. sandbox는 유지한다. 소스 링크는 탐색용이며 당시 기준은 아래 SHA와 실행 로그다.
-
-## 실제 실행 링크와 SHA
+## 실제 실행 링크와 검사 SHA
 
 ### 머지 후 main 재검증
 
-- [main Validation / checks](https://github.com/silverThunder09/ai-interview-studio/actions/runs/39092304758/job/117571433617): TypeScript·ESLint·단위 201개·정책 40개·build 성공.
-- [main Windows / package](https://github.com/silverThunder09/ai-interview-studio/actions/runs/39092304739/job/117571433437): 원본 6개·패키지 6개·portable 생성 성공.
-- 두 push run의 head는 `cab1ef0250b11169ab1e345d89e7cb4437bdad87`, attempt는 각각 1 / 1이며 성공했다. PR 전용 evidence와 main push 검증을 혼동하지 않는다.
+- [Validation / checks](https://github.com/silverThunder09/ai-interview-studio/actions/runs/39125406989/job/117669383647): 단위 220개·정책 40개·타입/lint/build 성공.
+- [Windows / package](https://github.com/silverThunder09/ai-interview-studio/actions/runs/39125407092/job/117669384374): 원본 8개·패키지 8개·portable/notices/체크섬/artifact 성공.
+- 두 push run은 head `9c09e63ee0850b7bb58f413543eb3f20db16382f`, 최신 attempt 각각 1, 성공이다. PR 전용 CI 증거와 main push 검증을 혼동하지 않는다.
 
-### PR #24의 머지 전 검증
+### PR #31 머지 전 검증
 
-| 검사 | run / job | 실제 Record tested head and base 단계 |
+| 검사 | run / job | Record tested head and base |
 | --- | --- | --- |
-| [checks](https://github.com/silverThunder09/ai-interview-studio/actions/runs/39090131977/job/117564934828) | 39090131977 / 117564934828 | 성공 |
-| [package](https://github.com/silverThunder09/ai-interview-studio/actions/runs/39090131978/job/117564934947) | 39090131978 / 117564934947 | 성공 |
-| [pr-policy](https://github.com/silverThunder09/ai-interview-studio/actions/runs/39092231188/job/117571217995) | 39092231188 / 117571217995 | 성공 |
+| [checks](https://github.com/silverThunder09/ai-interview-studio/actions/runs/39124912469/job/117667873778) | 39124912469 / 117667873778 | 성공 |
+| [package](https://github.com/silverThunder09/ai-interview-studio/actions/runs/39124912460/job/117667894545) | 39124912460 / 117667894545 | 성공 |
+| [pr-policy](https://github.com/silverThunder09/ai-interview-studio/actions/runs/39125323149/job/117669132803) | 39125323149 / 117669132803 | 성공 |
 
-| SHA 구분 | 값 |
+| 구분 | SHA |
 | --- | --- |
-| 검사한 PR head | `1caa1cae5e874125d5a267deafd66d6ecd436b00` |
-| 검사한 base | `9c8f9a5d04337ba2fedf06e9d5bf30e36d965b3b` |
-| 실제 PR merge checkout | `09878491c551f84aae387efffabfb43e27785af8` |
-| 머지 후 main commit | `cab1ef0250b11169ab1e345d89e7cb4437bdad87` |
+| 검사한 PR head | `a46c14b3741db89c49ae31aa352cc3bc07aa32f2` |
+| 검사한 base | `f008472b9c46d616731ffb539fad653863f60791` |
+| 실제 PR merge checkout | `b5fbbb03cf35d45df5ff73d1d53cea980b3c7bcc` |
+| 머지 후 main | `9c09e63ee0850b7bb58f413543eb3f20db16382f` |
 
-성공한 세 job의 Record tested head and base 실제 명령 출력에 있는 마지막 유효 AIS_CI_EVIDENCE의 repository·PR·run·head·base·checkout을 대조했다. 최신 attempt/Actions 출처·전체 REST reviews·라벨·스레드·관련 이슈를 확인하고 main의 merge 판정기를 실제 증거 JSON으로 실행했다. PR 본문/댓글의 비슷한 문자열은 증거가 아니다. 구조화한 값은 [index.json](index.json)에 보존한다.
+성공한 세 job의 실제 Record tested head and base 명령 출력에서 마지막 유효 AIS_CI_EVIDENCE JSON을 읽어 repository·PR·run·head·base·checkout을 대조했다. 원본 REST reviews 전체 페이지·라벨·스레드·연결 이슈와 최신 attempt/Actions 출처를 확인하고 trusted main의 판정기를 실제 API 증거로 실행해 allowed=true를 확인했다. expected head squash merge 후 실제 merged 상태와 main CI도 확인했다. PR 본문·댓글은 증거로 사용하지 않았다. 추출한 값은 [색인](index.json)에 보존한다. AI 자체 검토이며 사람의 독립 승인이 아니다.
 
-## 이번 검증과 과거 실패 이력
+## 발견한 결함과 수정
 
-이번 PR #24의 최종 head와 머지 후 main은 위 검사에서 모두 성공했다. 테스트 개수는 이전 기준과 같지만, 기존 음성 smoke에 단계 전환·포커스·적용 직후 DB 미저장·직접 제출·다음 질문 초기화 검증을 추가했다.
+[이슈 #32](https://github.com/silverThunder09/ai-interview-studio/issues/32): 별도 설정 창을 열어도 녹음/재생 component가 유지되어 오디오 작업이 계속되는 P2를 코드 리뷰에서 발견했다. 수정 `30e325eecdadd9533039e7aede3cabb06d42ef36`와 최종 head의 수동 단계 재개/초점 보완 `a46c14b3741db89c49ae31aa352cc3bc07aa32f2`를 반영했다. 설정 열기 시 기존 cleanup을 실행하고 답변은 유지하는 흐름을 원본·패키지에서 확인한 뒤 이슈를 닫았다.
 
-이전 PR #21의 문구 locator 실패와 이슈 #22의 수정/재검증은 [당시 기록](archive/2026-10-18/tests-2026-10-18-pr21.md)에 보존한다. 과거 실패를 이번 PR의 실패로 복사하거나 삭제하지 않는다.
+초기 두 head의 CI는 코드 수정에 따른 새 실행으로 취소됐다. 이 취소를 성공으로 세지 않고 최종 head의 완료된 실행만 사용했다. 최초 로컬 typecheck의 optional 속성/unknown narrowing 오류는 수정 후 check/build로 재검증했다. PR #28·#30의 이전 모델 ID/Gemini 프로토콜 수정은 이번 최신 회귀에 포함되며 당시 결과는 각 PR·이슈에 있다. PR #24와 그 이전의 결과는 아카이브에 그대로 둔다.
 
 ## 성공으로 기록하지 않은 항목
 
-| 항목 | 상태와 이유 |
+| 항목 | 상태·이유 |
 | --- | --- |
-| Linux Electron 화면 smoke | **환경 차단**: OS sandbox의 shutdown Operation not permitted로 시작 실패. sandbox를 해제하지 않음 |
-| 실제 Windows 사용자 PC·마이크·스피커·OS 권한 | **미실행**: CI 합성 장치/무음 재생과 구분 |
-| 실제 개인 이력서/음성의 정확도 | **미실행**: 합성 fixture만 사용 |
-| 실제 OpenAI·Claude·Gemini 인증/모델 접근·요금·보존·생성/전사/TTS 품질 | **미실행**: main fetch를 합성 응답으로 대체, 실제 유료 호출 없음 |
-| 실시간 음성 대화·끼어들기·카메라 | **범위 밖**: 구현/검증 완료로 표현하지 않음 |
+| 실제 사용자 Windows PC·마이크·스피커·OS 권한 | 미실행 — CI 합성 장치/무음 재생과 구분 |
+| 실제 개인 이력서/음성 정확도 | 미실행 — 합성 문서/음성만 사용 |
+| 실제 서비스 키·모델 접근·과금·보존·생성/전사/TTS 품질 | 미실행 — 유료 호출·개인 자료 전송 없음 |
+| 현재 작업의 Linux Electron 화면 | 미실행 — 이전 실행의 sandbox 환경 차단을 성공으로 재사용하지 않았고 이번에 sandbox를 해제하지 않음 |
+| 음성 모델/voice·미제출 답변·전송 동의의 추가 보존 | 범위 밖 — 보존한 값은 테마·질문 서비스/모델·선택한 키 |
+| 실시간 대화·카메라·이벤트 자동화 활성화 | 범위 밖 |
 
-## 사람이 직접 확인하려면
+## 직접 확인하는 순서
 
-검증한 앱은 [main Windows 실행](https://github.com/silverThunder09/ai-interview-studio/actions/runs/39092304739)의 `ai-interview-studio-windows-x64` artifact에서 받는다. 합성/비민감 문서로 텍스트 연습·기록/복원/삭제를 확인한다. 현재 질문에서 '1. 질문 듣기' → 본인 OpenAI 키/지원 모델/음성·전송 동의 → 만들기/재생 → '답변 녹음 단계로 이동' → 마이크 동의 후 녹음/중지 → 별도 전송 동의 후 전사 → 검토/수정·교체 확인 후 적용 → '3. 답변 검토·제출'에서 직접 제출 순서다. 단계 이동만으로 녹음·전송·저장을 시작하지 않는다. 실제 서비스 이용은 사용자의 개별 선택이며 수동 확인 결과를 받기 전에는 성공으로 기록하지 않는다.
+[이 앱 SHA의 Windows 빌드](https://github.com/silverThunder09/ai-interview-studio/actions/runs/39125407092)에서 artifact를 내려받아 기존 앱을 닫고 새 exe를 실행한다. 설정에서 서비스·질문 모델을 저장하고 합성/본인 키의 보존 여부를 직접 선택한다. 앱 재실행 후 테마·서비스/모델·등록 상태가 복원되는지 확인하고 서비스별 키 삭제 후 다시 실행해 미등록인지 확인한다. 저장된 키는 다시 표시하지 않는다. 설정을 열고 닫을 때 작성 중 검토본·답변은 유지하고 오디오는 직접 다시 시작한다. 실제 API 요청은 별도 동의 시 요금·서비스 보존 정책이 적용되므로 개발 자동 검증과 구분한다. 수동 결과를 받기 전에는 성공으로 기록하지 않는다.
