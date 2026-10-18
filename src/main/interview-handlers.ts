@@ -8,7 +8,8 @@ export function createInterviewHandlers(store: () => InterviewStore, service = n
   const invalid = (): Result<never> => ({ ok: false, error: { code: 'INVALID_REQUEST', message: '면접 요청 형식이나 저장 동의를 확인해 주세요.' } });
   const failure = (error: unknown): Result<never> => {
     if (error instanceof AIQuestionError) {
-      const code = error.code === 'INVALID_INPUT' ? 'INVALID_REQUEST' : error.code === 'INVALID_RESPONSE' ? 'UNAVAILABLE' : error.code;
+      const code = error.code === 'INVALID_INPUT' ? 'INVALID_REQUEST'
+        : error.code === 'INVALID_RESPONSE' || error.code === 'BAD_REQUEST' || error.code === 'MODEL_NOT_FOUND' ? 'UNAVAILABLE' : error.code;
       return { ok: false, error: { code, message: new AIQuestionError(error.code).message } };
     }
     return { ok: false, error: { code: 'UNAVAILABLE', message: error instanceof InterviewStoreError ? error.message : '기록 저장소나 질문 생성에 접근하지 못했습니다. 저장 공간·권한을 확인하고 다시 시도해 주세요. 기존 파일을 자동 초기화하지 않습니다.' } };

@@ -81,6 +81,7 @@ describe('selected AI context and citation binding', () => {
 describe('AI request lifetime and sanitized failures', () => {
   it.each([
     ['rate-limit', 'RATE_LIMITED', true], ['authentication', 'AUTHENTICATION', false], ['unavailable', 'UNAVAILABLE', true],
+    ['bad-request', 'BAD_REQUEST', false], ['not-found', 'MODEL_NOT_FOUND', false], ['invalid-response', 'INVALID_RESPONSE', true],
   ] as const)('maps %s without automatically retrying or falling back to fake AI', async (reason, code, retryable) => {
     const transport = vi.fn<AIQuestionTransport>().mockResolvedValue({ ok: false, reason });
     await expect(new AIQuestionProvider(transport).next(input())).rejects.toMatchObject({ code, retryable });
@@ -105,7 +106,7 @@ describe('AI request lifetime and sanitized failures', () => {
     expect(transport).not.toHaveBeenCalled();
   });
   it('rejects malformed adapter envelopes rather than treating them as successful responses', async () => {
-    for (const result of [null, {}, { ok: 'false', reason: 'unavailable' }, { ok: false, reason: 'unknown' }, { ...response(), extra: 'synthetic-key' }]) {
+    for (const result of [null, {}, { ok: 'false', reason: 'unavailable' }, { ok: false, reason: 'unknown' }, { ok: false, reason: '__proto__' }, { ok: false, reason: 'constructor' }, { ...response(), extra: 'synthetic-key' }]) {
       await expect(new AIQuestionProvider(async () => result as never).next(input())).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
     }
   });
