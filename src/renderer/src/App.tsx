@@ -64,7 +64,7 @@ export function App() {
         <button className={page === 'resume' ? 'nav active' : 'nav'} aria-current={page === 'resume' ? 'page' : undefined} onClick={() => setPage('resume')}><span aria-hidden="true">▤</span> 이력서</button>
         {activeSession && <button className={page === 'interview' ? 'nav active' : 'nav'} aria-current={page === 'interview' ? 'page' : undefined} onClick={() => setPage('interview')}><span aria-hidden="true">◉</span> 현재 연습</button>}
         <button className={page === 'history' ? 'nav active' : 'nav'} aria-current={page === 'history' ? 'page' : undefined} onClick={() => setPage('history')}><span aria-hidden="true">◷</span> 면접 기록</button>
-        <button className={settingsOpen ? 'nav active' : 'nav'} onClick={() => openSettings()}><span aria-hidden="true">⚙</span> 설정</button>
+        <button id="workspace-settings" className={settingsOpen ? 'nav active' : 'nav'} onClick={() => openSettings()}><span aria-hidden="true">⚙</span> 설정</button>
       </nav>
       <div className="sidebar-footer"><span className="status-dot" /> 개인 워크스페이스<p>MVP 1 · {snapshot ? `v${snapshot.version}` : '준비 중'}</p></div>
     </aside>
@@ -95,7 +95,7 @@ export function App() {
 
 function SettingsDialog({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null);
-  useEffect(() => { const node = dialog.current!, previous = document.activeElement; node.showModal(); return () => { node.close(); if (previous instanceof HTMLElement && previous.isConnected) previous.focus(); }; }, []);
+  useEffect(() => { const node = dialog.current!, previous = document.activeElement; node.showModal(); return () => { node.close(); if (previous instanceof HTMLElement && previous.isConnected) previous.focus(); else document.getElementById('workspace-settings')?.focus(); }; }, []);
   return <dialog ref={dialog} className="settings-dialog" aria-label="앱 설정" onCancel={onClose}>
     <div className="dialog-toolbar"><span>개인 워크스페이스</span><button className="secondary" autoFocus onClick={onClose}>설정 닫기</button></div>
     <div className="settings-content">{children}</div>

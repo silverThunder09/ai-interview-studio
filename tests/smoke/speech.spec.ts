@@ -44,6 +44,7 @@ test('guided voice practice plays MP3, cleans up between stages and requires rev
     await page.getByRole('button', { name: '1. 질문 듣기', exact: true }).click();
     const speech = page.getByRole('region', { name: '질문 음성 읽기', exact: true });
     await registerTemporaryKey(page, 'synthetic-speech-key-not-real', undefined, speech);
+    await page.getByRole('button', { name: '1. 질문 듣기', exact: true }).click();
     await speech.getByLabel('음성 읽기 모델 ID (OpenAI 콘솔에서 확인)', { exact: true }).fill('synthetic-tts');
     const generate = speech.getByRole('button', { name: '질문 음성 만들기', exact: true }); await expect(generate).toBeDisabled();
     expect(await app.evaluate(() => Reflect.get(globalThis, 'syntheticSpeechCalls'))).toBe(0);

@@ -32,6 +32,7 @@ test('explicit audio capture and synthetic transcription preserve drafts and req
     const voice = page.getByRole('region', { name: '음성 답변 입력', exact: true });
     await expect(voice.getByRole('button', { name: '녹음 시작', exact: true })).toBeDisabled();
     await registerTemporaryKey(page, 'synthetic-voice-key-not-real', undefined, voice);
+    await page.getByRole('button', { name: '2. 답변 녹음·전사', exact: true }).click();
     await voice.getByLabel('음성 전사 모델 ID (OpenAI 콘솔에서 확인)', { exact: true }).fill('synthetic-transcribe');
     await voice.getByLabel('이 답변을 위해 마이크를 사용하고', { exact: false }).check();
     await voice.getByRole('button', { name: '녹음 시작', exact: true }).click();
