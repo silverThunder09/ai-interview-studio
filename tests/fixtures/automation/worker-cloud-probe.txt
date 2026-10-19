@@ -1,0 +1,3 @@
+Synthetic GitHub-to-Codex Event worker verification fixture.
+No personal data, application behavior, or model API calls.
+Temporary Draft PR for delivery, completion, and duplicate-event verification.
