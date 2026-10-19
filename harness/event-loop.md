@@ -8,7 +8,7 @@
 
 공식 연결 방법: [Codex GitHub integration](https://developers.openai.com/codex/integrations/github/). 댓글 작성 성공·👀 반응·자동 리뷰의 시작만으로 Cloud 구현 작업이나 전체 개발 루프가 성공했다고 판단하지 않는다. 실제 상태 댓글·코드/CI/머지 결과가 있어야 한다. 연결 검증 결과는 PR #26과 연결된 이슈에 기록하며, 미확인 상태는 완료로 보고하지 않는다.
 
-현재 실제 연결 확인에서는 [Codex bot이 저장소 환경 생성을 요구했다](https://github.com/silverThunder09/ai-interview-studio/pull/26#issuecomment-6251982889). GitHub 리뷰 연결과 구현용 Cloud 환경을 구분한다. 이 설정/실행 차단은 [설정 이슈 #35](https://github.com/silverThunder09/ai-interview-studio/issues/35)로 추적하며, 환경 생성과 실제 종료 확인 전에는 무인 개발 루프 완료로 보고하지 않는다. 코드 설치/CI 성공과 실제 Cloud 작업 시작 성공은 별개다.
+초기에는 [Codex bot이 저장소 환경 생성을 요구했다](https://github.com/silverThunder09/ai-interview-studio/pull/26#issuecomment-6251982889). 이후 Legacy Cloud 환경 생성과 [수동 요청에 대한 실제 작업 종료](https://github.com/silverThunder09/ai-interview-studio/pull/38#issuecomment-6260332763)를 확인했다. 기존 Event worker의 댓글 POST는 PR #39·#42에서 HTTP 403으로 실패했으며 [#40](https://github.com/silverThunder09/ai-interview-studio/issues/40)으로 추적한다. [격리된 PR 쓰기 권한 비교 #43](https://github.com/silverThunder09/ai-interview-studio/pull/43)은 합성 댓글 작성과 재실행 시 중복 POST 생략에 성공했지만, 닫힌 PR의 다른 본문을 사용했으므로 원인 확정이나 정상 Cloud 실행기 경로 성공을 증명하지 않는다. [운영 검증 #35](https://github.com/silverThunder09/ai-interview-studio/issues/35)는 정상 worker 요청·종료·중복 방지를 확인하기 전까지 열어 둔다.
 
 ## 계기와 작업 선택
 
@@ -37,6 +37,8 @@
 ## 권한과 머지 경계
 
 이 구현에 한해 사용자 요청으로 새 worker job에 `contents: write`(ledger 브랜치의 CAS)·`issues: write`(제한된 PR 요청 댓글·중복 없는 보류 이슈)를 부여한다. 토큰의 저장소 권한 자체가 branch 단위로 강제되는 것은 아니다. 따라서 **특권 job은 main의 정확한 checkout만 실행하고 npm/PR 코드/PR artifact는 실행하지 않는다.** PR·fork 이벤트의 코드를 checkout하지 않고 토큰을 source/test 환경이나 Cloud 요청 본문에 넘기지 않는다. action은 immutable SHA에 고정하고 checkout credential을 남기지 않는다.
+
+2026-10-19 KST 사용자가 기존 worker의 `pull-requests: read`를 `write`로 바꾸는 수정·권한 테스트·지침·운영 문서의 push·PR·CI 검증 후 머지와 새 합성 Draft PR의 실제 Cloud 요청·종료·중복 방지 검증을 별도로 승인했다(현재 채팅의 “승인할게 결과 보고해줘”). 격리된 비교 job 승인만으로 확대하지 않았다. GitHub 권한 자체는 댓글 전용이 아니며 PR 수정·머지 권한까지 포함할 수 있다. worker의 API 호출은 기존 제한된 댓글·ledger·보류 이슈 경로로 유지하고 PR 수정·머지 API는 호출하지 않는다. checks/actions 쓰기 권한, 새 secret, 시간 예약, 모델 API를 추가하지 않는다. 기존 모호한 전송 ledger는 초기화하거나 재전송하지 않고, 새 합성 검증 PR의 정상 경로로 설치 후 검증한다.
 
 기존 Validation·Windows build·PR policy의 read-only 권한과 필수 검사는 유지한다. 사람 리뷰 이벤트의 unprivileged relay에는 쓰기 권한·checkout·secret이 없다. receiver는 예산이 있는 모델 API·Codex CLI 로그인·ChatGPT cookie·숨겨진 Cloud API를 사용하지 않는다.
 
