@@ -220,7 +220,8 @@ describe('trusted event worker', () => {
     const api = new PaginatedLabels(); await run(api); expect(api.posts).toBe(0);
   });
   it('grants the real receiver read access to PRs/checks without their write permissions', () => {
-    const workflow = readFileSync(new URL('../../.github/workflows/event-worker.yml', import.meta.url), 'utf8');
+    // Git's Windows checkout can use CRLF; YAML permission semantics are unchanged.
+    const workflow = readFileSync(new URL('../../.github/workflows/event-worker.yml', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
     const jobPermissions = workflow.match(/ {4}permissions:\n([\s\S]*?) {4}steps:/)?.[1];
     expect(jobPermissions).toMatch(/pull-requests: read/);
     expect(jobPermissions).toMatch(/checks: read/);
