@@ -15,6 +15,7 @@ class MemoryStore implements Store {
 }
 class FixtureAPI implements API {
   pr = { number: 7, state: 'open', merged: false, merge_commit_sha: C, changed_files: 1, user: { login: 'silverThunder09' }, head: { sha: A, repo: { full_name: REPOSITORY, fork: false } }, base: { ref: 'main', repo: { full_name: REPOSITORY } } };
+  reviews: { id: number; state: string; user: { login: string } }[] = [];
   issues: { id: number; body: string }[] = [];
   comments: { id: number; body: string; user: { login: string; type: string } }[] = [];
   labels: { name: string }[] = [];
@@ -30,6 +31,7 @@ class FixtureAPI implements API {
     if (path === `/commits/${B}/pulls`) return this.closed ? [this.pr] : [];
     if (path === '/pulls') return this.closed ? [] : [this.pr];
     if (path === '/pulls/7') return this.pr;
+    if (path === '/pulls/7/reviews') return this.reviews;
     if (path === '/pulls/7/files') return this.files;
     if (path === '/issues/7/labels') return this.labels;
     if (path?.endsWith('/check-runs')) {
@@ -191,6 +193,21 @@ describe('trusted event worker', () => {
     expect(results.filter(x => x.status === 'fulfilled')).toHaveLength(1);
     expect(results.filter(x => x.status === 'rejected')).toHaveLength(1);
     expect(ref).not.toBe(A);
+  });
+  it('wakes once for a new valid human decision at the same head/CI without looping on comments', async () => {
+    const api = new FixtureAPI(), store = new MemoryStore(); await run(api, store); api.acknowledge(store);
+    api.reviews = [{ id: 1, state: 'CHANGES_REQUESTED', user: { login: 'reviewer' } }];
+    await run(api, store); expect(api.posts).toBe(2); api.acknowledge(store);
+    for (const state of ['COMMENTED', 'PENDING', 'DISMISSED']) api.reviews.push({ id: api.reviews.length + 1, state, user: { login: 'reviewer' } });
+    await run(api, store); expect(api.posts).toBe(2);
+    api.reviews.push({ id: 5, state: 'APPROVED', user: { login: 'reviewer' } });
+    await run(api, store); expect(api.posts).toBe(3);
+  });
+  it('does not ask a merged-main verification task to merge again or require PR-only evidence', async () => {
+    const api = new FixtureAPI(); api.closed = true; api.pr.state = 'closed'; api.pr.merged = true; api.pr.merge_commit_sha = B;
+    await run(api);
+    expect(api.comments[0]!.body).not.toContain('expected_head_sha squash merge');
+    expect(api.comments[0]!.body).toContain('PR 전용 pr-policy');
   });
   it('honors a blocking label on the second API page', async () => {
     class PaginatedLabels extends FixtureAPI {
