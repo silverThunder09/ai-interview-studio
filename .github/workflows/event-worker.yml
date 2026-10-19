@@ -21,6 +21,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
+      pull-requests: read # Current PRs/files/reviews; no PR write/merge permission.
+      checks: read # Current check runs; no ability to publish successful checks.
       contents: write # Only automation/event-ledger; needed for atomic non-force ref updates.
       issues: write # Bounded PR comments and deduplicated pause issues; no merge API.
     steps:

@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
-import { APIError, GitStore, REPOSITORY, STATE_BRANCH, acceptEvent, allPages, emptyLedger, marker, parseLedger, reconcile, type API, type Ledger, type Policy, type Snapshot, type Store } from '../../scripts/review/event-worker';
+import { describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { APIError, GitHub, GitStore, REPOSITORY, STATE_BRANCH, acceptEvent, allPages, emptyLedger, marker, parseLedger, reconcile, type API, type Ledger, type Policy, type Snapshot, type Store } from '../../scripts/review/event-worker';
 
 const A = 'a'.repeat(40), B = 'b'.repeat(40), C = 'c'.repeat(40);
 const policy: Policy = { repository: REPOSITORY, base_branch: 'main', allowed_authors: ['silverThunder09'], required_checks: ['checks', 'package', 'pr-policy'], blocking_labels: ['needs-user', 'agent-paused'], protected_paths: ['AGENTS.md', '.agents/', '.github/', 'harness/', 'scripts/review/', 'package.json', 'package-lock.json'], max_prs_per_run: 2, max_fix_cycles: 3 };
@@ -217,6 +218,25 @@ describe('trusted event worker', () => {
       }
     }
     const api = new PaginatedLabels(); await run(api); expect(api.posts).toBe(0);
+  });
+  it('grants the real receiver read access to PRs/checks without their write permissions', () => {
+    const workflow = readFileSync(new URL('../../.github/workflows/event-worker.yml', import.meta.url), 'utf8');
+    const jobPermissions = workflow.match(/    permissions:\n([\s\S]*?)    steps:/)?.[1];
+    expect(jobPermissions).toMatch(/pull-requests: read/);
+    expect(jobPermissions).toMatch(/checks: read/);
+    expect(jobPermissions).not.toMatch(/(?:pull-requests|checks|actions): write/);
+    expect(jobPermissions).toMatch(/contents: write/);
+    expect(jobPermissions).toMatch(/issues: write/);
+  });
+  it('reports the fixed API operation on 403 without returning tokens or response bodies', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('synthetic-sensitive-response-body', { status: 403 })));
+    try {
+      const error = await new GitHub('synthetic-private-token').request('GET', '/pulls?state=open').catch((error: unknown) => error);
+      expect(error).toBeInstanceOf(APIError);
+      expect(String(error)).toContain('HTTP 403; operation=GET /pulls');
+      expect(String(error)).not.toContain('synthetic-private-token');
+      expect(String(error)).not.toContain('synthetic-sensitive-response-body');
+    } finally { vi.unstubAllGlobals(); }
   });
   it('does not convert a permissions failure into an empty successful ledger', async () => {
     const api: API = { async request() { throw new APIError(403); } };

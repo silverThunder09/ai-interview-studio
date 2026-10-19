@@ -23,7 +23,13 @@ function items(value: unknown): unknown[] { if (!Array.isArray(value)) throw new
 function text(value: unknown): string { if (typeof value !== 'string') throw new Error('Invalid API text'); return value; }
 function integer(value: unknown): number { if (!Number.isSafeInteger(value) || Number(value) < 0) throw new Error('Invalid API integer'); return Number(value); }
 function sha(value: unknown): string { const s = text(value); if (!SHA.test(s)) throw new Error('Invalid commit identity'); return s; }
-export class APIError extends Error { readonly status: number; constructor(status: number) { super(`GitHub request failed: HTTP ${status}`); this.status = status; } }
+export class APIError extends Error {
+  readonly status: number;
+  readonly operation: string;
+  constructor(status: number, operation = 'unknown') {
+    super(`GitHub request failed: HTTP ${status}; operation=${operation}`); this.status = status; this.operation = operation;
+  }
+}
 export class GitHub implements API {
   private readonly token: string;
   constructor(token: string) { this.token = token; }
@@ -34,7 +40,7 @@ export class GitHub implements API {
         ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(30_000), redirect: 'error',
     });
-    if (!response.ok) throw new APIError(response.status);
+    if (!response.ok) throw new APIError(response.status, `${method} ${path.split('?')[0]}`);
     const raw = await response.text();
     if (raw.length > 4_000_000) throw new Error('API response limit');
     return raw ? JSON.parse(raw) as unknown : null;
@@ -296,7 +302,7 @@ async function main() {
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main().catch((error: unknown) => {
   // API bodies/credentials, PR text and source never go to job logs.
-  if (error instanceof APIError) console.error(`GitHub authorization/request failure: HTTP ${error.status}`);
+  if (error instanceof APIError) console.error(`GitHub request failure: HTTP ${error.status}; operation=${error.operation}`);
   console.error('Event worker failed. Inspect permissions, main revision and ledger; no automatic retry or timer was enabled.');
   process.exitCode = 1;
 });
