@@ -1,0 +1,35 @@
+name: Event worker read probe
+on:
+  pull_request:
+    paths:
+      - .github/workflows/event-worker.yml
+      - .github/workflows/event-worker-read-probe.yml
+      - scripts/review/event-worker.ts
+permissions:
+  contents: read
+  pull-requests: read
+  checks: read
+jobs:
+  read-access:
+    if: >-
+      github.repository == 'silverThunder09/ai-interview-studio' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.user.login == 'silverThunder09'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Verify current PR and check API read access without source checkout
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          node --input-type=module <<'JS'
+          if (!/^[a-f0-9]{40}$/.test(process.env.PR_HEAD_SHA ?? '')) throw new Error('Invalid PR revision');
+          const base = 'https://api.github.com/repos/silverThunder09/ai-interview-studio';
+          const headers = { Authorization: `Bearer ${process.env.GITHUB_TOKEN}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' };
+          for (const [label, path] of [['PR read', '/pulls?state=open&per_page=1'], ['Check read', `/commits/${process.env.PR_HEAD_SHA}/check-runs?per_page=1`]]) {
+            const response = await fetch(base + path, { headers, redirect: 'error', signal: AbortSignal.timeout(30_000) });
+            if (!response.ok) throw new Error(`${label} failed: HTTP ${response.status}`);
+            console.log(`${label}: HTTP ${response.status}`);
+          }
+          JS
