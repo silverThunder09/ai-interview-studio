@@ -1,0 +1,3 @@
+AIS_EVENT_LOOP_DIAGNOSTIC_PROBE_20261019
+Synthetic marker for one same-permission PR comment delivery attempt.
+No credentials, personal data, executable code or app behavior.
