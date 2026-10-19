@@ -221,7 +221,7 @@ describe('trusted event worker', () => {
   });
   it('grants the real receiver read access to PRs/checks without their write permissions', () => {
     const workflow = readFileSync(new URL('../../.github/workflows/event-worker.yml', import.meta.url), 'utf8');
-    const jobPermissions = workflow.match(/    permissions:\n([\s\S]*?)    steps:/)?.[1];
+    const jobPermissions = workflow.match(/ {4}permissions:\n([\s\S]*?) {4}steps:/)?.[1];
     expect(jobPermissions).toMatch(/pull-requests: read/);
     expect(jobPermissions).toMatch(/checks: read/);
     expect(jobPermissions).not.toMatch(/(?:pull-requests|checks|actions): write/);
