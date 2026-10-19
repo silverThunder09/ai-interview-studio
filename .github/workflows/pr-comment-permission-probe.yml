@@ -1,0 +1,50 @@
+name: PR comment permission probe
+on:
+  push:
+    branches: [main]
+    paths: [.github/workflows/pr-comment-permission-probe.yml]
+permissions: {}
+concurrency:
+  group: pr-comment-permission-probe
+  cancel-in-progress: false
+jobs:
+  compare-comment-access:
+    if: github.repository == 'silverThunder09/ai-interview-studio'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Compare PR comment access with a fixed synthetic comment
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          node --input-type=module <<'JS'
+          if (process.env.GITHUB_REPOSITORY !== 'silverThunder09/ai-interview-studio' || process.env.GITHUB_REF !== 'refs/heads/main') throw new Error('Unexpected execution context');
+          const base = 'https://api.github.com/repos/silverThunder09/ai-interview-studio';
+          const body = '<!-- ais-pr-comment-permission-probe-20261019 -->\nPR 댓글 작성 권한 비교용 합성 댓글입니다. 작업 실행 요청은 없습니다.';
+          const headers = { Authorization: `Bearer ${process.env.GITHUB_TOKEN}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' };
+          async function request(method, path, data) {
+            const response = await fetch(base + path, { method, headers: { ...headers, ...(data ? { 'Content-Type': 'application/json' } : {}) }, ...(data ? { body: JSON.stringify(data) } : {}), redirect: 'error', signal: AbortSignal.timeout(30_000) });
+            console.log(`${method} PR 42 comments: HTTP ${response.status}`);
+            if (!response.ok) {
+              const raw = response.headers.get('x-accepted-github-permissions') ?? '';
+              if (raw.length <= 512 && /^[a-z_]+=(?:read|write)(?:[ \t]*[,;][ \t]*[a-z_]+=(?:read|write))*$/.test(raw)) console.log(`accepted_permissions=${raw}`);
+              throw new Error('Fixed PR comment permission probe failed');
+            }
+            return response;
+          }
+          let complete = false;
+          for (let page = 1; page <= 100; page++) {
+            const comments = await (await request('GET', `/issues/42/comments?per_page=100&page=${page}`)).json();
+            if (!Array.isArray(comments)) throw new Error('Unexpected comments result');
+            if (comments.some(comment => comment.user?.login === 'github-actions[bot]' && comment.body === body)) {
+              console.log('Existing synthetic comment found; no duplicate POST.');
+              process.exit(0);
+            }
+            if (comments.length < 100) { complete = true; break; }
+          }
+          if (!complete) throw new Error('Incomplete comment pagination');
+          await request('POST', '/issues/42/comments', { body });
+          console.log('One synthetic comment delivered. No Cloud task requested.');
+          JS
