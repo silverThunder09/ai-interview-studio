@@ -10,18 +10,20 @@
 
 초기에는 [Codex bot이 저장소 환경 생성을 요구했다](https://github.com/silverThunder09/ai-interview-studio/pull/26#issuecomment-6251982889). Legacy 환경 생성 후 수동 요청의 실제 작업 종료를 확인했다. [PR #44](https://github.com/silverThunder09/ai-interview-studio/pull/44) 설치 후 기존 worker의 [요청 댓글 전달](https://github.com/silverThunder09/ai-interview-studio/pull/45#issuecomment-6265460842) 1회와 동일 job 재실행의 추가 전달0회를 확인해 POST403 결함 [#40](https://github.com/silverThunder09/ai-interview-studio/issues/40)을 종료했다. 과거 실패 ledger는 보존했다. 그러나 Actions 봇 댓글의 실제 Cloud 접수·종료는 미확인이다. 사용자 지시로 [사용자 계정 요청](https://github.com/silverThunder09/ai-interview-studio/pull/45#issuecomment-6268907023)을 한 번 재시도하자 2026-10-19 22:55 KST [공식 Cloud 종료 응답](https://github.com/silverThunder09/ai-interview-studio/pull/45#issuecomment-6268934744)이 왔다(checkout 0fd3a46, main f5e4e94, Node24.19.0, 단위275·정책40, Git 변경 없음). 본문도 다르므로 발신자 차이만을 원인으로 단정하지 않으며, 수동 요청 성공을 원래 outbox의 종료 증거로 대체하지 않는다. [운영 검증 #35](https://github.com/silverThunder09/ai-interview-studio/issues/35)는 정상 자동 요청·종료·중복 방지까지 확인하기 전에는 닫지 않는다.
 
-### 사용자 토큰 경로의 독립 검증안 — 승인 대기
+### 사용자 토큰 발신 — 독립 검증 완료, 기존 실행기 통합
 
-현재 automation 도구에는 webhook schema 조회·triggers 입력이 없어 공식 Work 이벤트 작업을 여기서 등록할 수 없다. 시간 예약으로 대체하지 않는다. 다음 후보는 [독립 검증 workflow](../.github/workflows/user-comment-cloud-probe.yml)의 수동 dispatch로 사용자 계정 댓글 경로를 한 번 비교하는 것이다. 기존 Event worker·권한·ledger·정책은 바꾸지 않는다. 새 사용자 자격증명과 보호 workflow의 push·PR·CI 후 머지·실제 실행은 별도 명시 승인을 받기 전까지 진행하지 않는다. 이 문서나 후보 PR이 승인을 대신하지 않는다.
+2026-10-19 KST 사용자는 독립 검증 커밋·PR #46과 단기 저장소 토큰 사용을 승인했다. 사용자가 Secret 등록·최초 수동 실행을 마친 뒤 [실제 workflow](https://github.com/silverThunder09/ai-interview-studio/actions/runs/39269133817)의 사용자 계정 요청→82초 후 [공식 Cloud 종료](https://github.com/silverThunder09/ai-interview-studio/pull/45#issuecomment-6269654424)를 확인했다. 같은 job attempt2는 기존 요청을 찾아 POST를 생략했다. 요청1개·공식 nonce 응답1개이며 기존 outbox를 대신 완료 처리하지 않았다. 공식 작업 보고는 PR head0fd3a46·Node24.19.0·단위275·정책40·Git 변경 없음이다. main bed1a3b는 PR 메타데이터로 확인했으며 작업의 로컬 main ref/원격 부재로 독립 조회는 못 했다는 제한을 보존한다. 검증 PR45는 머지 없이 닫고 임시 차단 라벨만 제거했다.
 
-- job은 main에서만 수동 실행하며 checkout·외부 action·의존성 설치·시간 예약이 없다. GITHUB_TOKEN 권한은 비어 있고 새 GitHub Secret `AIS_CODEX_COMMENT_TOKEN`만 고정된 GitHub REST PR45 요청에 사용한다. 미설정이면 네트워크 요청 전에 실패한다. 토큰 값·응답 본문·환경 전체를 출력하지 않는다.
-- 사용자가 [GitHub fine-grained token 설정](https://github.com/settings/personal-access-tokens/new)에서 직접 발급한다. Resource owner는 `silverThunder09`, Only select repositories는 `ai-interview-studio` 하나, 만료는 7일 이내, Repository permission은 Pull requests:read/write와 필수 Metadata:read만 선택한다. Contents/Actions/Issues/계정 권한은 추가하지 않는다. 토큰 자체는 댓글 전용이 아니며 PR 수정·머지에도 쓰일 수 있음을 승인 전에 알린다. 장기 통합에는 GitHub의 App 권장과 단기 비교 목적을 구분한다([공식 토큰 안내](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens)).
-- 승인 후 사용자가 [이 저장소 Actions secrets](https://github.com/silverThunder09/ai-interview-studio/settings/secrets/actions)에 위 이름으로 직접 저장한다. 채팅·Git·Cloud 환경 변수·제품 AI 키에 복사하지 않는다. 에이전트는 발급·secret 원문 읽기를 하지 않는다. 시험 후 이 전용 Secret과 토큰은 사용자가 삭제·폐기한다.
-- 실행 전 에이전트가 검증용 PR45에 needs-user 라벨을 붙여 기존 worker의 추가 전송을 차단한 뒤 기존 Draft를 다시 연다. workflow는 PR45·작성자·같은 저장소·고정 head `0fd3a46450600069602f4a8fab9b7ba82b9880ae`·main 대상·Draft·차단 라벨을 검증한다. 모든 댓글 페이지에서 이전 동일 요청이 있으면 POST하지 않으며, 다른 작성자·본문·중복 marker가 있으면 보류한다.
-- POST는 한 번뿐이며 응답의 작성자가 silverThunder09/User인지와 receipt를 확인한다. 작성자 검사는 전송 후 이루어지므로 잘못 발급한 토큰이면 이미 댓글이 생겼을 수 있다. 실패·응답 유실 시 댓글을 직접 대조하기 전에 재실행하지 않는다. 정상 전송을 확인한 경우에만 같은 job을 한 번 재실행해 중복 POST0을 확인한다.
-- Cloud 작업은 읽기 전용 check·합성 식별자 `AIS_USER_TOKEN_CLOUD_PROBE_20261019_01`만 반환한다. 유료 모델 API·실제 개인정보·소스 수정·push·머지·기존 outbox 완료 marker 작성은 요청하지 않는다. 실제 Cloud 접수·테스트 종료 응답까지 확인한 뒤 검증 PR은 다시 머지 없이 닫고 임시 라벨만 제거한다.
-- 이 비교가 성공해도 #35를 닫지 않는다. 영구 worker 전송·원래 key의 종료 receipt·다음 이벤트 재개 검증은 별도 구현/검증 범위다. 토큰 미설정·접수 실패를 우회하거나 새 권한을 추정해 확대하지 않는다.
-- 로컬 Node24.19.0에서 타입·린트·단위285(검증 job의 합성 HTTP/중복/오류 경로10개 포함)·정책40을 통과했다. 처음 typecheck에서 테스트의 정규식 capture가 undefined일 가능성을 지적해 optional 접근을 보완한 후 전체 검사를 통과했다. YAML 수동 trigger/빈 기본 권한/단일 step, Bash·Node 문법, diff를 확인했다. 실제 토큰·원격 workflow·Cloud 호출은 미실행이며 이 결과는 실제 접수 성공 증거가 아니다.
+같은 날 현재 채팅에서 사용자는 기존 실행기에 검증된 사용자 토큰 경로를 연결하고 종료 인식·중복 방지·다음 작업 재개를 검증하는 변경의 PR·CI 후 머지를 별도로 승인했다(직전 범위 설명에 대한 “승인할게”). 독립 검증 승인만으로 확대하지 않았으며 현재 설치·실제 운영 검증 여부는 #35와 해당 PR의 최신 근거를 따른다.
+
+- Event worker는 main만 checkout하고 정확한 현재 main SHA를 확인한다. checkout 자격증명을 남기지 않고 npm·후보 PR 코드·artifact를 특권 job에서 실행하지 않는다. 기존 GITHUB_TOKEN은 조회·ledger·보류 이슈에 사용하고 `AIS_CODEX_COMMENT_TOKEN`은 reconcile 단계에서 고정 저장소 PR 요청 댓글 POST에만 사용한다. 별도 Cloud sender는 PR 수정·머지·ledger API를 호출하지 않는다.
+- 사용자 토큰이 없거나 만료/거절되면 봇 토큰으로 재전송하지 않는다. 누락은 API/ledger 저장 전에 실패한다. 토큰 값·환경 전체·원문 응답을 로그·요청 본문·artifact·Cloud 환경에 복사하지 않는다. 제품 AI 키·별도 모델 API는 사용하지 않는다.
+- 사용자가 이 저장소 하나에 한정된 fine-grained token을 직접 발급·[Actions Secret](https://github.com/silverThunder09/ai-interview-studio/settings/secrets/actions)으로 관리한다. Pull requests:read/write와 필수 Metadata:read만 사용하고 토큰은 PR 수정·머지에도 쓰일 수 있다는 권한 한계를 유지한다. 최초 검증 토큰은 7일 이내 만료이며 자동 갱신하지 않는다. 장기 자격증명 운영은 별도 사용자 관리 대상이다. 원문을 채팅에 보내지 않으며 만료/폐기 후 실행이 멈추면 사용자가 같은 제한 범위로 재등록한다.
+- 요청 POST의 실제 작성자 silverThunder09/User·양의 댓글 ID·전체 고정 본문 일치를 검증한다. 전송 전 sending을 저장하고, 응답 유실 후에는 모든 댓글 페이지에서 정확한 본문·작성자·유일한 receipt를 확인한다. 기존 github-actions[bot]/Bot 요청도 정확히 일치할 때만 복구한다. 다른 작성자·변조 본문·중복 marker는 보류하고 재전송하지 않는다. 과거 ledger·실패 이력을 초기화하지 않는다.
+- 종료 댓글은 기존 전체 본문 형식과 허용 작성자 검사를 유지한다. 독립 검증 nonce·본문에 포함된 예시·다른 key를 원래 outbox 완료로 쓰지 않는다. 같은 상태는 추가 요청0, 새 유효 상태는 기존 종료 확인 후 한 번만 재개하며 정책의 PR/dispatch 상한·CI·보호 영역·차단 라벨·사람 리뷰 경계를 유지한다.
+- 수신 이벤트·필수 CI·policy JSON·sandbox·GitHub 보호 규칙·GITHUB_TOKEN 권한은 변경하지 않는다. 별도 예약·외부 서버·새 과금 API를 추가하지 않는다. 자동화 자체의 보호 파일 변경을 자동 승인하지 않으며 이번 변경도 현재 채팅의 명시 승인으로 검토한다.
+
+이 통합의 합성 테스트는 실제 Event worker→Cloud 종료→같은 이벤트/다음 head 재개를 증명하지 않는다. 설치 후 실제 실행·원래 key의 독립 종료 댓글·ledger·job 재실행을 대조하기 전에는 #35를 닫거나 전체 자동 개발 루프 완료로 표시하지 않는다. 최초 workflow dispatch가 도구에서 지원되지 않으면 사용자에게 첫 실행만 요청하고 예약/polling으로 대체하지 않는다.
 
 ## 계기와 작업 선택
 
@@ -51,7 +53,7 @@
 
 이 구현에 한해 사용자 요청으로 새 worker job에 `contents: write`(ledger 브랜치의 CAS)·`issues: write`(제한된 PR 요청 댓글·중복 없는 보류 이슈)를 부여한다. 토큰의 저장소 권한 자체가 branch 단위로 강제되는 것은 아니다. 따라서 **특권 job은 main의 정확한 checkout만 실행하고 npm/PR 코드/PR artifact는 실행하지 않는다.** PR·fork 이벤트의 코드를 checkout하지 않고 토큰을 source/test 환경이나 Cloud 요청 본문에 넘기지 않는다. action은 immutable SHA에 고정하고 checkout credential을 남기지 않는다.
 
-2026-10-19 KST 사용자가 기존 worker의 `pull-requests: read`를 `write`로 바꾸는 수정·권한 테스트·지침·운영 문서의 push·PR·CI 검증 후 머지와 새 합성 Draft PR의 실제 Cloud 요청·종료·중복 방지 검증을 별도로 승인했다(현재 채팅의 “승인할게 결과 보고해줘”). 격리된 비교 job 승인만으로 확대하지 않았다. GitHub 권한 자체는 댓글 전용이 아니며 PR 수정·머지 권한까지 포함할 수 있다. worker의 API 호출은 기존 제한된 댓글·ledger·보류 이슈 경로로 유지하고 PR 수정·머지 API는 호출하지 않는다. checks/actions 쓰기 권한, 새 secret, 시간 예약, 모델 API를 추가하지 않는다. 기존 모호한 전송 ledger는 초기화하거나 재전송하지 않고, 새 합성 검증 PR의 정상 경로로 설치 후 검증한다.
+2026-10-19 KST 사용자가 기존 worker의 `pull-requests: read`를 `write`로 바꾸는 수정·권한 테스트·지침·운영 문서의 push·PR·CI 검증 후 머지와 새 합성 Draft PR의 실제 Cloud 요청·종료·중복 방지 검증을 별도로 승인했다(현재 채팅의 “승인할게 결과 보고해줘”). 격리된 비교 job 승인만으로 확대하지 않았다. GitHub 권한 자체는 댓글 전용이 아니며 PR 수정·머지 권한까지 포함할 수 있다. worker의 API 호출은 기존 제한된 댓글·ledger·보류 이슈 경로로 유지하고 PR 수정·머지 API는 호출하지 않는다. 당시 변경은 checks/actions 쓰기 권한·새 secret·시간 예약·모델 API를 추가하지 않았다. 이후 별도 승인된 사용자 토큰 연결은 위 절의 범위를 따른다. 기존 모호한 전송 ledger는 초기화하거나 재전송하지 않고, 새 합성 검증 PR의 정상 경로로 설치 후 검증한다.
 
 기존 Validation·Windows build·PR policy의 read-only 권한과 필수 검사는 유지한다. 사람 리뷰 이벤트의 unprivileged relay에는 쓰기 권한·checkout·secret이 없다. receiver는 예산이 있는 모델 API·Codex CLI 로그인·ChatGPT cookie·숨겨진 Cloud API를 사용하지 않는다.
 
