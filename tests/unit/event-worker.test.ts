@@ -230,14 +230,24 @@ describe('trusted event worker', () => {
     expect(jobPermissions).toMatch(/issues: write/);
   });
   it('reports the fixed API operation on 403 without returning tokens or response bodies', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => new Response('synthetic-sensitive-response-body', { status: 403 })));
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('synthetic-sensitive-response-body', { status: 403, headers: { 'x-accepted-github-permissions': 'pull_requests=write; issues=write' } })));
     try {
       const error = await new GitHub('synthetic-private-token').request('GET', '/pulls?state=open').catch((error: unknown) => error);
       expect(error).toBeInstanceOf(APIError);
       expect(String(error)).toContain('HTTP 403; operation=GET /pulls');
+      expect(String(error)).toContain('accepted_permissions=pull_requests=write; issues=write');
       expect(String(error)).not.toContain('synthetic-private-token');
       expect(String(error)).not.toContain('synthetic-sensitive-response-body');
     } finally { vi.unstubAllGlobals(); }
+  });
+  it('drops unexpected permission header text instead of putting it in diagnostics', () => {
+    for (const header of ['synthetic-private-token', 'pull_requests=write\nsynthetic-private-token', 'issues=write,\nchecks=read', `issues=write${' '.repeat(513)}`]) {
+      const error = new APIError(403, 'POST /issues/39/comments', header);
+      expect(error.acceptedPermissions).toBeNull();
+      expect(String(error)).not.toContain('accepted_permissions=');
+      expect(String(error)).not.toContain('synthetic-private-token');
+    }
+    expect(new APIError(403, 'POST /issues/39/comments').acceptedPermissions).toBeNull();
   });
   it('does not convert a permissions failure into an empty successful ledger', async () => {
     const api: API = { async request() { throw new APIError(403); } };

@@ -26,8 +26,13 @@ function sha(value: unknown): string { const s = text(value); if (!SHA.test(s)) 
 export class APIError extends Error {
   readonly status: number;
   readonly operation: string;
-  constructor(status: number, operation = 'unknown') {
-    super(`GitHub request failed: HTTP ${status}; operation=${operation}`); this.status = status; this.operation = operation;
+  readonly acceptedPermissions: string | null;
+  constructor(status: number, operation = 'unknown', permissionHeader: string | null = null) {
+    // Keep only the documented permission grammar, never arbitrary response text.
+    const permissions = permissionHeader?.trim() ?? '';
+    const accepted = (permissionHeader?.length ?? 0) <= 512 && /^[a-z_]+=(?:read|write)(?:[ \t]*[,;][ \t]*[a-z_]+=(?:read|write))*$/.test(permissions) ? permissions : null;
+    super(`GitHub request failed: HTTP ${status}; operation=${operation}${accepted ? `; accepted_permissions=${accepted}` : ''}`);
+    this.status = status; this.operation = operation; this.acceptedPermissions = accepted;
   }
 }
 export class GitHub implements API {
@@ -40,7 +45,7 @@ export class GitHub implements API {
         ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(30_000), redirect: 'error',
     });
-    if (!response.ok) throw new APIError(response.status, `${method} ${path.split('?')[0]}`);
+    if (!response.ok) throw new APIError(response.status, `${method} ${path.split('?')[0]}`, response.headers.get('x-accepted-github-permissions'));
     const raw = await response.text();
     if (raw.length > 4_000_000) throw new Error('API response limit');
     return raw ? JSON.parse(raw) as unknown : null;
@@ -302,7 +307,7 @@ async function main() {
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main().catch((error: unknown) => {
   // API bodies/credentials, PR text and source never go to job logs.
-  if (error instanceof APIError) console.error(`GitHub request failure: HTTP ${error.status}; operation=${error.operation}`);
+  if (error instanceof APIError) console.error(`GitHub request failure: HTTP ${error.status}; operation=${error.operation}${error.acceptedPermissions ? `; accepted_permissions=${error.acceptedPermissions}` : ''}`);
   console.error('Event worker failed. Inspect permissions, main revision and ledger; no automatic retry or timer was enabled.');
   process.exitCode = 1;
 });
