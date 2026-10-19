@@ -1,0 +1,55 @@
+name: User comment Cloud probe
+on:
+  workflow_dispatch:
+permissions: {}
+concurrency:
+  group: user-comment-cloud-probe
+  cancel-in-progress: false
+jobs:
+  send-one-request:
+    if: github.repository == 'silverThunder09/ai-interview-studio' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Send one fixed read-only Cloud probe
+        env:
+          AIS_CODEX_COMMENT_TOKEN: ${{ secrets.AIS_CODEX_COMMENT_TOKEN }}
+        run: |
+          node --input-type=module <<'JS'
+          if (process.env.GITHUB_REPOSITORY !== 'silverThunder09/ai-interview-studio' || process.env.GITHUB_REF !== 'refs/heads/main') throw new Error('Unexpected execution context');
+          const token = process.env.AIS_CODEX_COMMENT_TOKEN;
+          if (!token) throw new Error('AIS_CODEX_COMMENT_TOKEN is not configured; no request sent');
+          const repository = 'silverThunder09/ai-interview-studio';
+          const marker = '<!-- ais-user-token-cloud-probe-20261019-01 -->';
+          const body = `${marker}\n@codex PR #45의 읽기 전용 연결·테스트를 한 번 실행하라. 대상은 silverThunder09/ai-interview-studio 하나뿐이다. main의 AGENTS.md와 tests/AGENTS.md를 읽고, 예상 PR head 0fd3a46450600069602f4a8fab9b7ba82b9880ae와 실제 checkout이 다르면 변경 없이 차이를 보고하라. 현재 main SHA·Node 버전·Git 상태를 확인하고 npm run check를 실행하라. 코드·커밋·push·PR/이슈/라벨/ledger 변경·유료 API·추가 요청은 하지 말라. needs-user 라벨을 유지하라. 최종 응답에 AIS_USER_TOKEN_CLOUD_PROBE_20261019_01과 실제 SHA·검사 성공/실패 수·Git 변경 여부를 한국어로 짧게 남겨라. 이전 자동 outbox의 종료 marker를 대신 작성하지 말라. 실제 개인정보·secret·전체 로그는 출력하지 말라.`;
+          async function request(method, path, data) {
+            const response = await fetch(`https://api.github.com/repos/${repository}${path}`, { method, headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', ...(data ? { 'Content-Type': 'application/json' } : {}) }, ...(data ? { body: JSON.stringify(data) } : {}), redirect: 'error', signal: AbortSignal.timeout(30_000) });
+            console.log(`${method} fixed PR 45 endpoint: HTTP ${response.status}`);
+            if (!response.ok) throw new Error(`Fixed probe API failed: HTTP ${response.status}`);
+            try { return await response.json(); } catch { throw new Error('Invalid fixed probe API JSON'); }
+          }
+          async function allPages(path) {
+            const result = [];
+            for (let page = 1; page <= 100; page++) {
+              const batch = await request('GET', `${path}?per_page=100&page=${page}`);
+              if (!Array.isArray(batch)) throw new Error('Invalid fixed probe list');
+              result.push(...batch);
+              if (batch.length < 100) return result;
+            }
+            throw new Error('Incomplete fixed probe pagination');
+          }
+          const pr = await request('GET', '/pulls/45');
+          if (pr.state !== 'open' || pr.draft !== true || pr.merged !== false || pr.user?.login !== 'silverThunder09' || pr.head?.sha !== '0fd3a46450600069602f4a8fab9b7ba82b9880ae' || pr.head?.repo?.full_name !== repository || pr.head?.repo?.fork !== false || pr.base?.repo?.full_name !== repository || pr.base?.ref !== 'main') throw new Error('Fixed Draft PR identity mismatch');
+          const labels = await allPages('/issues/45/labels');
+          if (!labels.some(label => label.name === 'needs-user')) throw new Error('Automatic dispatch must be blocked for this isolated probe');
+          const comments = await allPages('/issues/45/comments');
+          const prior = comments.filter(comment => typeof comment.body === 'string' && comment.body.startsWith(marker));
+          if (prior.length) {
+            if (prior.length !== 1 || prior[0].user?.login !== 'silverThunder09' || prior[0].user?.type !== 'User' || prior[0].body !== body) throw new Error('Ambiguous prior probe comment; do not repost');
+            console.log('Existing user probe request found; no duplicate POST.');
+          } else {
+            const sent = await request('POST', '/issues/45/comments', { body });
+            if (sent.user?.login !== 'silverThunder09' || sent.user?.type !== 'User' || !Number.isSafeInteger(sent.id) || sent.id <= 0 || sent.body !== body) throw new Error('Probe sender or receipt mismatch; inspect delivery without retry');
+            console.log(`One fixed user probe delivered; comment_id=${sent.id}. Cloud completion is not yet verified.`);
+          }
+          JS
