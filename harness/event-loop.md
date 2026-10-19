@@ -2,7 +2,7 @@
 
 ## 승인과 실제 구성
 
-2026-10-18 KST 사용자가 매시간 반복 예약을 중지하고 오프라인 설계를 승인했다. 예약 ID `6ad251b4923081918c9bcb8ec9eae602`의 일시정지를 확인했으며 다시 켜지 않는다. **2026-10-19 KST에는 이벤트 수신기·실행기 구현과 검증 후 머지를 요청했고, 별도 API 과금 없이 기존 Codex Cloud만 사용하도록 선택했다.** 이번 구현은 이 요청에 따른다. 새 MVP·유료 모델 API·제품 키 재사용·외부 webhook 서버·공개 release는 포함하지 않는다.
+2026-10-18 KST 사용자가 매시간 반복 예약을 중지하고 오프라인 설계를 승인했다. 예약 ID `6ad251b4923081918c9bcb8ec9eae602`의 일시정지를 확인했으며 다시 켜지 않는다. **2026-10-19 KST에는 이벤트 수신기·실행기 구현과 검증 후 머지를 요청했고, 별도 API 과금 없이 기존 Codex Cloud만 사용하도록 선택했다.** 이후 사용자가 새 Actions 실행과 contents:write·issues:write 권한 및 push·PR·검증 후 머지를 명시적으로 승인했다. 이번 구현은 이 요청에 따른다. 새 MVP·유료 모델 API·제품 키 재사용·외부 webhook 서버·공개 release는 포함하지 않는다.
 
 [Event worker](../.github/workflows/event-worker.yml)가 GitHub의 저장소 이벤트를 받으며 [event-worker.ts](../scripts/review/event-worker.ts)가 신뢰하는 main의 정책과 GitHub 현재 상태를 재조회한다. 준비된 PR은 기존 GitHub Codex 연결의 `@codex` 댓글로 Cloud 작업을 요청한다. 별도 모델 API 키·외부 서버·시간 예약은 사용하지 않는다. Codex 사용량과 GitHub Actions는 기존 계정의 한도를 따르며 무제한/무비용 실행을 보장하지 않는다.
 
