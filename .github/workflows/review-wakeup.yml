@@ -1,0 +1,13 @@
+name: Review wake-up
+on:
+  pull_request_review:
+    types: [submitted, dismissed]
+permissions:
+  contents: read
+jobs:
+  signal:
+    if: github.event.review.user.type == 'User'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 1
+    steps:
+      - run: echo 'Human review changed. Trusted main worker must re-query GitHub.'
