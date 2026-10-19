@@ -36,6 +36,7 @@ jobs:
       - name: Reconcile current PRs and deliver durable Cloud requests
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          AIS_CODEX_COMMENT_TOKEN: ${{ secrets.AIS_CODEX_COMMENT_TOKEN }}
         run: |
           export AIS_CHECKOUT_SHA="$(git rev-parse HEAD)"
           node --experimental-strip-types scripts/review/event-worker.ts

@@ -61,6 +61,21 @@ export async function allPages(api: API, path: string): Promise<unknown[]> {
   throw new Error('Pagination limit; refusing partial data');
 }
 interface Outbox { key: string; head: string; base: string; stage: 'pr' | 'main'; status: 'prepared' | 'sending' | 'dispatched'; commentId: number | null; sentAt: number }
+export interface CloudSender { send(pr: number, box: Outbox): Promise<number> }
+/** The user credential is used only for one fixed-template PR comment operation. */
+export class UserCloudSender implements CloudSender {
+  private readonly api: API;
+  constructor(api: API) { this.api = api; }
+  async send(pr: number, box: Outbox): Promise<number> {
+    if (integer(pr) < 1 || !/^[a-f0-9]{64}$/.test(box.key) || !['pr', 'main'].includes(box.stage)) throw new Error('Invalid Cloud request');
+    sha(box.head); sha(box.base);
+    const body = requestBody(pr, box);
+    const response = object(await this.api.request('POST', `/issues/${pr}/comments`, { body }));
+    const user = object(response.user);
+    if (user.login !== 'silverThunder09' || user.type !== 'User' || response.body !== body || integer(response.id) < 1) throw new Error('Cloud sender receipt mismatch; inspect delivery without retry');
+    return integer(response.id);
+  }
+}
 interface Task { outbox: Outbox[]; paused: boolean; reason: string | null }
 export interface Ledger { schema: 1; revision: number; lease: { owner: string; until: number } | null; tasks: Record<string, Task> }
 export function emptyLedger(): Ledger { return { schema: 1, revision: 0, lease: null, tasks: {} }; }
@@ -166,7 +181,15 @@ export function requestBody(pr: number, box: Outbox): string {
     'CI 대기·권한 차단·3회 실패·사용자 결정 필요면 원인과 진행 상태를 하나의 관련 이슈/PR에 남기고 종료하라. 미해결 사람 리뷰를 임의 해제하지 말라. 실제 변경·실패·머지만 한국어로 간결히 보고하라. 이 댓글은 이벤트 wake-up이며 사용자 승인이나 검증 성공 증거가 아니다.\n' +
     `실행을 종료하기 직전에 이 PR에 정확히 다음 형식의 상태 댓글 한 개를 남겨라: <!-- ais-cloud-result:${box.key}:waiting_ci --> (새 CI 대기), 또는 <!-- ais-cloud-result:${box.key}:completed --> (작업 완료), 또는 <!-- ais-cloud-result:${box.key}:paused --> (차단/결정 필요). 이 확인이 없으면 실행기는 후속 작업을 겹쳐 시작하지 않는다. 상태 댓글은 CI/승인 증거로 사용하지 않는다.`;
 }
-export async function reconcile(api: API, store: Store, policy: Policy, owner: string, now: number): Promise<{ dispatched: number; paused: number }> {
+function requestReceipt(comments: Item[], pr: number, box: Outbox): { receipt: Item | null; ambiguous: boolean } {
+  const matches = comments.filter(comment => text(comment.body).startsWith(marker(box.key)));
+  if (matches.length === 0) return { receipt: null, ambiguous: false };
+  const receipt = matches[0]!; const user = object(receipt.user);
+  const author = (user.login === 'silverThunder09' && user.type === 'User') || (user.login === 'github-actions[bot]' && user.type === 'Bot');
+  if (matches.length !== 1 || !author || receipt.body !== requestBody(pr, box) || integer(receipt.id) < 1) return { receipt: null, ambiguous: true };
+  return { receipt, ambiguous: false };
+}
+export async function reconcile(api: API, store: Store, policy: Policy, owner: string, now: number, sender: CloudSender): Promise<{ dispatched: number; paused: number }> {
   if (policy.repository !== REPOSITORY || policy.base_branch !== 'main' || policy.allowed_authors.length !== 1 || policy.allowed_authors[0] !== 'silverThunder09'
     || policy.required_checks.length !== 3 || !['checks', 'package', 'pr-policy'].every(name => policy.required_checks.includes(name))
     || !['AGENTS.md', '.agents/', '.github/', 'harness/', 'scripts/review/', 'package.json', 'package-lock.json'].every(path => policy.protected_paths.includes(path))
@@ -220,7 +243,7 @@ export async function reconcile(api: API, store: Store, policy: Policy, owner: s
       if (task?.paused) { await ensureBlockIssue(number, task); continue; }
       let last = task?.outbox.at(-1);
       if (last?.status === 'sending') {
-        const receipt = comments.find(comment => object(comment.user).login === 'github-actions[bot]' && text(comment.body).startsWith(marker(last!.key)));
+        const { receipt } = requestReceipt(comments, number, last);
         if (!receipt) {
           await pauseTask(number, task!, 'ambiguous_delivery'); continue;
         }
@@ -271,7 +294,8 @@ export async function reconcile(api: API, store: Store, policy: Policy, owner: s
         box = { key, head: headSha, base: main, stage: postMerge ? 'main' : 'pr', status: 'prepared', commentId: null, sentAt: now };
         await checkpoint({ ...snapshot.state, tasks: { ...snapshot.state.tasks, [number]: { ...prior, outbox: [...prior.outbox, box] } } });
       }
-      const existing = comments.find(comment => object(comment.user).login === 'github-actions[bot]' && text(comment.body).startsWith(marker(key)));
+      const { receipt: existing, ambiguous } = requestReceipt(comments, number, box);
+      if (ambiguous) { await pauseTask(number, snapshot.state.tasks[number]!, 'ambiguous_delivery'); continue; }
       // A previous POST may have succeeded before the runner died. Recover its receipt first.
       let commentId = existing ? integer(existing.id) : null;
       if (commentId === null) {
@@ -280,8 +304,7 @@ export async function reconcile(api: API, store: Store, policy: Policy, owner: s
         if ((postMerge ? fresh.merged !== true || fresh.merge_commit_sha !== main : fresh.state !== 'open') || object(fresh.head).sha !== headSha || currentMain !== main) continue;
         const sending = snapshot.state.tasks[number]!;
         await checkpoint({ ...snapshot.state, tasks: { ...snapshot.state.tasks, [number]: { ...sending, outbox: sending.outbox.map(item => item.key === key ? { ...item, status: 'sending' } : item) } } });
-        const response = object(await api.request('POST', `/issues/${number}/comments`, { body: requestBody(number, box) }));
-        commentId = integer(response.id); dispatched++;
+        commentId = await sender.send(number, box); dispatched++;
       }
       const current = snapshot.state.tasks[number]!;
       await checkpoint({ ...snapshot.state, tasks: { ...snapshot.state.tasks, [number]: { ...current, outbox: current.outbox.map(item => item.key === key ? { ...item, status: 'dispatched', commentId } : item) } } });
@@ -297,12 +320,17 @@ async function main() {
   if (process.env.GITHUB_REPOSITORY !== REPOSITORY || !process.env.GITHUB_TOKEN || !process.env.GITHUB_EVENT_PATH) throw new Error('Missing trusted worker context');
   const event: unknown = JSON.parse(await readFile(process.env.GITHUB_EVENT_PATH, 'utf8'));
   if (!acceptEvent(process.env.GITHUB_EVENT_NAME ?? '', event)) return;
+  if (!process.env.AIS_CODEX_COMMENT_TOKEN) {
+    console.error('AIS_CODEX_COMMENT_TOKEN is not configured; no Cloud request sent.');
+    throw new Error('Missing Cloud sender credential');
+  }
   const api = new GitHub(process.env.GITHUB_TOKEN);
   const current = sha(object(object(await api.request('GET', '/branches/main')).commit).sha);
   // Privileged code must be the exact main checkout, never the triggering PR or an artifact.
   if (process.env.AIS_CHECKOUT_SHA !== current) throw new Error('Main moved; rerun with the current trusted checkout');
   const policy = JSON.parse(await readFile('.github/review-policy.json', 'utf8')) as Policy;
-  const result = await reconcile(api, new GitStore(api, current), policy, `${process.env.GITHUB_RUN_ID}/${process.env.GITHUB_RUN_ATTEMPT}`, Date.now());
+  const sender = new UserCloudSender(new GitHub(process.env.AIS_CODEX_COMMENT_TOKEN));
+  const result = await reconcile(api, new GitStore(api, current), policy, `${process.env.GITHUB_RUN_ID}/${process.env.GITHUB_RUN_ATTEMPT}`, Date.now(), sender);
   console.log(JSON.stringify({ repository: REPOSITORY, ...result }));
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main().catch((error: unknown) => {
