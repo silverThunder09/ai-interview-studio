@@ -3,7 +3,9 @@ import { execFileSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 
 export function createCIEvidence(event, env, checkoutSha, parents) {
-  const pr = event.pull_request;
+  const input = event.inputs;
+  const pr = event.pull_request ?? (input && /^[1-9][0-9]*$/.test(input.pr ?? '')
+    ? { number: Number(input.pr), head: { sha: input.head }, base: { sha: input.base } } : null);
   if (!pr) return null;
   if (!/^[a-f0-9]{40}$/.test(checkoutSha) || parents[0] !== pr.base.sha || parents[1] !== pr.head.sha || parents.length !== 2) {
     throw new Error('Checkout does not match the PR head/base merge');
