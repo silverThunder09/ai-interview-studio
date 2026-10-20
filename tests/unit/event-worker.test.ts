@@ -63,7 +63,10 @@ describe('trusted event worker', () => {
     expect(store.snapshot.state.lease).toBeNull();
     expect(store.snapshot.state.tasks[7]!.outbox[0]).toMatchObject({ status: 'dispatched', commentId: 101 });
     expect(api.comments[0]!.body).toContain('@codex');
-    expect(api.comments[0]!.body).toContain('원본 reviews');
+    expect(api.comments[0]!.body).toContain('원본 REST 리뷰 목록');
+    expect(api.comments[0]!.body).toContain('개발 작업을 실행하라');
+    expect(api.comments[0]!.body).toContain('그 문서가 가리키는 코드·PR 검토 스킬과 자동화 정책·운영 규칙을 모두 따라라');
+    expect(api.comments[0]!.body).not.toMatch(/review/i);
     await run(api, store); expect(api.posts).toBe(1);
   });
   it('does not overlap a Cloud task when a new commit arrives without a completion receipt', async () => {
