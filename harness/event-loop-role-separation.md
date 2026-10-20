@@ -157,7 +157,7 @@ node --experimental-strip-types scripts/review/connected-controller.ts plan resu
 
 `scripts/review/development-journal.ts`는 연결된 GitHub 도구를 주입받는 저장 라이브러리다. 네트워크 클라이언트·token 조회·자동 실행 진입점은 없다. 고정 저장소의 `automation/development-v2` 브랜치와 `.automation/development-v2.json`만 사용하며, **이 브랜치/파일을 만들거나 기존 worker를 전환하지 않았다.** 저장 위치 초기화·운영 담당 전환·이벤트 활성화는 실제 지원과 후속 승인/검증이 필요하다.
 
-- 명시적 epoch·유한 lease·request key/PR/head/base/요청 본문 SHA256을 보존한다. `prepared → sending → dispatched → reported`를 구분하며 sending 저장 성공 전에는 발신할 수 없다. sending 이후 응답 유실/lease 만료는 재발신 이유가 아니다. 실제 원래 댓글을 조회해 ID를 확인할 수 없으면 보류한다.
+- 명시적 epoch·유한 lease·request key/PR/head/base/요청 본문 SHA256을 보존한다. owner는 실행마다 새로 생성한 64자리 난수 식별자를 쓰고 여러 실행이 재사용하지 않는다. `prepared → sending → dispatched → reported`를 구분하며 sending 저장 성공 전에는 발신할 수 없다. sending 이후 응답 유실/lease 만료는 재발신 이유가 아니다. 실제 원래 댓글을 조회해 ID를 확인할 수 없으면 보류한다.
 - 같은 요청/댓글/결과는 멱등 처리하고 다른 본문·SHA·영수증 ID 재사용은 거절한다. reported도 다음 요청을 허용하지 않는다. CI·머지까지 검증하는 종료/담당 전환 로직은 아직 연결되지 않았으며, 이 모듈에 임의 completed·활성화 필드는 없다.
 - transport는 현재 ref/commit/file을 정확한 SHA로 읽고 기존 base tree와 parent를 보존해 작은 commit을 만든다. 저장 전 ref·tree·전체 상태·revision/epoch·불변 이력을 확인하고, ref 갱신에 expected SHA와 force=false를 전달한다. 경합·권한 거절·누락 파일은 오류로 반환하며 자동 초기화/reset/강제 쓰기/재시도를 하지 않는다. 멱등 저장도 현재 원격 상태를 확인한다.
 - 실제 발신이 필요해지는 후속 구현은 full v2 parser로 공식 결과를 검증한 뒤 receipt만 기록해야 한다. 주입된 transport의 API 인증·본문 hash 일치·기존 v1 담당과의 단일 발신 보장 및 실제 원격 CAS를 실측해야 운영에 적용할 수 있다. 합성 transport 테스트는 GitHub 실제 경합이나 자동 후속 실행의 증거가 아니다.
