@@ -2,7 +2,7 @@
 
 ## 상태와 승인 범위
 
-**설계 검토용이며 운영에 적용되지 않았다.** 2026-10-20 KST 사용자는 현재 채팅에서 「기존 연결로 역할 분리 설계: GitHub API·CI·머지 담당과 Legacy 코드·테스트 담당을 분리하고 이벤트/종료 전달 방안을 설계 PR로 제시」를 선택했다. 승인 대상은 이 문서의 작성·검증·Draft PR이다. 문서 머지, 구현, 새 인증 등록, 권한이나 종료 규칙 변경은 별도 승인 대상이다. 설계 PR의 CI 성공도 이 승인을 대신하지 않는다.
+**설계 초안이며 운영에 적용되지 않았다.** 2026-10-20 KST 사용자는 현재 채팅에서 「기존 연결로 역할 분리 설계: GitHub API·CI·머지 담당과 Legacy 코드·테스트 담당을 분리하고 이벤트/종료 전달 방안을 설계 PR로 제시」를 선택했다. 작성·검증·Draft PR 제출 뒤 같은 채팅에서 「문서만 검증 후 머지 승인」으로 PR #53의 문서2개 머지를 별도로 승인했다. 실제 구현, 새 인증 등록, 권한이나 종료 규칙 변경, 이벤트 활성화는 승인하지 않았다. 설계 PR의 CI 성공도 이 후속 승인을 대신하지 않는다.
 
 현재 운영 기준은 [event-loop.md](event-loop.md), [review-automation.md](review-automation.md), main의 [review-policy.json](../.github/review-policy.json)이다. 이 초안은 기존 정책을 덮어쓰지 않는다. 구현·활성 여부는 [#35](https://github.com/silverThunder09/ai-interview-studio/issues/35)의 실제 증거로 확인한다.
 
