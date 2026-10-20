@@ -2,7 +2,7 @@
 
 ## 상태와 승인 범위
 
-**Actions 조정자 설치안을 작성·검증 중이며 비활성이다.** 사용자는 이후 「기획 승인 → Codex 구현·테스트 → GitHub CI·자동 머지 → 다음 승인 작업 자동 요청」과 자동화 완성을 우선 요청했다. 아래 설치안은 `enabled=false`, 작업 목록은 빈 상태다. 새 상태 브랜치를 초기화하거나 기존 v1/v2를 이관하지 않았다. 담당 권한 변경과 운영 활성화는 검토 가능한 PR에서 별도 승인받는다. 설치·합성 검사만으로 무인 운영 완료라고 판단하지 않는다.
+**Actions 조정자를 설치 검증 중이며 아직 비활성이다.** 사용자는 「기획 승인 → Codex 구현·테스트 → GitHub CI·자동 머지 → 다음 승인 작업 자동 요청」과 자동화 완성을 우선 요청했다. 이후 2026-10-20 KST 현재 채팅에서 새 조정자의 코드 반영·조건부 머지·CI 시작·다음 Codex 요청 권한, push·PR·검증 후 머지와 한정 A/B 실제 운영 검증을 명시적으로 승인했다. 설치 PR은 `enabled=false`, 작업 목록은 빈 상태로 검증하고, 설치·main CI 확인 후 별도 승인 큐 변경 PR과 상태 초기화를 검증한다. 기존 v1/v2와 PR #52는 이관/reset하지 않는다. 설치·합성 검사만으로 무인 운영 완료라고 판단하지 않는다.
 
 **역할 분리 경계의 구현을 진행 중이며 무인 운영은 활성화하지 않았다.** 2026-10-20 KST 사용자는 현재 채팅에서 「기존 연결로 역할 분리 설계: GitHub API·CI·머지 담당과 Legacy 코드·테스트 담당을 분리하고 이벤트/종료 전달 방안을 설계 PR로 제시」를 선택했다. 작성·검증·Draft PR 제출 뒤 같은 채팅에서 「문서만 검증 후 머지 승인」으로 PR #53의 문서2개 머지를 별도로 승인했다. 당시 승인은 문서에 한정됐다. 이후 같은 채팅의 「구현 실행안해? 그럼?」 요청으로 선택한 역할 분리의 구현에 착수했다. 새 인증 등록·권한 확대·기존 v1 종료 검사 완화·이벤트 활성화는 이 구현 요청에 포함하지 않는다. CI 성공을 미승인 운영 전환의 근거로 삼지 않는다.
 
@@ -180,10 +180,10 @@ node --experimental-strip-types scripts/review/connected-controller.ts plan resu
 4. Codex에 정확한 head/base의 **코드 리뷰**를 별도로 요청하고 AI COMMENT를 남긴다. 원본 REST reviews 전 페이지·최신 유효 사람 결정·라벨·스레드·open review/bug 이슈와 실제 CI를 main 판정기에 전달한다. 머지 직전 재조회하고 expected head로 squash한 뒤 실제 merged를 확인한다.
 5. main CI의 실제 checkout·checks/package·원본/패키지 smoke까지 성공해야 다음 승인 작업을 한 번 요청한다. 큐가 비면 종료한다. 실패·불명확한 응답·사람 변경 요청은 #35에 원인별 중복 없이 남기고 다음 작업을 시작하지 않는다.
 
-### 운영 승인 대상
+### 승인된 운영 범위
 
 - `approved-loop.yml`의 **새 조정자만** 신뢰 main에 contents:write·pull-requests:write·issues:write·checks:read·actions:write를 사용한다. actions:write의 구현상 사용처는 read-only `loop-validation.yml` dispatch다. GITHUB_TOKEN의 push/merge가 일반 CI를 재시작하지 않는 제약을 처리한다. CI 끄기·성공 check 작성·사람 리뷰 해제는 구현하지 않는다.
-- 기존 Event worker의 PR 수정/merge 금지는 유지한다. 새 조정자의 조건부 commit/merge·승인 큐 활성화는 별도 운영 승인 전 기존 Cloud 담당 절차를 대체하지 않는다. 후보 PR이나 CI 통과는 이 승인을 만들 수 없다.
+- 기존 Event worker의 PR 수정/merge 금지는 유지한다. 새 조정자의 조건부 commit/merge·한정 A/B 승인 큐 활성화는 위 사용자 승인에 한정된다. 이후 새 MVP/보호 변경·권한 확대는 새 사용자 요청이 필요하며 후보 PR이나 CI 통과로 스스로 승인할 수 없다.
 - `AIS_CODEX_COMMENT_TOKEN`은 기존 고정 Codex 요청 댓글 POST에만 쓴다. Legacy에 토큰을 복사하거나 새 키·API 과금·서버·시간 예약을 추가하지 않는다. Codex/Actions 사용량은 발생한다.
 - 특권 job은 main만 checkout하며 PR 소스/artifact 실행·npm 설치를 하지 않는다. 제품 CI는 별도 read-only job에서 실제 merge checkout을 실행한다. 원본/패키지 smoke·notices 검사는 유지하고 exe 업로드 없이 실패 진단만 1일 보관한다.
 - 사람 리뷰 이벤트는 read-only `Review wake-up` 종료로 받는다. PR의 workflow를 쓰기 권한으로 실행하지 않는다.
