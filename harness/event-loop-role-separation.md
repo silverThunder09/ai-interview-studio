@@ -198,6 +198,12 @@ node --experimental-strip-types scripts/review/connected-controller.ts plan resu
 
 2026-10-20 KST 로컬 타입·린트·추가 경계24개·기존 정책40개가 통과했다. 첫 전체 검사는 기존 native CLI child-process 테스트1개가 spawnSync EPERM으로 환경 차단됐다(당시422/423 통과). 해당 테스트·sandbox는 유지했으며 최종 전체 결과는 PR CI로 재검증한다. 앱의 최신/아카이브 테스트 기준은 교체하지 않는다.
 
+## 한정 A/B 운영 검증 준비
+
+설치 PR #56의 실제 merged SHA는 889e7eb946f92182c5f76d1d4e6c2f940e056c66이다. 해당 head의 단위428·정책41·Windows source9/packaged9와 main 판정기 허용을 확인했다. 설치 후 main CI와 별도 승인 큐 PR을 확인하기 전 운영 완료로 표시하지 않는다.
+
+승인된 합성 작업 A는 CI dispatch 출처의 허용/거절 경계 테스트, B는 첫 작업의 차단 라벨이 다음 발신을 막는 테스트다. 각각 기존 테스트 파일 하나만 수정하며 제품 기능·새 인증·외부 API 호출은 없다. 두 Draft PR 번호를 승인 목록에 고정하고 새 상태를 main tree/parent 기준으로 준비한 뒤 활성화 PR의 최신 필수 CI/리뷰를 확인한다. 초기화/전환 전후 기존 v1/v2·PR #52와 원래 요청 이력을 보존했는지 대조한다. A 완료·main CI 후 B가 한 번 시작되고 중복 이벤트 추가0을 확인하기 전 #35를 닫지 않는다.
+
 ## 참고 링크
 
 - [Work의 이벤트 기반 작업](https://help.openai.com/en/articles/20001275-chatgpt-work-and-codex): 지원되는 GitHub PR 활동·등록 환경과 권한의 기준. 현재 도구의 등록 성공을 보장하는 자료는 아니다.
