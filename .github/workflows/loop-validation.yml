@@ -87,6 +87,9 @@ jobs:
       - name: Record tested main
         if: inputs.pr == '0'
         run: git log -1 --format=%H
+      - name: Summarize failed smoke API calls without inputs
+        if: failure()
+        run: node scripts/review/smoke-diagnostics.mjs
       - name: Upload failure diagnostics only
         if: failure()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6

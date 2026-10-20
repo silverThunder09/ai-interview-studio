@@ -213,3 +213,9 @@ node --experimental-strip-types scripts/review/connected-controller.ts plan resu
 승인 검토 시 핵심은 **문서 머지 여부**, 다음 구현에서 다룰 **v2 결과 계약·patch 전달·이벤트 경로**, 그 구현 이후의 **활성화/기존 요청 이관 여부**를 구분하는 것이다.
 
 운영 PR #57의 고정 대상은 A [#58](https://github.com/silverThunder09/ai-interview-studio/pull/58), B [#59](https://github.com/silverThunder09/ai-interview-studio/pull/59)다. 설치 main의 Validation/Windows build가 모두 성공했으며 신규 성공 exe 업로드는 없다. 전환 직전 기존 v1의 정상 lease를 CAS로 잠시 확보해 실행 중인 이전 담당과 겹치지 않게 하고, tasks/outbox/보류 이력은 바꾸지 않는다. 기존 job의 5분 timeout보다 긴 10분 전환 lease를 두고 새 main의 enabled guard로 이후 v1 발신을 막는다. 새 승인 큐를 끄거나 과거 요청을 재개하는 별도 전환은 자동 수행하지 않는다. 새 조정자는 이 두 승인 작업 외 새 MVP를 생성하지 않는다.
+
+### 운영 연결의 추가 검증
+
+활성화 후 첫 요청 전에는 조정자가 같은 main의 read-only Loop validation을 1회 dispatch하고 checks/package·실제 checkout 성공을 확인한다. 기존 초기화 상태에 bootstrap 필드가 없으면 기존 task/outbox를 보존한 checkpoint로만 추가하며, 진행 중/응답 유실 때 같은 CI를 다시 보내지 않는다. PR의 검증·리뷰 결과 절도 실제 검증된 head/base/checkout/CI run과 공식 AI 리뷰 작업으로 갱신한다. 기존 승인 범위·보안 절은 보존하며 본문 생성 전후 main의 템플릿 검사를 적용한다.
+
+PR #57의 이전 head 08df3e446af65a93cfe8f44c3b5baf2c682c9052에서 Windows settings smoke가 90초 시간 초과로 두 번 실패했다. 검사를 삭제·skip하거나 sandbox·timeout을 약화하지 않았다. 최종 head CI에서는 실패한 Playwright API의 이름/완료 상태만 출력하는 진단을 추가한다. selector·입력·키·페이지 본문·원본 오류/개인 경로를 출력하지 않으며 기존 실패 상태를 바꾸지 않는다. 정확한 원인/최종 성공은 새 실제 CI에서 확인해야 한다. 과거 artifact는 삭제하지 않고 실패 진단은 기존 1일 보관을 유지한다.

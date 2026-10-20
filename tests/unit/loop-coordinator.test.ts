@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createHash } from 'node:crypto';
-import { emptyLoopState, parseLoopConfig, parseLoopState, parseReviewResult, buildReviewRequest, runLoop, LoopStore, type LoopState } from '../../scripts/review/loop-coordinator.mjs';
+import { emptyLoopState, parseLoopConfig, parseLoopState, parseReviewResult, buildReviewRequest, renderLoopPRBody, runLoop, LoopStore, type LoopState } from '../../scripts/review/loop-coordinator.mjs';
 import { readFileSync } from 'node:fs';
 
 const repository = 'silverThunder09/ai-interview-studio', head = '1'.repeat(40), base = '2'.repeat(40), checkout = '3'.repeat(40), merged = '4'.repeat(40);
@@ -14,19 +14,20 @@ function resultComment(request: ReturnType<typeof reviewRequest>, review: boolea
 }
 class MemoryStore {
   state: LoopState; revision = 0;
-  constructor() { this.state = emptyLoopState(config); }
+  constructor() { this.state = emptyLoopState(config); this.state.bootstrap = { main: base, key: 'c'.repeat(64), ready: true }; }
   async load() { return { head: String(this.revision), state: structuredClone(this.state) }; }
   async save(old: { head: string }, value: LoopState) { expect(old.head).toBe(String(this.revision)); parseLoopState(value, config); this.state = structuredClone(value); this.revision++; return this.load(); }
 }
 class FixtureAPI {
   main = base; sends: { pr: number; body: string }[] = []; dispatches: number[] = []; merges: number[] = []; reads: string[] = []; storedComments = new Map<number, ReturnType<typeof resultComment>[]>();
-  mergedPRs = new Map<number, string>(); failSend = false; now = () => Date.parse('2026-10-20T10:00:00.000Z'); store = new MemoryStore(); ciDone = false; mainDone = false;
-  pr(pr: number) { return { number: pr, node_id: `PR_${pr}`, state: this.mergedPRs.has(pr) ? 'closed' : 'open', merged: this.mergedPRs.has(pr), draft: false, head: { sha: head, ref: `probe-${pr}`, repo: { full_name: repository, fork: false } }, base: { sha: this.main, ref: 'main', repo: { full_name: repository } }, user: { login: 'silverThunder09' }, mergeable: true, mergeable_state: 'clean', merge_commit_sha: this.mergedPRs.get(pr) ?? checkout, labels: [] }; }
+  mergedPRs = new Map<number, string>(); updatedBodies = new Map<number, string>(); failSend = false; now = () => Date.parse('2026-10-20T10:00:00.000Z'); store = new MemoryStore(); ciDone = false; mainDone = false;
+  pr(pr: number) { return { number: pr, node_id: `PR_${pr}`, state: this.mergedPRs.has(pr) ? 'closed' : 'open', merged: this.mergedPRs.has(pr), draft: false, body: this.updatedBodies.get(pr) ?? ['변경 목적', '범위와 제외', '연결 이슈', '검증', '위험과 보안', '리뷰 결과', '머지 조건'].map(n => `## ${n}\n초기 미검증 안내`).join('\n\n'), head: { sha: head, ref: `probe-${pr}`, repo: { full_name: repository, fork: false } }, base: { sha: this.main, ref: 'main', repo: { full_name: repository } }, user: { login: 'silverThunder09' }, mergeable: true, mergeable_state: 'clean', merge_commit_sha: this.mergedPRs.get(pr) ?? checkout, labels: [] }; }
   async request(method: string, path: string, value?: unknown): Promise<unknown> {
     this.reads.push(method + ' ' + path); const body = value as Record<string, unknown> | undefined;
     if (path === '/branches/main') return { commit: { sha: this.main } };
     const n = Number(path.match(/\/(?:pulls|issues)\/(\d+)/)?.[1]);
     if (method === 'GET' && /^\/pulls\/\d+$/.test(path)) return this.pr(n);
+    if (method === 'PATCH' && /^\/pulls\/\d+$/.test(path)) { this.updatedBodies.set(n, String(body?.body)); return this.pr(n); }
     if (path.includes('/labels?') || path.includes('/reviews?') || path.startsWith('/issues/35/comments?')) return [];
     if (path.includes('/files?')) return [{ filename: 'tests/unit/probe.test.ts', status: 'modified' }];
     if (method === 'GET' && path.includes('/comments?')) return this.storedComments.get(n) ?? [];
@@ -80,6 +81,19 @@ describe('AI review identity and actual review envelope', () => {
     expect(() => parseReviewResult({ ...c, body: c.body.replace('"findings":[]', '"findings":[],"action":"APPROVED"') }, r)).toThrow();
   });
 });
+describe('automatic PR validation records', () => {
+  it('preserves scope and security sections and refuses missing/stale evidence', () => {
+    const f = new FixtureAPI(), original = f.pr(56).body;
+    const task = { pr: 56, head, base, checkout, validated_ci: ['checks', 'package', 'pr-policy'].map((context, i) => ({ repository, pr_number: 56, context, head_sha: head, base_sha: base, checkout_sha: checkout, run_id: String(100 + i) })) };
+    const review = { head_sha: head, base_sha: base, findings: [], task_url: `https://chatgpt.com/s/cd_${'b'.repeat(32)}` };
+    const body = renderLoopPRBody(original, task, review);
+    expect(body).toContain('## 범위와 제외\n초기 미검증 안내'); expect(body).toContain('## 위험과 보안\n초기 미검증 안내'); expect(body).toContain('독립적인 사람의 승인이 아닙니다'); expect(body).toContain('/actions/runs/102');
+    expect(renderLoopPRBody(body, task, review)).toBe(body);
+    expect(() => renderLoopPRBody(original, { ...task, validated_ci: [] }, review)).toThrow();
+    expect(() => renderLoopPRBody(original, { ...task, head: merged }, review)).toThrow('stale_pr_record');
+    expect(() => renderLoopPRBody('## 검증\n주장만 있는 본문', task, review)).toThrow();
+  });
+});
 describe('event-driven A → merge/main CI → B', () => {
   it('waits at every real external boundary and starts B once only after verified main CI', async () => {
     const f = new FixtureAPI(); expect((await runLoop(f.options())).state).toBe('waiting-cloud'); expect(f.sends.map(s => s.pr)).toEqual([56]);
@@ -88,6 +102,7 @@ describe('event-driven A → merge/main CI → B', () => {
     await runLoop(f.options()); expect(f.dispatches).toEqual([56]); expect(f.sends).toHaveLength(1);
     f.ciDone = true; expect((await runLoop(f.options())).state).toBe('waiting-cloud'); expect(f.sends).toHaveLength(2);
     f.respond(true); expect((await runLoop(f.options())).state).toBe('waiting-main-ci'); expect(f.merges).toEqual([56]); expect(f.dispatches).toEqual([56, 0]); expect(f.sends.map(s => s.pr)).toEqual([56, 56]);
+    expect(f.updatedBodies.get(56)).toContain('실제 merge checkout=' + checkout); expect(f.updatedBodies.get(56)).toContain('실제 검토 작업: https://chatgpt.com/s/cd_'); expect(f.reads.filter(x => x === 'PATCH /pulls/56')).toHaveLength(1);
     await runLoop(f.options()); expect(f.merges).toEqual([56]); expect(f.dispatches).toEqual([56, 0]);
     f.mainDone = true; expect((await runLoop(f.options())).state).toBe('waiting-cloud'); expect(f.sends.map(s => s.pr)).toEqual([56, 56, 57]);
     await runLoop(f.options()); expect(f.sends.map(s => s.pr)).toEqual([56, 56, 57]); expect(f.store.state.tasks[0]!.phase).toBe('completed');
@@ -103,6 +118,16 @@ describe('event-driven A → merge/main CI → B', () => {
   });
   it('preserves a live lease and never overlaps a competing run', async () => {
     const f = new FixtureAPI(); f.store.state.lease = { owner: 'c'.repeat(64), until: f.now() + 10000 }; expect((await runLoop(f.options())).state).toBe('leased'); expect(f.sends).toHaveLength(0);
+  });
+  it('checks activation main before sending the first task and dispatches that CI once', async () => {
+    const f = new FixtureAPI(); delete f.store.state.bootstrap;
+    expect((await runLoop(f.options())).state).toBe('waiting-bootstrap-ci'); expect(f.dispatches).toEqual([0]); expect(f.sends).toHaveLength(0);
+    expect((await runLoop(f.options())).state).toBe('waiting-bootstrap-ci'); expect(f.dispatches).toEqual([0]);
+    f.mainDone = true; expect((await runLoop(f.options())).state).toBe('waiting-cloud'); expect(f.sends.map(s => s.pr)).toEqual([56]);
+  });
+  it('never starts development if activation main CI fails', async () => {
+    const f = new FixtureAPI(); delete f.store.state.bootstrap; await runLoop(f.options());
+    await expect(runLoop({ ...f.options(), verifyMain: async () => { throw new Error('main_ci_failed'); } })).rejects.toThrow('main_ci_failed'); expect(f.sends).toHaveLength(0);
   });
   it('passes original blocking human reviews to the existing policy and denies merge', async () => {
     const f = new FixtureAPI(); await runLoop(f.options()); f.respond(false); await runLoop(f.options()); f.ciDone = true; await runLoop(f.options()); f.respond(true);

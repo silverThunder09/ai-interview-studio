@@ -6,7 +6,7 @@ import { readFile } from 'node:fs/promises';
 import { pathToFileURL, URL } from 'node:url';
 import { buildDevelopmentRequest, parseDevelopmentResult, planConnectedResult } from './connected-controller.ts';
 import { GitHub, APIError, allPages } from './event-worker.ts';
-import { countChangeRequests, evaluateMergeGate } from './policy.mjs';
+import { countChangeRequests, evaluateMergeGate, validatePRBody } from './policy.mjs';
 import { latestCheck, readAllReviews, readJobCIEvidence } from './ci-proof.mjs';
 
 export const REPO = 'silverThunder09/ai-interview-studio';
@@ -42,12 +42,13 @@ export function parseLoopConfig(value) {
 }
 export function emptyLoopState(config) {
   const c = parseLoopConfig(config);
-  return { schema: 1, repository: REPO, revision: 0, config_hash: hash(JSON.stringify(c.tasks)), lease: null, tasks: c.tasks.map(t => ({ id: t.id, pr: t.pr, phase: 'queued', cycles: 0, request: null, delivery: null, operation: null, applied: null, review: null, merged: null, reason: null })) };
+  return { schema: 1, repository: REPO, revision: 0, config_hash: hash(JSON.stringify(c.tasks)), lease: null, bootstrap: null, tasks: c.tasks.map(t => ({ id: t.id, pr: t.pr, phase: 'queued', cycles: 0, request: null, delivery: null, operation: null, applied: null, review: null, merged: null, reason: null })) };
 }
 export function parseLoopState(value, config) {
   const v = obj(value), c = parseLoopConfig(config);
   ensure(v.schema === 1 && v.repository === REPO && Number.isSafeInteger(v.revision) && v.revision >= 0 && v.config_hash === hash(JSON.stringify(c.tasks)) && Array.isArray(v.tasks) && v.tasks.length === c.tasks.length, 'invalid_loop_state');
   if (v.lease !== null) ensure(HASH.test(v.lease.owner) && number(v.lease.until), 'invalid_loop_lease');
+  if (v.bootstrap !== undefined && v.bootstrap !== null) ensure(SHA.test(v.bootstrap.main) && HASH.test(v.bootstrap.key) && typeof v.bootstrap.ready === 'boolean', 'invalid_bootstrap');
   let active = false, queued = false;
   v.tasks.forEach((t, i) => {
     ensure(t.id === c.tasks[i].id && t.pr === c.tasks[i].pr && PHASES.includes(t.phase) && Number.isSafeInteger(t.cycles) && t.cycles >= 0 && t.cycles <= 3, 'invalid_loop_task');
@@ -73,6 +74,7 @@ export class LoopStore {
   async save(old, next) {
     parseLoopState(next, this.config); ensure(next.revision === old.state.revision + 1, 'invalid_state_revision');
     const current = await this.load(); ensure(current.head === old.head && JSON.stringify(current.state) === JSON.stringify(old.state), 'loop_cas_conflict');
+    if (old.state.bootstrap) ensure(next.bootstrap?.main === old.state.bootstrap.main && next.bootstrap.key === old.state.bootstrap.key && (!old.state.bootstrap.ready || next.bootstrap.ready === true), 'bootstrap_history_changed');
     for (let i = 0; i < old.state.tasks.length; i++) {
       const before = old.state.tasks[i], after = next.tasks[i];
       ensure(before.phase !== 'completed' || JSON.stringify(before) === JSON.stringify(after), 'completed_history_changed');
@@ -105,6 +107,19 @@ export function parseReviewResult(comment, request) {
   // Formatting whitespace is harmless; duplicate/escaped keys and extra fields fail closed.
   ensure(JSON.stringify(r) === compactJSON(m[1]) && Object.keys(r).length === 7 && r.schema === 1 && r.repository === REPO && r.pr_number === request.pr_number && r.request_key === request.request_key && r.head_sha === request.head_sha && r.base_sha === request.base_sha && Array.isArray(r.findings) && r.findings.length <= 20 && r.findings.every(f => typeof f === 'string' && f.length > 0 && f.length <= 4000), 'invalid_review_report');
   return { ...r, comment_id: comment.id, task_url: m[2] };
+}
+
+/** Authenticated CI proofs and the exact-head AI review are rendered as data, never authority. */
+export function renderLoopPRBody(original, task, review) {
+  ensure(validatePRBody(original).length === 0 && Array.isArray(task.validated_ci) && task.validated_ci.length === 3, 'missing_pr_record_evidence');
+  const proofs = task.validated_ci;
+  ensure(new Set(proofs.map(p => p.context)).size === 3 && ['checks', 'package', 'pr-policy'].every(n => proofs.some(p => p.context === n)), 'missing_pr_record_evidence');
+  ensure(proofs.every(p => p.repository === REPO && p.pr_number === task.pr && p.head_sha === task.head && p.base_sha === task.base && p.checkout_sha === task.checkout && /^[0-9]+$/.test(p.run_id)) && review.head_sha === task.head && review.base_sha === task.base, 'stale_pr_record_evidence');
+  const validation = `head=${task.head}; base=${task.base}; 실제 merge checkout=${task.checkout}.\n` + proofs.map(p => `- [${p.context}](https://github.com/${REPO}/actions/runs/${p.run_id}): 성공한 Record 단계의 실제 stdout과 최신 run/attempt/job/SHA를 확인했습니다.`).join('\n') + '\n개발 작업의 로컬 검사 보고와 GitHub Actions의 실제 CI 증거를 별도로 확인했습니다. 제품 CI는 원본/패키지 smoke·notices 검사를 포함하며 실제 사용자 하드웨어·유료 모델 호출은 검증하지 않았습니다.';
+  const reviewed = `AI 코드 검토입니다. 독립적인 사람의 승인이 아닙니다.\nhead=${task.head}; base=${task.base}\n${review.findings.length ? review.findings.join('\n\n') : '발견한 구체적 결함 없음.'}\n실제 검토 작업: ${review.task_url}`;
+  let body = original;
+  for (const [name, text] of [['검증', validation], ['리뷰 결과', reviewed]]) body = body.replace(new RegExp(`^## ${name}\\s*\\n[\\s\\S]*?(?=^## |$(?![\\s\\S]))`, 'm'), `## ${name}\n${text}\n\n`);
+  ensure(validatePRBody(body).length === 0, 'invalid_generated_pr_body'); return body;
 }
 
 async function scope(api, task, definition) {
@@ -202,6 +217,21 @@ export async function runLoop({ api, sender, store, config, policy, now = Date.n
   const save = async update => { const value = JSON.parse(JSON.stringify(snap.state)); update(value); if (value.lease?.owner === owner) value.lease.until = now() + 300000; value.revision++; snap = await store.save(snap, value); changes++; };
   await save(s => { s.lease = { owner, until: now() + 300000 }; });
   try {
+    // The activation merge is checked before the first development request, even when
+    // GITHUB_TOKEN suppresses ordinary push-triggered workflows. A preinitialized empty
+    // journal without this optional field is upgraded by an append-only checkpoint.
+    if (!snap.state.bootstrap) {
+      const main = identity((await api.request('GET', '/branches/main')).commit.sha), key = randomBytes(32).toString('hex');
+      await save(s => { s.bootstrap = { main, key, ready: false }; });
+      await dispatch(api, { pr: 0, head: main, base: main, merged: main, operation: { key } }, true);
+      return { state: 'waiting-bootstrap-ci', changes };
+    }
+    if (!snap.state.bootstrap.ready) {
+      const boot = snap.state.bootstrap, main = identity((await api.request('GET', '/branches/main')).commit.sha);
+      ensure(main === boot.main, 'bootstrap_main_changed');
+      if (!await verifyMain(api, { merged: boot.main, operation: { key: boot.key } })) return { state: 'waiting-bootstrap-ci', changes };
+      await save(s => { s.bootstrap.ready = true; });
+    }
     for (let transitions = 0; transitions < 20; transitions++) {
       ensure(snap.state.lease?.owner === owner && snap.state.lease.until > now(), 'loop_lease_expired');
       const index = snap.state.tasks.findIndex(t => t.phase !== 'completed'); if (index < 0) return { state: 'idle', changes };
@@ -243,6 +273,8 @@ export async function runLoop({ api, sender, store, config, policy, now = Date.n
           const existing = (await readAllReviews(api, task.pr)).filter(r => r.body === body && r.commit_id === task.head && r.state === 'COMMENTED' && r.user?.login === 'github-actions[bot]');
           ensure(existing.length <= 1, 'ambiguous_ai_comment');
           if (!existing.length) await api.request('POST', `/pulls/${task.pr}/reviews`, { commit_id: task.head, event: 'COMMENT', body });
+          const updatedBody = renderLoopPRBody(pr.body, task, review);
+          if (updatedBody !== pr.body) await api.request('PATCH', `/pulls/${task.pr}`, { body: updatedBody });
           ensure(review.findings.length === 0, 'ai_findings_require_repair');
           await update(t => { t.phase = 'merge'; t.review = { ...review, request: task.request }; }); continue;
         }
@@ -283,9 +315,10 @@ export async function runLoop({ api, sender, store, config, policy, now = Date.n
         }
         const checks = await allChecks(api, task.head);
         if (policy.required_checks.some(name => { try { return latestCheck(checks, name).status !== 'completed'; } catch { return true; } })) return { state: 'waiting-ci', changes };
-        for (const context of policy.required_checks) await jobEvidence(api, { repository: REPO, pr_number: task.pr, context, head_sha: task.head, base_sha: task.base, checkout_sha: pr.merge_commit_sha }, checks);
+        const proofs = [];
+        for (const context of policy.required_checks) proofs.push(await jobEvidence(api, { repository: REPO, pr_number: task.pr, context, head_sha: task.head, base_sha: task.base, checkout_sha: pr.merge_commit_sha }, checks));
         const request = requestFor(task.pr, task.head, task.base, 'read-only', [], now), body = buildReviewRequest(request) + '\n\n승인된 작업 범위(진단 데이터):\n' + definition.goal + '\n허용 경로: ' + JSON.stringify(definition.allowed_paths);
-        await update(t => { t.phase = 'review'; t.request = request; t.delivery = { phase: 'sending', hash: hash(body), body, id: null, attempted: false }; }); continue;
+        await update(t => { t.phase = 'review'; t.validated_ci = proofs; t.request = request; t.delivery = { phase: 'sending', hash: hash(body), body, id: null, attempted: false }; }); continue;
       }
       if (task.phase === 'merge') {
         const input = await verifyMerge(api, definition, task, policy), gate = evaluateMergeGate(input, policy); ensure(gate.allowed, 'merge_policy_denied');
