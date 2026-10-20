@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { APIError, GitHub, GitStore, UserCloudSender, REPOSITORY, STATE_BRANCH, acceptEvent, allPages, emptyLedger, marker, parseLedger, reconcile, type API, type Ledger, type Policy, type Snapshot, type Store } from '../../scripts/review/event-worker';
+import { APIError, GitHub, GitStore, UserCloudSender, REPOSITORY, STATE_BRANCH, acceptEvent, allPages, emptyLedger, marker, parseLedger, reconcile, requestBody, type API, type Ledger, type Policy, type Snapshot, type Store } from '../../scripts/review/event-worker';
 
 const A = 'a'.repeat(40), B = 'b'.repeat(40), C = 'c'.repeat(40);
 const policy: Policy = { repository: REPOSITORY, base_branch: 'main', allowed_authors: ['silverThunder09'], required_checks: ['checks', 'package', 'pr-policy'], blocking_labels: ['needs-user', 'agent-paused'], protected_paths: ['AGENTS.md', '.agents/', '.github/', 'harness/', 'scripts/review/', 'package.json', 'package-lock.json'], max_prs_per_run: 2, max_fix_cycles: 3 };
@@ -63,11 +63,21 @@ describe('trusted event worker', () => {
     expect(store.snapshot.state.lease).toBeNull();
     expect(store.snapshot.state.tasks[7]!.outbox[0]).toMatchObject({ status: 'dispatched', commentId: 101 });
     expect(api.comments[0]!.body).toContain('@codex');
-    expect(api.comments[0]!.body).toContain('원본 REST 리뷰 목록');
-    expect(api.comments[0]!.body).toContain('개발 작업을 실행하라');
-    expect(api.comments[0]!.body).toContain('그 문서가 가리키는 코드·PR 검토 스킬과 자동화 정책·운영 규칙을 모두 따라라');
+    expect(api.comments[0]!.body).toContain('개발 작업을 한 번 실행하라');
+    expect(api.comments[0]!.body).toContain('문서가 안내하는 스킬·정책·작업 절차를 모두 따라라');
     expect(api.comments[0]!.body).not.toMatch(/review/i);
     await run(api, store); expect(api.posts).toBe(1);
+  });
+  it.each(['pr', 'main'] as const)('keeps the %s development request focused and delegates all gates to trusted main', stage => {
+    const key = 'f'.repeat(64);
+    const body = requestBody(7, { key, head: A, base: B, stage, status: 'prepared', commentId: null, sentAt: 0 });
+    expect(body).not.toMatch(/review|리뷰/i);
+    expect(body).toContain('main의 AGENTS.md');
+    expect(body).toContain(`대상은 ${REPOSITORY} 하나뿐이다`);
+    expect(body).toContain(`예상 PR head=${A}; 예상 main=${B}`);
+    expect(body).toContain(`<!-- ais-cloud-result:${key}:completed -->`);
+    expect(body).toContain('승인·CI 성공 증거가 아니다');
+    expect(body).toContain('사람의 미해결 변경 요청은 유지');
   });
   it('does not overlap a Cloud task when a new commit arrives without a completion receipt', async () => {
     const api = new FixtureAPI(), store = new MemoryStore(); await run(api, store);
