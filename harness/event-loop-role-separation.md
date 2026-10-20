@@ -1,8 +1,8 @@
-# GitHub 담당과 Legacy 개발 담당의 역할 분리 — 설계 초안
+# GitHub 담당과 Legacy 개발 담당의 역할 분리
 
 ## 상태와 승인 범위
 
-**설계 초안이며 운영에 적용되지 않았다.** 2026-10-20 KST 사용자는 현재 채팅에서 「기존 연결로 역할 분리 설계: GitHub API·CI·머지 담당과 Legacy 코드·테스트 담당을 분리하고 이벤트/종료 전달 방안을 설계 PR로 제시」를 선택했다. 작성·검증·Draft PR 제출 뒤 같은 채팅에서 「문서만 검증 후 머지 승인」으로 PR #53의 문서2개 머지를 별도로 승인했다. 실제 구현, 새 인증 등록, 권한이나 종료 규칙 변경, 이벤트 활성화는 승인하지 않았다. 설계 PR의 CI 성공도 이 후속 승인을 대신하지 않는다.
+**역할 분리 경계의 구현을 진행 중이며 무인 운영은 활성화하지 않았다.** 2026-10-20 KST 사용자는 현재 채팅에서 「기존 연결로 역할 분리 설계: GitHub API·CI·머지 담당과 Legacy 코드·테스트 담당을 분리하고 이벤트/종료 전달 방안을 설계 PR로 제시」를 선택했다. 작성·검증·Draft PR 제출 뒤 같은 채팅에서 「문서만 검증 후 머지 승인」으로 PR #53의 문서2개 머지를 별도로 승인했다. 당시 승인은 문서에 한정됐다. 이후 같은 채팅의 「구현 실행안해? 그럼?」 요청으로 선택한 역할 분리의 구현에 착수했다. 새 인증 등록·권한 확대·기존 v1 종료 검사 완화·이벤트 활성화는 이 구현 요청에 포함하지 않는다. CI 성공을 미승인 운영 전환의 근거로 삼지 않는다.
 
 현재 운영 기준은 [event-loop.md](event-loop.md), [review-automation.md](review-automation.md), main의 [review-policy.json](../.github/review-policy.json)이다. 이 초안은 기존 정책을 덮어쓰지 않는다. 구현·활성 여부는 [#35](https://github.com/silverThunder09/ai-interview-studio/issues/35)의 실제 증거로 확인한다.
 
@@ -55,7 +55,7 @@ flowchart TD
   M --> H
 ```
 
-그림의 이벤트 등록·v2 수신·patch 전달은 아직 구현/검증되지 않았다. v2 결과는 GitHub 담당을 깨우는 데이터이며, 실제 머지 검사는 기존 [review-automation.md](review-automation.md)를 따른다.
+그림의 이벤트 등록·상시 실행·자동 patch 원격 반영은 아직 활성화/실측되지 않았다. v2 요청 생성·결과 검증·patch 반영 계획은 아래 CLI로 구현했으며, 실제 플랫폼 대조는 별도로 기록한다. v2 결과는 GitHub 담당을 깨우는 데이터이며, 실제 머지 검사는 기존 [review-automation.md](review-automation.md)를 따른다.
 
 ## 이벤트 등록과 현재 도구의 한계
 
@@ -92,7 +92,7 @@ GitHub 담당이 repo/PR·승인된 작업 범위·예상 head/base·64자 reque
 
 이 값은 PR52 당시 사례의 **계약 예시**이며 현재 성공 증거나 v2 실행 결과가 아니다. requested_base_sha는 요청 시 기준일 뿐 최신 원격 main의 관측값이 아니다. 최신 main은 GitHub 담당이 별도로 조회한다. Legacy가 실제로 실행하지 않은 검사에는 통과 수를 만들지 않으며 결과가 없으면 명시적으로 미검증을 반환한다.
 
-### 수신 검증과 종료 구분 — 구현 전 별도 승인 필요
+### 수신 검증과 종료 구분
 
 - 현재 v1의 독립 전체 본문 검사와 과거 ledger는 그대로 둔다. 링크를 제거해 v1 marker를 받아들이거나 GitHub 담당이 원래 Cloud 종료 댓글을 대신 작성하지 않는다.
 - 새 v2는 **공식 개발 결과 전용 형식**으로 분리한다. 허용 공식 bot의 login/type·같은 저장소/PR·기존 outbox key·예상 checkout·요청 이후 댓글·유일한 결과를 함께 확인한다. 일반 리뷰 summary/receipt·다른 nonce·작성자 사칭·과거 응답은 거절한다.
@@ -121,7 +121,7 @@ GitHub 담당이 repo/PR·승인된 작업 범위·예상 head/base·64자 reque
 
 PR48/50/52와 기존 v1 outbox는 보존한다. 과거 결과를 새 v2 요청에 연결하거나 수동 전달을 원래 outbox의 완료로 승격하지 않는다. ledger schema·이관·기존 보류 재개는 별도 승인된 계획과 백업/검증이 필요하다. 되돌릴 때도 새 발신만 먼저 멈추고 진행 중 결과·실패·lease 이력을 보존한다. 토큰 자동 복사/삭제·ledger reset·force-push는 하지 않는다.
 
-## 구현 순서와 인수 기준 — 모두 계획이며 미실행
+## 구현 순서와 인수 기준 — 단계별 실제 증거 필요
 
 | 단계 | 구현 전에 확인할 것 | 통과 증거 |
 | --- | --- | --- |
@@ -133,6 +133,25 @@ PR48/50/52와 기존 v1 outbox는 보존한다. 과거 결과를 새 v2 요청�
 | 6. 머지/회귀 | 원본 reviews 전 페이지·사람 변경 요청·라벨·최신 실제 CI 증거·예상 SHA | 기존 main 판정기 허용·실제 merged·현재 main CI 성공, 회귀 시 기존 이슈/fix PR |
 
 현재 기능으로 단계2의 공식 결과/patch 전달 또는 단계5의 필요한 이벤트를 지원하지 못하면 그 단계에서 보류한다. 문서·합성 테스트·시간 경과만으로 #35를 닫지 않는다. 성공 기록은 [테스트 기록 절차](testing/README.md)에 따라 당시 SHA/원본 실행 링크와 미검증 항목을 구분해 남긴다.
+
+## 구현된 v2 경계와 실행 방법
+
+`scripts/review/connected-controller.ts`는 Node 24.19의 순수 로컬 CLI다. 연결된 GitHub 담당이 이번 실행에서 조회한 API 데이터를 JSON 파일로 제공하고, 출력 파일을 검토한 후 지원되는 GitHub 도구를 호출한다. CLI 자체는 네트워크·자격증명·ledger·branch·merge를 변경하지 않는다.
+
+```sh
+node --experimental-strip-types scripts/review/connected-controller.ts request request-input.json request-comment.txt
+node --experimental-strip-types scripts/review/connected-controller.ts plan result-input.json result-plan.json
+```
+
+입력 파일은 비공개 작업 공간에 두고 전체 본문을 로그에 출력하지 않는다. 출력은 새 파일에만 기록하며 기존 파일을 덮어쓰지 않는다. 표준 출력에는 동작·네트워크 호출0·머지 권한 false 요약만 남긴다. 실패는 종료1과 고정 오류 코드다.
+
+- `request` 입력은 `{request}`이며 schema2·고정 repo/PR·64자리 key·40자리 head/base·UTC requested_at·mode·allowed_paths를 요구한다. 읽기 전용 경로는 빈 배열이다. repair는 명시적으로 승인된 비보호 기존 텍스트 경로10개 이내다.
+- `plan` 입력은 `{request,snapshot}`이다. snapshot은 source=`connected-github-current-run`, 이번 main SHA, 원본 PR, **모든 페이지**의 labels/comments 및 completeness 표시, 영속 저장소에서 읽은 processed_receipt_ids를 포함한다. 누락·오래된 SHA·차단 라벨·다른 저장소/작성자·모호한 응답을 거절한다. completeness/source 문자열은 인증 증명이 아니므로 PR/댓글이 제공한 값을 복사하지 않는다.
+- 공식 bot의 새 v2 보고서 전체와 고정 View task envelope를 별도로 검증한다. 기존 v1 종료 marker와 호환시키지 않는다. 로컬 check 성공 보고도 원격 CI/머지 증거로 쓰지 않는다.
+- repair 계획에는 정확한 head에서 읽은 `contents_head_sha`, `base_tree_sha`, `contents[path]={content,mode,blob_sha}`가 추가로 필요하다. 100644 일반 파일·Git blob hash·patch 문맥·위치를 확인하며 symlink/바이너리/보호 경로·변조/오래된 본문을 거절한다.
+- 출력은 wait/blocked/review/commit이다. commit에도 merge_authorized=false이며 예상 parent/head·base tree·force=false와 검토할 파일 데이터만 들어간다. 연결 담당은 재조회·코드 검토 후 tree/commit/ref API를 호출하고 새 SHA의 CI와 기존 main 판정기를 따로 확인해야 한다.
+
+**완료되지 않은 부분:** 영속 v2 lease/outbox/receipt 저장과 동시 실행 CAS, 자동 원격 반영, 다음 작업 wake-up은 이 CLI에 없다. processed_receipt_ids를 빈 배열로 반복 실행하는 것은 중복 방지 구현이 아니다. 기존 v1 worker와 함께 새 자동 발신기를 켜지 않는다. 현재 실행에서 시작한 제한된 검증 결과를 전체 무인 루프 성공으로 보고하지 않으며, 이 항목들의 실제 검증 전 #35는 열린 상태로 유지한다.
 
 ## 참고
 
