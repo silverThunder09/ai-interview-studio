@@ -29,4 +29,10 @@ describe('Cloud completion event boundary', () => {
     expect(acceptEvent('issue_comment', { ...event(result), repository: { full_name: 'other/repository' } })).toBe(false);
     expect(acceptEvent('issue_comment', { ...event(result), action: 'edited' })).toBe(false);
   });
+  it.each([
+    `<!-- codex-pull-request-review-summary -->\nCode Review: Completed\nExample: ${result}`,
+    `<!-- codex-review-receipt:v1 -->\nCodex Review: No major issues.\n${result}`,
+  ])('does not promote an official code-review report into a development completion: %s', body => {
+    expect(acceptEvent('issue_comment', event(body))).toBe(false);
+  });
 });
