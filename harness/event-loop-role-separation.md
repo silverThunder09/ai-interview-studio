@@ -151,7 +151,24 @@ node --experimental-strip-types scripts/review/connected-controller.ts plan resu
 - repair 계획에는 정확한 head에서 읽은 `contents_head_sha`, `base_tree_sha`, `contents[path]={content,mode,blob_sha}`가 추가로 필요하다. 100644 일반 파일·Git blob hash·patch 문맥·위치를 확인하며 symlink/바이너리/보호 경로·변조/오래된 본문을 거절한다.
 - 출력은 wait/blocked/review/commit이다. commit에도 merge_authorized=false이며 예상 parent/head·base tree·force=false와 검토할 파일 데이터만 들어간다. 연결 담당은 재조회·코드 검토 후 tree/commit/ref API를 호출하고 새 SHA의 CI와 기존 main 판정기를 따로 확인해야 한다.
 
-**완료되지 않은 부분:** 영속 v2 lease/outbox/receipt 저장과 동시 실행 CAS, 자동 원격 반영, 다음 작업 wake-up은 이 CLI에 없다. processed_receipt_ids를 빈 배열로 반복 실행하는 것은 중복 방지 구현이 아니다. 기존 v1 worker와 함께 새 자동 발신기를 켜지 않는다. 현재 실행에서 시작한 제한된 검증 결과를 전체 무인 루프 성공으로 보고하지 않으며, 이 항목들의 실제 검증 전 #35는 열린 상태로 유지한다.
+**완료되지 않은 부분:** 이 CLI는 영속 상태 저장·자동 원격 반영·다음 작업 wake-up을 직접 수행하지 않는다. 별도 저장 모듈의 구현 범위는 아래와 같으며 실제 worker/이벤트에 연결하지 않았다. processed_receipt_ids를 빈 배열로 반복 실행하는 것은 중복 방지 구현이 아니다. 기존 v1 worker와 함께 새 자동 발신기를 켜지 않는다. 현재 실행에서 시작한 제한된 검증 결과를 전체 무인 루프 성공으로 보고하지 않으며, 이 항목들의 실제 검증 전 #35는 열린 상태로 유지한다.
+
+## 실제 전달 검증 기록
+
+- [PR #54 공식 결과](https://github.com/silverThunder09/ai-interview-studio/pull/54#issuecomment-6286612982)는 지정 checkout의 단위384·정책40 성공을 보고했다. 연결 담당의 전체 envelope/key/head/base 검증은 review/merge_authorized=false였고 기록한 receipt의 재처리는 already_processed로 거절했다.
+- [PR #55 첫 patch 응답](https://github.com/silverThunder09/ai-interview-studio/pull/55#issuecomment-6286860357)의 알 수 없는 passed 합산 필드는 invalid_fields로 거절했으며 patch를 반영하지 않았다. 요청의 허용 검사 필드명을 명시하고 이 실패 경계를 회귀 테스트로 보존했다.
+- 수정 head의 [공식 patch](https://github.com/silverThunder09/ai-interview-studio/pull/55#issuecomment-6286969728)는 단위404·정책40 성공과 테스트 파일1개의 변경을 반환했다. 전체 공식 envelope·원본 key/SHA·mode/blob hash/문맥을 확인한 결과 commit/merge_authorized=false였으며 연결 담당이 patch를 검토하고 로컬 영향 테스트19개를 확인했다. 실제 원격 반영·새 head CI/머지 증거는 [PR #55](https://github.com/silverThunder09/ai-interview-studio/pull/55)에서 확인한다. 이 제한된 수동 대조는 영속 v2 저장소의 실운영·이벤트 자동 재개 성공 증거가 아니다.
+
+수신·반영 후 [PR #55 checks 실행](https://github.com/silverThunder09/ai-interview-studio/actions/runs/39396107792/job/118539131108)은 head e6186ab2d226a4ff8110db0bfab048cfa4fa6fd0의 단위404·정책40 및 native CLI 검사를 통과했다. 이 실행의 실제 checkout은 4b94c32cd943146574875ba01bd4dbdded96bdd1이다. ready 전환 후 GitHub가 병합 참조를 13683bc4d1774d583b412293c226c32c98bd1a8d로 다시 만들었으므로 이 과거 성공을 최종 머지 증거로 재사용하지 않는다. 최종 기록 반영 뒤 새 head/base/merge checkout과 일치하는 최신 검사를 별도로 요구한다.
+
+## 비활성 v2 영속 저장 모듈
+
+`scripts/review/development-journal.ts`는 연결된 GitHub 도구를 주입받는 저장 라이브러리다. 네트워크 클라이언트·token 조회·자동 실행 진입점은 없다. 고정 저장소의 `automation/development-v2` 브랜치와 `.automation/development-v2.json`만 사용하며, **이 브랜치/파일을 만들거나 기존 worker를 전환하지 않았다.** 저장 위치 초기화·운영 담당 전환·이벤트 활성화는 실제 지원과 후속 승인/검증이 필요하다.
+
+- 명시적 epoch·유한 lease·request key/PR/head/base/요청 본문 SHA256을 보존한다. owner는 실행마다 새로 생성한 64자리 난수 식별자를 쓰고 여러 실행이 재사용하지 않는다. `prepared → sending → dispatched → reported`를 구분하며 sending 저장 성공 전에는 발신할 수 없다. sending 이후 응답 유실/lease 만료는 재발신 이유가 아니다. 실제 원래 댓글을 조회해 ID를 확인할 수 없으면 보류한다.
+- 같은 요청/댓글/결과는 멱등 처리하고 다른 본문·SHA·영수증 ID 재사용은 거절한다. reported도 다음 요청을 허용하지 않는다. CI·머지까지 검증하는 종료/담당 전환 로직은 아직 연결되지 않았으며, 이 모듈에 임의 completed·활성화 필드는 없다.
+- transport는 현재 ref/commit/file을 정확한 SHA로 읽고 기존 base tree와 parent를 보존해 작은 commit을 만든다. 저장 전 ref·tree·전체 상태·revision/epoch·불변 이력을 확인하고, ref 갱신에 expected SHA와 force=false를 전달한다. 경합·권한 거절·누락 파일은 오류로 반환하며 자동 초기화/reset/강제 쓰기/재시도를 하지 않는다. 멱등 저장도 현재 원격 상태를 확인한다.
+- 실제 발신이 필요해지는 후속 구현은 full v2 parser로 공식 결과를 검증한 뒤 receipt만 기록해야 한다. 주입된 transport의 API 인증·본문 hash 일치·기존 v1 담당과의 단일 발신 보장 및 실제 원격 CAS를 실측해야 운영에 적용할 수 있다. 합성 transport 테스트는 GitHub 실제 경합이나 자동 후속 실행의 증거가 아니다.
 
 ## 참고
 

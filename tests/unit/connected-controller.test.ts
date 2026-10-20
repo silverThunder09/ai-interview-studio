@@ -63,6 +63,12 @@ describe('development v2 result boundary', () => {
     expect(() => parseDevelopmentResult(comment(wrap(JSON.stringify({ ...value, outcome: 'failed' }))), request)).toThrow('unproven_failure');
     expect(parseDevelopmentResult(comment(wrap(JSON.stringify({ ...value, outcome: 'failed', tests: [{ command: 'npm run check', exit_code: 1 }] }))), request).report.outcome).toBe('failed');
   });
+  it('rejects an observed aggregate passed field without accepting or applying its patch', () => {
+    const value = { ...report(), tests: [{ command: 'npm run check', exit_code: 0, passed: 443 }], change: { kind: 'patch', patch } };
+    const result = comment(wrap(JSON.stringify(value)));
+    expect(() => parseDevelopmentResult(result, repair)).toThrow('invalid_fields');
+    expect(planConnectedResult({ ...snapshot(), comments: [result] }, repair)).toEqual({ action: 'blocked', reason: 'invalid_fields' });
+  });
   it('rejects a patch in a read-only report and an oversized response', () => {
     expect(() => parseDevelopmentResult(comment(wrap(JSON.stringify({ ...report(), change: { kind: 'patch', patch } }))), request)).toThrow('unexpected_patch');
     expect(() => parseDevelopmentResult(comment('x'.repeat(100_000)), request)).toThrow('result_size');
