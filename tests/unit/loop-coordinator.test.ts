@@ -141,3 +141,7 @@ describe('workflow privilege and storage boundaries', () => {
     const validation = readFileSync('.github/workflows/loop-validation.yml', 'utf8'); expect(validation).toContain('contents: read'); expect(validation).not.toContain('secrets.'); expect(validation).not.toContain('contents: write'); expect(validation).toContain('npm run test:smoke'); expect(validation).toContain('SMOKE_EXECUTABLE'); expect(validation).toContain('retention-days: 1'); expect(validation).not.toContain('Upload Windows download');
   });
 });
+
+describe('승인된 연속 실행 검증', () => {
+  it.todo('첫 작업의 needs-user 라벨은 Codex 발신과 다음 작업을 막는다');
+});
