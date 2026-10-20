@@ -64,3 +64,7 @@ describe('raw REST review pagination', () => {
     await expect(readAllReviews({ async request() { return Array(100).fill({}); } }, 56)).rejects.toThrow('review_pagination_limit');
   });
 });
+
+describe('승인된 연속 실행 검증', () => {
+  it.todo('허용된 조정자 workflow_dispatch만 CI 증거로 인정한다');
+});
