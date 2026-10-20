@@ -320,6 +320,9 @@ async function main() {
   if (process.env.GITHUB_REPOSITORY !== REPOSITORY || !process.env.GITHUB_TOKEN || !process.env.GITHUB_EVENT_PATH) throw new Error('Missing trusted worker context');
   const event: unknown = JSON.parse(await readFile(process.env.GITHUB_EVENT_PATH, 'utf8'));
   if (!acceptEvent(process.env.GITHUB_EVENT_NAME ?? '', event)) return;
+  // Explicit main-owned cutover only. Preserve every v1 request/hold; never migrate/reset it.
+  const loop = JSON.parse(await readFile('.github/approved-loop.json', 'utf8')) as { enabled?: unknown };
+  if (loop.enabled === true) { console.log('Approved loop owns new dispatch; v1 ledger preserved.'); return; }
   if (!process.env.AIS_CODEX_COMMENT_TOKEN) {
     console.error('AIS_CODEX_COMMENT_TOKEN is not configured; no Cloud request sent.');
     throw new Error('Missing Cloud sender credential');

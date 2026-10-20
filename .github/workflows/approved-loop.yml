@@ -1,0 +1,47 @@
+name: Approved development loop
+on:
+  issue_comment:
+    types: [created]
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review, closed, labeled, unlabeled]
+  workflow_run:
+    workflows: [Loop validation, Review wake-up]
+    types: [completed]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: approved-development-loop
+  cancel-in-progress: false
+jobs:
+  coordinate:
+    if: >-
+      github.repository == 'silverThunder09/ai-interview-studio' &&
+      (github.event_name != 'issue_comment' ||
+       (github.event.comment.user.login == 'chatgpt-codex-connector[bot]' &&
+        (startsWith(github.event.comment.body, '<!-- ais-development-result-v2:') ||
+         startsWith(github.event.comment.body, '<!-- ais-code-review-result:'))))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      checks: read
+      actions: write # Dispatch the read-only CI after GITHUB_TOKEN pushes/merges.
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - name: Coordinate approved work using trusted main only
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          AIS_CODEX_COMMENT_TOKEN: ${{ secrets.AIS_CODEX_COMMENT_TOKEN }}
+        run: |
+          export AIS_CHECKOUT_SHA="$(git rev-parse HEAD)"
+          node --experimental-strip-types scripts/review/loop-coordinator.mjs

@@ -94,3 +94,10 @@ test('CI evidence binds the actual merge checkout to both parent commits', () =>
   assert.throws(() => createCIEvidence(event, env, MERGE, [HEAD, BASE]));
   assert.equal(createCIEvidence({}, env, MERGE, []), null);
 });
+test('dispatched PR CI still proves the actual merge parents and main runs produce no PR proof', () => {
+  const env = { GITHUB_REPOSITORY: policy.repository, GITHUB_JOB: 'checks', GITHUB_RUN_ID: '10' };
+  const inputs = { pr: '56', head: HEAD, base: BASE, checkout: MERGE };
+  assert.equal(createCIEvidence({ inputs }, env, MERGE, [BASE, HEAD]).head_sha, HEAD);
+  assert.throws(() => createCIEvidence({ inputs }, env, MERGE, [BASE, MERGE]));
+  assert.equal(createCIEvidence({ inputs: { ...inputs, pr: '0' } }, env, BASE, []), null);
+});
