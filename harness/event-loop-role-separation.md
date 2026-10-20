@@ -159,6 +159,8 @@ node --experimental-strip-types scripts/review/connected-controller.ts plan resu
 - [PR #55 첫 patch 응답](https://github.com/silverThunder09/ai-interview-studio/pull/55#issuecomment-6286860357)의 알 수 없는 passed 합산 필드는 invalid_fields로 거절했으며 patch를 반영하지 않았다. 요청의 허용 검사 필드명을 명시하고 이 실패 경계를 회귀 테스트로 보존했다.
 - 수정 head의 [공식 patch](https://github.com/silverThunder09/ai-interview-studio/pull/55#issuecomment-6286969728)는 단위404·정책40 성공과 테스트 파일1개의 변경을 반환했다. 전체 공식 envelope·원본 key/SHA·mode/blob hash/문맥을 확인한 결과 commit/merge_authorized=false였으며 연결 담당이 patch를 검토하고 로컬 영향 테스트19개를 확인했다. 실제 원격 반영·새 head CI/머지 증거는 [PR #55](https://github.com/silverThunder09/ai-interview-studio/pull/55)에서 확인한다. 이 제한된 수동 대조는 영속 v2 저장소의 실운영·이벤트 자동 재개 성공 증거가 아니다.
 
+수신·반영 후 [PR #55 checks 실행](https://github.com/silverThunder09/ai-interview-studio/actions/runs/39396107792/job/118539131108)은 head e6186ab2d226a4ff8110db0bfab048cfa4fa6fd0의 단위404·정책40 및 native CLI 검사를 통과했다. 이 실행의 실제 checkout은 4b94c32cd943146574875ba01bd4dbdded96bdd1이다. ready 전환 후 GitHub가 병합 참조를 13683bc4d1774d583b412293c226c32c98bd1a8d로 다시 만들었으므로 이 과거 성공을 최종 머지 증거로 재사용하지 않는다. 최종 기록 반영 뒤 새 head/base/merge checkout과 일치하는 최신 검사를 별도로 요구한다.
+
 ## 비활성 v2 영속 저장 모듈
 
 `scripts/review/development-journal.ts`는 연결된 GitHub 도구를 주입받는 저장 라이브러리다. 네트워크 클라이언트·token 조회·자동 실행 진입점은 없다. 고정 저장소의 `automation/development-v2` 브랜치와 `.automation/development-v2.json`만 사용하며, **이 브랜치/파일을 만들거나 기존 worker를 전환하지 않았다.** 저장 위치 초기화·운영 담당 전환·이벤트 활성화는 실제 지원과 후속 승인/검증이 필요하다.
