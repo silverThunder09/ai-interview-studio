@@ -307,6 +307,22 @@ describe('trusted event worker', () => {
     await run(api, store); expect(api.posts).toBe(2);
     expect(store.snapshot.state.tasks[7]!.outbox).toHaveLength(2);
   });
+  it('does not release an outbox for an official completion belonging to another key', async () => {
+    const api = new FixtureAPI(), store = new MemoryStore(); await run(api, store);
+    const box = store.snapshot.state.tasks[7]!.outbox[0]!;
+    const otherKey = 'f'.repeat(64);
+    expect(box.key).not.toBe(otherKey);
+    api.comments.push({ id: 900, body: `<!-- ais-cloud-result:${otherKey}:completed -->`, user: { login: 'chatgpt-codex-connector[bot]', type: 'Bot' } });
+    api.pr.head.sha = C;
+    await run(api, store); await run(api, store);
+    expect(api.posts).toBe(1);
+    expect(store.snapshot.state.tasks[7]!.outbox).toHaveLength(1);
+    expect(store.snapshot.state.tasks[7]!.paused).toBe(false);
+    api.comments.push({ id: 901, body: `<!-- ais-cloud-result:${box.key}:completed -->`, user: { login: 'chatgpt-codex-connector[bot]', type: 'Bot' } });
+    await run(api, store); await run(api, store);
+    expect(api.posts).toBe(2);
+    expect(store.snapshot.state.tasks[7]!.outbox).toHaveLength(2);
+  });
   it('binds the user credential only to the trusted-main reconcile step with no fallback', () => {
     const workflow = readFileSync(new URL('../../.github/workflows/event-worker.yml', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
     expect(workflow).toContain('ref: main'); expect(workflow).toContain('persist-credentials: false');
