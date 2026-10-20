@@ -44,7 +44,9 @@ jobs:
           "$($hash.Hash.ToLower())  $($files[0].Name)" | Set-Content release/SHA256SUMS.txt -Encoding utf8
       - name: Record tested head and base
         run: node scripts/review/ci-evidence.mjs
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+      - name: Upload Windows download build
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: ai-interview-studio-windows-x64
           path: |
@@ -54,7 +56,7 @@ jobs:
             release/win-unpacked/LICENSES.chromium.html
             release-notices/THIRD-PARTY-NOTICES.txt
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 3
       - name: Upload smoke diagnostics
         if: failure()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
@@ -62,4 +64,4 @@ jobs:
           name: windows-smoke-diagnostics
           path: test-results/
           if-no-files-found: ignore
-          retention-days: 14
+          retention-days: 1

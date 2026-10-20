@@ -153,6 +153,12 @@ node --experimental-strip-types scripts/review/connected-controller.ts plan resu
 
 **완료되지 않은 부분:** 이 CLI는 영속 상태 저장·자동 원격 반영·다음 작업 wake-up을 직접 수행하지 않는다. 별도 저장 모듈의 구현 범위는 아래와 같으며 실제 worker/이벤트에 연결하지 않았다. processed_receipt_ids를 빈 배열로 반복 실행하는 것은 중복 방지 구현이 아니다. 기존 v1 worker와 함께 새 자동 발신기를 켜지 않는다. 현재 실행에서 시작한 제한된 검증 결과를 전체 무인 루프 성공으로 보고하지 않으며, 이 항목들의 실제 검증 전 #35는 열린 상태로 유지한다.
 
+## 실제 전달 검증 기록
+
+- [PR #54 공식 결과](https://github.com/silverThunder09/ai-interview-studio/pull/54#issuecomment-6286612982)는 지정 checkout의 단위384·정책40 성공을 보고했다. 연결 담당의 전체 envelope/key/head/base 검증은 review/merge_authorized=false였고 기록한 receipt의 재처리는 already_processed로 거절했다.
+- [PR #55 첫 patch 응답](https://github.com/silverThunder09/ai-interview-studio/pull/55#issuecomment-6286860357)의 알 수 없는 passed 합산 필드는 invalid_fields로 거절했으며 patch를 반영하지 않았다. 요청의 허용 검사 필드명을 명시하고 이 실패 경계를 회귀 테스트로 보존했다.
+- 수정 head의 [공식 patch](https://github.com/silverThunder09/ai-interview-studio/pull/55#issuecomment-6286969728)는 단위404·정책40 성공과 테스트 파일1개의 변경을 반환했다. 전체 공식 envelope·원본 key/SHA·mode/blob hash/문맥을 확인한 결과 commit/merge_authorized=false였으며 연결 담당이 patch를 검토하고 로컬 영향 테스트19개를 확인했다. 실제 원격 반영·새 head CI/머지 증거는 [PR #55](https://github.com/silverThunder09/ai-interview-studio/pull/55)에서 확인한다. 이 제한된 수동 대조는 영속 v2 저장소의 실운영·이벤트 자동 재개 성공 증거가 아니다.
+
 ## 비활성 v2 영속 저장 모듈
 
 `scripts/review/development-journal.ts`는 연결된 GitHub 도구를 주입받는 저장 라이브러리다. 네트워크 클라이언트·token 조회·자동 실행 진입점은 없다. 고정 저장소의 `automation/development-v2` 브랜치와 `.automation/development-v2.json`만 사용하며, **이 브랜치/파일을 만들거나 기존 worker를 전환하지 않았다.** 저장 위치 초기화·운영 담당 전환·이벤트 활성화는 실제 지원과 후속 승인/검증이 필요하다.

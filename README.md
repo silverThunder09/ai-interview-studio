@@ -6,8 +6,8 @@
 
 ## Windows에서 사용
 
-1. PR의 **Windows build** Actions 실행이 성공했는지 확인합니다.
-2. 해당 실행의 `ai-interview-studio-windows-x64` artifact를 내려받아 압축을 풉니다. 다운로드에는 GitHub 로그인이 필요할 수 있습니다.
+1. [Windows build](https://github.com/silverThunder09/ai-interview-studio/actions/workflows/windows-build.yml)에서 **Run workflow → Branch: main → Run workflow**를 눌러 다운로드 빌드를 실행합니다.
+2. 성공한 수동 실행을 열어 하단 **Artifacts → ai-interview-studio-windows-x64**를 내려받아 압축을 풉니다. 파일은 3일 보관되며 GitHub 로그인이 필요할 수 있습니다. 자동 PR/main 검사는 같은 빌드·테스트를 수행하지만 설치 파일을 업로드하지 않습니다.
 3. `AI-Interview-Studio-0.1.0-win-x64.exe`를 실행합니다. 별도 Node.js·DB 서버·웹 서버는 필요 없습니다. 준비된 질문으로 연습할 때는 API 키가 필요 없으며 외부 AI/전사는 본인 키·인터넷·전송 동의가 필요합니다.
 4. 설정에서 서비스·모델과 API 키를 등록합니다. **이 기기에 키 저장 (OS 암호화)**을 선택하면 다음 실행에서 복원합니다. 화면 테마도 자동 보관됩니다.
 
@@ -64,7 +64,7 @@ Linux 디스플레이가 없는 환경은 `xvfb-run -a npm run test:smoke`를 �
 
 개발 작업의 재개·컨텍스트 압축·승인 보존과 세션 인수인계는 [컨텍스트·세션 관리](harness/context-session.md)를 따릅니다. root AGENTS에는 안내만 두고 상세 규칙과 인수인계 양식은 해당 문서에서 관리합니다.
 
-Validation workflow는 PR/push에 check와 build를 실행합니다. Windows build workflow는 Windows에서 같은 검증과 실제 Electron smoke를 실행하고, 패키징한 unpacked exe를 다시 검사한 뒤 portable exe·체크섬·notices를 14일 보존합니다. 실제 마이크·webcam·Windows 사용자 기기 테스트를 대신하지 않습니다.
+Validation workflow는 PR/push에 check와 build를 실행합니다. Windows build workflow는 Windows에서 같은 검증과 실제 Electron smoke를 실행하고, 패키징한 unpacked exe를 다시 검사합니다. 저장공간을 줄이기 위해 portable exe·체크섬·notices 업로드는 수동 실행에만 수행하고 3일 보존합니다. 실패 시 smoke 진단은 1일 보존합니다. 기존 artifact의 보관 기간은 자동 변경하거나 삭제하지 않습니다. 실제 마이크·webcam·Windows 사용자 기기 테스트를 대신하지 않습니다.
 
 코드/PR 리뷰에는 저장소의 `.agents/skills/code-review`와 `.agents/skills/pr-review`를 사용합니다. 새 PR은 PR 템플릿을, 버그·리뷰 finding은 Issue Forms를 따릅니다. PR policy 검사는 본문과 머지 판정의 실패 경로를 확인합니다. 매시간 PR 점검 예약은 사용자 요청으로 일시정지했습니다. [이벤트 기반 개발 루프](harness/event-loop.md)는 GitHub 이벤트 수신·영속 outbox·기존 Codex Cloud 요청을 구현합니다. 별도 모델 API 키나 시간 예약을 쓰지 않으며, 실제 Cloud 종료·수정·머지의 성공은 Actions와 PR/이슈의 검증 결과로 확인합니다. 연결 미확인·중복 가능성·한도는 보류합니다. 활성 대화의 승인 작업도 현재 head/base의 리뷰·필수 CI·기존 머지 정책을 따라야 합니다. 보호 영역·범위 확대·실패/불명확한 증거는 보류합니다. [운영 정책](harness/review-automation.md)에 실행 의존성과 중지 조건을 기록했습니다.
 

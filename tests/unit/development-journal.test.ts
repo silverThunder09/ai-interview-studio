@@ -76,6 +76,17 @@ describe('inactive v2 lease and outbox', () => {
 });
 
 describe('connected v2 journal persistence', () => {
+  it('preserves an uncertain sending request when another owner acquires its expired lease', async () => {
+    const api = new MemoryTransport(), firstStore = new V2JournalStore(api); let snapshot = await firstStore.load();
+    snapshot = await firstStore.save(snapshot, acquireV2Lease(snapshot.state, owner, 100, 1000));
+    snapshot = await firstStore.save(snapshot, prepareV2Request(snapshot.state, request, owner, 101));
+    const persistedSending = await firstStore.save(snapshot, claimV2Send(snapshot.state, request.key, owner, 102));
+    const secondStore = new V2JournalStore(api), reloaded = await secondStore.load();
+    expect(reloaded.state).toEqual(persistedSending.state);
+    const takenOver = await secondStore.save(reloaded, acquireV2Lease(reloaded.state, other, 1200, 100));
+    expect(() => claimV2Send(takenOver.state, request.key, other, 1201)).toThrow('send_already_claimed_or_missing');
+    expect(takenOver.state.outbox[0]).toMatchObject({ key: request.key, body_hash: request.body_hash, phase: 'sending' });
+  });
   it('preserves the current tree/parent and uses expected ref plus force=false', async () => {
     const api = new MemoryTransport(), store = new V2JournalStore(api), before = await store.load();
     const after = await store.save(before, acquireV2Lease(before.state, owner, 100));
