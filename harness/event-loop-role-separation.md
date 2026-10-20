@@ -2,7 +2,7 @@
 
 ## 상태와 승인 범위
 
-**Actions 조정자를 설치 검증 중이며 아직 비활성이다.** 사용자는 「기획 승인 → Codex 구현·테스트 → GitHub CI·자동 머지 → 다음 승인 작업 자동 요청」과 자동화 완성을 우선 요청했다. 이후 2026-10-20 KST 현재 채팅에서 새 조정자의 코드 반영·조건부 머지·CI 시작·다음 Codex 요청 권한, push·PR·검증 후 머지와 한정 A/B 실제 운영 검증을 명시적으로 승인했다. 설치 PR은 `enabled=false`, 작업 목록은 빈 상태로 검증하고, 설치·main CI 확인 후 별도 승인 큐 변경 PR과 상태 초기화를 검증한다. 기존 v1/v2와 PR #52는 이관/reset하지 않는다. 설치·합성 검사만으로 무인 운영 완료라고 판단하지 않는다.
+**Actions 조정자를 설치 검증 중이며 아직 비활성이다.** 사용자는 「기획 승인 → Codex 구현·테스트 → GitHub CI·자동 머지 → 다음 승인 작업 자동 요청」과 자동화 완성을 우선 요청했다. 이후 2026-10-20 KST 현재 채팅에서 새 조정자의 코드 반영·조건부 머지·CI 시작·다음 Codex 요청 권한, push·PR·검증 후 머지와 한정 A/B 실제 운영 검증을 명시적으로 승인했다. 설치 PR은 `enabled=false`, 작업 목록은 빈 상태로 검증하고, 설치·main CI 확인 후 PR #57에서 승인 큐와 상태 초기화를 검증한다. 기존 v1/v2와 PR #52는 이관/reset하지 않는다. 설치·합성 검사만으로 무인 운영 완료라고 판단하지 않는다.
 
 **역할 분리 경계의 구현을 진행 중이며 무인 운영은 활성화하지 않았다.** 2026-10-20 KST 사용자는 현재 채팅에서 「기존 연결로 역할 분리 설계: GitHub API·CI·머지 담당과 Legacy 코드·테스트 담당을 분리하고 이벤트/종료 전달 방안을 설계 PR로 제시」를 선택했다. 작성·검증·Draft PR 제출 뒤 같은 채팅에서 「문서만 검증 후 머지 승인」으로 PR #53의 문서2개 머지를 별도로 승인했다. 당시 승인은 문서에 한정됐다. 이후 같은 채팅의 「구현 실행안해? 그럼?」 요청으로 선택한 역할 분리의 구현에 착수했다. 새 인증 등록·권한 확대·기존 v1 종료 검사 완화·이벤트 활성화는 이 구현 요청에 포함하지 않는다. CI 성공을 미승인 운영 전환의 근거로 삼지 않는다.
 
@@ -211,3 +211,5 @@ node --experimental-strip-types scripts/review/connected-controller.ts plan resu
 - [Legacy 환경](https://learn.chatgpt.com/docs/environments/cloud-environment): 실행 단계·환경변수/secret 경계. setup 전용 secret을 agent 단계에 남기는 우회는 설계에 포함하지 않는다.
 
 승인 검토 시 핵심은 **문서 머지 여부**, 다음 구현에서 다룰 **v2 결과 계약·patch 전달·이벤트 경로**, 그 구현 이후의 **활성화/기존 요청 이관 여부**를 구분하는 것이다.
+
+운영 PR #57의 고정 대상은 A [#58](https://github.com/silverThunder09/ai-interview-studio/pull/58), B [#59](https://github.com/silverThunder09/ai-interview-studio/pull/59)다. 설치 main의 Validation/Windows build가 모두 성공했으며 신규 성공 exe 업로드는 없다. 전환 직전 기존 v1의 정상 lease를 CAS로 잠시 확보해 실행 중인 이전 담당과 겹치지 않게 하고, tasks/outbox/보류 이력은 바꾸지 않는다. 기존 job의 5분 timeout보다 긴 10분 전환 lease를 두고 새 main의 enabled guard로 이후 v1 발신을 막는다. 새 승인 큐를 끄거나 과거 요청을 재개하는 별도 전환은 자동 수행하지 않는다. 새 조정자는 이 두 승인 작업 외 새 MVP를 생성하지 않는다.

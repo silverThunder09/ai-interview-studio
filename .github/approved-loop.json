@@ -1,6 +1,25 @@
 {
   "schema": 1,
   "repository": "silverThunder09/ai-interview-studio",
-  "enabled": false,
-  "tasks": []
+  "enabled": true,
+  "tasks": [
+    {
+      "id": "ci-dispatch-origin",
+      "pr": 58,
+      "goal": "tests/unit/ci-proof.test.ts 끝의 '허용된 조정자 workflow_dispatch만 CI 증거로 인정한다' TODO를 실제 테스트로 구현하라. 기존 fixture와 readJobCIEvidence를 사용하여 run.event=workflow_dispatch 이고 run.path=.github/workflows/loop-validation.yml 이면 원래 proof를 반환하며, 다른 workflow path인 dispatch는 같은 성공 상태/SHA라도 거절함을 검증하라. 실제 외부 호출 없이 합성 메타데이터만 사용하고 기존 테스트를 삭제/skip하지 말라. 이 파일 하나만 수정하고 npm run check를 실제 실행한 후 v2 결과와 UTF-8 unified patch를 반환하라.",
+      "approval": "2026-10-20 KST 현재 채팅: 새 조정자 권한·게시/PR/검증 후 머지 및 한정 합성 A/B 실제 연속 실행 검증 명시적 승인",
+      "allowed_paths": [
+        "tests/unit/ci-proof.test.ts"
+      ]
+    },
+    {
+      "id": "first-task-hold",
+      "pr": 59,
+      "goal": "tests/unit/loop-coordinator.test.ts 끝의 '첫 작업의 needs-user 라벨은 Codex 발신과 다음 작업을 막는다' TODO를 실제 테스트로 구현하라. 기존 FixtureAPI와 runLoop를 사용하여 첫 작업 라벨 API가 needs-user를 반환할 때 blocking_label로 거절하고 Codex sends=0, merges=0, 두 번째 작업은 queued임을 확인하라. 다른 API는 기존 FixtureAPI 동작을 유지하며 실제 외부 호출 없이 합성 응답만 사용하라. 기존 테스트를 삭제/skip하지 말고 이 파일 하나만 수정한 뒤 npm run check 및 v2 patch/결과를 반환하라.",
+      "approval": "2026-10-20 KST 현재 채팅: 새 조정자 권한·게시/PR/검증 후 머지 및 한정 합성 A/B 실제 연속 실행 검증 명시적 승인",
+      "allowed_paths": [
+        "tests/unit/loop-coordinator.test.ts"
+      ]
+    }
+  ]
 }
