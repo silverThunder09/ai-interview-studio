@@ -215,8 +215,10 @@ export async function runLoop({ api, sender, store, config, policy, now = Date.n
       }
       if (task.phase !== 'main-ci') ensure(pr.state === 'open' && pr.merged === false, 'unexpected_closed_pr');
       if (task.phase === 'queued') {
-        const comparison = await api.request('GET', `/compare/${main}...${pr.head.sha}`);
-        if (comparison.behind_by > 0) { await api.request('POST', '/merges', { base: pr.head.ref, head: main, commit_message: 'chore: merge current main before approved work' }); continue; }
+        // The repo client deliberately rejects '..' paths, including compare ranges.
+        // /merges is a normal, non-force merge and returns 204 when already up to date.
+        const synced = await api.request('POST', '/merges', { base: pr.head.ref, head: main, commit_message: 'chore: merge current main before approved work' });
+        if (synced !== null) { identity(synced.sha); ensure(synced.sha !== pr.head.sha, 'unexpected_merge_receipt'); continue; }
         const request = requestFor(task.pr, pr.head.sha, main, 'repair', definition.allowed_paths, now);
         const body = buildDevelopmentRequest(request) + '\n\n승인된 작업 내용(고정 main 기획):\n' + definition.goal;
         await update(t => { t.phase = 'development'; t.head = pr.head.sha; t.base = main; t.branch = pr.head.ref; t.request = request; t.delivery = { phase: 'sending', hash: hash(body), body, id: null, attempted: false }; }); continue;
