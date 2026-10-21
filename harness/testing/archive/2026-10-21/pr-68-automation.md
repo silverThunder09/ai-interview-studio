@@ -50,3 +50,31 @@
 A 자동 머지·그 main CI·B의 실제 시작/완료는 **미검증**이다. [운영 검증 #35](https://github.com/silverThunder09/ai-interview-studio/issues/35)는 열어 둔다. 이번 실행의 PR2개 및 세 번째 실패 경계에서 기존 상태/이력을 보존하고 다음 실행으로 인계한다. Linux native 하위 프로세스 제한으로 로컬 전체 check 성공을 주장하지 않으며 Windows 실제 CI와 구분한다. 실제 사용자 하드웨어·유료 모델 호출·개인 자료 전송은 검증하지 않았다.
 
 [기록 목록](../../README.md) · [이벤트 루프의 실제 검증과 한계](../../../event-loop.md#실제-검증과-한계)
+
+
+## 후속 관측 — #70 설치와 null 메타데이터 (2026-10-21 KST)
+
+위 항목은 #68 및 #70 설치 전의 역사적 기록이다. 이후 [#70](https://github.com/silverThunder09/ai-interview-studio/pull/70)이 머지됐고 main `d6d4dd72440f0070a4e0f82fcac9dc2a57fff4b9`의 [검사](https://github.com/silverThunder09/ai-interview-studio/actions/runs/39572860122)·[Windows](https://github.com/silverThunder09/ai-interview-studio/actions/runs/39572860053)가 성공했다. 단위489·정책41·원본/패키지 smoke 각9 및 실제 main checkout을 확인했다.
+
+A #58의 head `b3abefda5c9bec942c5840b650568ca3484fbe70`, base `d6d4dd72440f0070a4e0f82fcac9dc2a57fff4b9`, checkout `c55f92564d1dec6cbb7261052cbba5a5b1564cbe`의 [CI39574119443](https://github.com/silverThunder09/ai-interview-studio/actions/runs/39574119443)가 단위490·정책41·Windows smoke 각9를 통과했다. 실제 성공 Record 명령 stdout에서 세 필수 context의 head/base/checkout을 확인했다. 완료 이벤트는 새 리뷰 요청과 native 완료 callback까지 자동으로 이어졌다.
+
+그러나 [실제 summary](https://github.com/silverThunder09/ai-interview-studio/pull/58#issuecomment-6310690943)는 전체 head·completed를 반환하면서 finding 두 필드를 null로 남겼고, [callback39575071480](https://github.com/silverThunder09/ai-interview-studio/actions/runs/39575071480)이 이를 finding으로 취급해 멈췄다. [receipt6312350376](https://github.com/silverThunder09/ai-interview-studio/pull/58#issuecomment-6312350376)의 문구는 단독 성공 증거가 아니다. 같은 시점의 모든 페이지 원본 REST reviews/inline comments는 각0개다. [#69](https://github.com/silverThunder09/ai-interview-studio/issues/69)를 재개했다.
+
+후속 후보는 null을 false로 덮어쓰지 않고 위 API 근거와 현재 head/base를 결합한다. true finding·공식 bot 리뷰/인라인 댓글·누락/잘못된 API 근거·stale SHA를 거절하며, 기존 사람 변경 요청·스레드·라벨·필수 CI·expected-head squash 검사는 유지한다.
+
+| 후속 후보의 실제 로컬 검사 | 결과 |
+| --- | --- |
+| `npm run typecheck`, `npm run lint` | 성공 |
+| `npx vitest run tests/unit/native-review.test.ts tests/unit/loop-coordinator.test.ts` | 67개 성공, 두 번째 페이지 finding 거절 포함 |
+| `node scripts/review/policy.test.mjs` | 41개 성공, 사람 변경 요청·누락 원본 리뷰 거절 포함 |
+| 실제 현재 API를 `parseNativeReviewResult`에 입력 | API 근거 없음은 대기, 전체 현재 API 근거 포함은 native 완료 판정 |
+| `git diff --check` | 성공 |
+
+후속 후보의 원격 CI·설치·운영 검증은 아직 수행하지 않았다. A는 paused/cycles3, B는 queued이며 전체 루프는 미완료다. #70의 PR 1회 예외는 이미 사용했으며 이 기록은 추가 PR/추가 복구 승인이나 카운터 초기화가 아니다.
+
+
+### #71 머지 경계 재검증 추가
+
+최종 호출부 점검에서 `gatherMergeEvidence`가 저장된 native receipt를 기존 custom JSON parser로 다시 해석해 `wrong_review_key`로 멈추는 것도 재현했다. 모의 `verifyMerge`를 사용하지 않고 실제 수집기를 거치는 회귀 테스트가 수정 전 native 두 형식에서 실패함을 확인한 뒤, 같은 parser·모든 페이지 원본 API 근거를 머지 직전 두 번 재검증하도록 연결했다. native의 true/null 형식과 기존 custom 형식 모두 A 머지 후 main CI를 기다리며, 마지막 조회에서 새 finding이나 사람 변경 요청이 생기면 머지하지 않는 것을 확인했다.
+
+추가 변경 후 타입·lint·native/조정자/CI 근거 테스트 **81개**·정책 **41개**·diff 검사가 성공했다. 합성 API를 통한 회귀이며 실제 A/B 운영 완료를 뜻하지 않는다.

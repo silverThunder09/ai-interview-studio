@@ -15,7 +15,7 @@ function compactJSON(value) {
   }
   return result;
 }
-export function parseNativeReviewResult(comments, request) {
+export function parseNativeReviewResult(comments, request, apiEvidence) {
   const requested = Date.parse(request?.requested_at);
   requireValue(Array.isArray(comments) && request?.schema === 2 && request.mode === 'read-only' && request.repository === REPO && Number.isSafeInteger(request.pr_number) && request.pr_number > 0 && SHA.test(request.head_sha ?? '') && SHA.test(request.base_sha ?? '') && /^[a-f0-9]{64}$/.test(request.request_key ?? '') && Number.isFinite(requested), 'invalid_native_review_context');
   const official = comments.filter(c => c?.user?.login === BOT && c.user.type === 'Bot' && Number.isSafeInteger(c.id) && c.id > 0 && c.html_url === `https://github.com/${REPO}/pull/${request.pr_number}#issuecomment-${c.id}` && typeof c.body === 'string' && c.body.length <= 96 * 1024);
@@ -31,17 +31,27 @@ export function parseNativeReviewResult(comments, request) {
     if (state.code_review.commit_sha !== request.head_sha) continue;
     if (['queued', 'pending', 'running', 'in_progress'].includes(state.code_review.status)) return null;
     requireValue(state.code_review.status === 'completed', 'native_review_not_successful');
-    requireValue(state.code_review.has_any_findings === false && state.code_review.has_unresolved_findings === false, 'native_review_has_findings');
+    const flags = [state.code_review.has_any_findings, state.code_review.has_unresolved_findings];
+    requireValue(!flags.includes(true), 'native_review_has_findings');
+    requireValue(flags.every(v => v === false || v === null), 'invalid_native_review_state');
+    if (flags.includes(null)) {
+      if (!apiEvidence) return null;
+      const validRecord = r => Number.isSafeInteger(r?.id) && r.id > 0 && typeof r.user?.login === 'string' && ['User', 'Bot'].includes(r.user.type);
+      requireValue(apiEvidence.head_sha === request.head_sha && apiEvidence.base_sha === request.base_sha && Array.isArray(apiEvidence.reviews) && Array.isArray(apiEvidence.review_comments) && apiEvidence.reviews.every(validRecord) && apiEvidence.review_comments.every(validRecord), 'invalid_native_api_evidence');
+      // Null means unavailable metadata. Independently read every REST page; do not
+      // infer an empty result from the receipt prose or from a missing API response.
+      requireValue(![...apiEvidence.reviews, ...apiEvidence.review_comments].some(r => r.user.login === BOT && r.user.type === 'Bot'), 'native_review_has_findings');
+    }
     const security = state.security_review;
     requireValue(Object.values(security).every(v => v === null) || (security.commit_sha === request.head_sha && security.status === 'completed' && security.has_any_findings === false && security.has_unresolved_findings === false), 'native_security_review_not_clear');
     const rows = [...summary.body.matchAll(/^\| 📝 \*\*Code Review\*\* \| ✅ \*\*Completed\*\* <relative-time datetime="([^"]+)">/gm)];
     requireValue(rows.length === 1, 'missing_native_review_completion');
     const completed = Date.parse(rows[0][1]), updated = Date.parse(summary.updated_at), created = Date.parse(summary.created_at);
-    requireValue(Number.isFinite(completed) && Number.isFinite(updated) && Number.isFinite(created) && created <= updated && completed <= updated, 'invalid_native_review_time');
+    requireValue(Number.isFinite(completed) && Number.isFinite(updated) && Number.isFinite(created) && created <= updated && completed <= updated + 999, 'invalid_native_review_time');
     if (completed < requested) continue;
     const matching = receipts.filter(c => {
       const commits = [...c.body.matchAll(/^\*\*Reviewed commit:\*\* `([a-f0-9]{10,40})`\s*$/gm)];
-      return commits.length === 1 && request.head_sha.startsWith(commits[0][1]) && Date.parse(c.created_at) <= completed;
+      return commits.length === 1 && request.head_sha.startsWith(commits[0][1]);
     });
     requireValue(matching.length <= 1, 'ambiguous_native_review_receipt');
     if (matching.length === 1) current.push({ summary, receipt: matching[0], completed_at: rows[0][1] });
