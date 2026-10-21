@@ -1,4 +1,5 @@
 name: Approved development loop
+run-name: ${{ inputs.key && format('Approved continuation {0}', inputs.key) || 'Approved development loop' }}
 on:
   issue_comment:
     types: [created]
@@ -8,6 +9,10 @@ on:
     workflows: [Loop validation, 'Approved loop *', Review wake-up]
     types: [completed]
   workflow_dispatch:
+    inputs:
+      key:
+        required: false
+        type: string
 permissions:
   contents: read
 concurrency:
