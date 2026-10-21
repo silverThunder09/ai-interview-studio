@@ -12,7 +12,7 @@ test('separate settings use OS encryption, survive restart and delete saved keys
   delete env.ELECTRON_RUN_AS_NODE;
   let app: ElectronApplication | undefined;
   // Fixed stage names only: never log profile paths, settings, keys or IPC values.
-  async function stage<T>(name: 'launch' | 'profile' | 'block-network' | 'first-window' | 'decrypt' | 'close' | 'status' | 'cleanup-close' | 'cleanup-profile', action: () => Promise<T>): Promise<T> {
+  async function stage<T>(name: 'launch' | 'profile' | 'block-network' | 'first-window' | 'ready-window' | 'decrypt' | 'close' | 'status' | 'cleanup-close' | 'cleanup-profile', action: () => Promise<T>): Promise<T> {
     console.log(`AIS_SETTINGS_SMOKE_STEP ${name}:begin`);
     const value = await action();
     console.log(`AIS_SETTINGS_SMOKE_STEP ${name}:end`);
@@ -24,7 +24,14 @@ test('separate settings use OS encryption, survive restart and delete saved keys
       args: [...(process.env.SMOKE_EXECUTABLE ? [] : ['.']), `--user-data-dir=${profile}`] }));
     expect(await stage('profile', () => app!.evaluate(({ app }) => app.getPath('userData')))).toBe(profile);
     await stage('block-network', () => app!.evaluate(() => { globalThis.fetch = async () => { throw new Error('No external requests are allowed during settings tests'); }; }));
-    return stage('first-window', () => app!.firstWindow());
+    const page = await stage('first-window', () => app!.firstWindow());
+    // firstWindow resolves when the window exists, before its navigation finishes.
+    // In particular, the last restart must finish loading before finally closes it.
+    await stage('ready-window', async () => {
+      await page.waitForLoadState('load');
+      await expect(page.getByRole('heading', { name: /좋은 면접은/ })).toBeVisible();
+    });
+    return page;
   }
   try {
     let page = await launch();
