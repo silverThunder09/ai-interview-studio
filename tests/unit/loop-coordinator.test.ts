@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createHash } from 'node:crypto';
 import { emptyLoopState, parseLoopConfig, parseLoopState, parseReviewResult, buildReviewRequest, renderLoopPRBody, runLoop, LoopStore, type LoopState } from '../../scripts/review/loop-coordinator.mjs';
 import { readFileSync } from 'node:fs';
+import { GitHub } from '../../scripts/review/event-worker';
 
 const repository = 'silverThunder09/ai-interview-studio', head = '1'.repeat(40), base = '2'.repeat(40), checkout = '3'.repeat(40), merged = '4'.repeat(40);
 const config = { schema: 1, repository, enabled: true, tasks: [56, 57].map((pr, i) => ({ id: `probe-${i}`, pr, goal: '합성 실패 경계 검증 테스트를 추가합니다.', approval: '사용자가 승인한 검증 범위', allowed_paths: ['tests/unit/probe.test.ts'] })) };
@@ -31,7 +32,7 @@ class FixtureAPI {
     if (path.includes('/labels?') || path.includes('/reviews?') || path.startsWith('/issues/35/comments?')) return [];
     if (path.includes('/files?')) return [{ filename: 'tests/unit/probe.test.ts', status: 'modified' }];
     if (method === 'GET' && path.includes('/comments?')) return this.storedComments.get(n) ?? [];
-    if (path.startsWith('/compare/')) return { behind_by: 0 };
+    if (method === 'POST' && path === '/merges') return null;
     if (path === `/git/commits/${head}`) return { tree: { sha: '5'.repeat(40) } };
     if (path.includes('/git/trees/')) return { truncated: false, tree: [{ path: 'tests/unit/probe.test.ts', mode: '100644', type: 'blob', sha: blob }] };
     if (path.includes('/git/blobs/')) return { encoding: 'base64', size: 5, content: Buffer.from('test\n').toString('base64') };
@@ -111,6 +112,20 @@ describe('event-driven A → merge/main CI → B', () => {
     const f = new FixtureAPI(); f.failSend = true; await expect(runLoop(f.options())).rejects.toThrow('response_lost');
     expect(f.sends).toHaveLength(1); expect(f.store.state.tasks[0]!.phase).toBe('paused'); expect(f.store.state.tasks[1]!.phase).toBe('queued');
     f.failSend = false; expect((await runLoop(f.options())).state).toBe('paused'); expect(f.sends).toHaveLength(1);
+  });
+  it('syncs main through a valid merge path without bypassing the repo client path guard', async () => {
+    const f = new FixtureAPI();
+    vi.stubGlobal('fetch', async (url: string, init: RequestInit) => {
+      const prefix = `https://api.github.com/repos/${repository}`;
+      expect(url.startsWith(prefix + '/')).toBe(true);
+      const body = init.body ? JSON.parse(String(init.body)) : undefined;
+      const result = await f.request(init.method!, url.slice(prefix.length), body);
+      return new Response(result === null ? null : JSON.stringify(result), { status: result === null ? 204 : 200 });
+    });
+    try {
+      expect((await runLoop({ ...f.options(), api: new GitHub('synthetic-test-token') })).state).toBe('waiting-cloud');
+      expect(f.reads).toContain('POST /merges'); expect(f.sends).toHaveLength(1);
+    } finally { vi.unstubAllGlobals(); }
   });
   it('does not merge or advance after CI failure/stale proof', async () => {
     const f = new FixtureAPI(); await runLoop(f.options()); f.respond(false); await runLoop(f.options()); f.ciDone = true;

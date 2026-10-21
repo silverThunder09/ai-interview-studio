@@ -11,13 +11,27 @@ test('separate settings use OS encryption, survive restart and delete saved keys
   const env = Object.fromEntries(Object.entries(process.env).filter((x): x is [string, string] => typeof x[1] === 'string'));
   delete env.ELECTRON_RUN_AS_NODE;
   let app: ElectronApplication | undefined;
+  // Fixed stage names only: never log profile paths, settings, keys or IPC values.
+  async function stage<T>(name: 'launch' | 'profile' | 'block-network' | 'first-window' | 'ready-window' | 'decrypt' | 'close' | 'status' | 'cleanup-close' | 'cleanup-profile', action: () => Promise<T>): Promise<T> {
+    console.log(`AIS_SETTINGS_SMOKE_STEP ${name}:begin`);
+    const value = await action();
+    console.log(`AIS_SETTINGS_SMOKE_STEP ${name}:end`);
+    return value;
+  }
   async function launch() {
-    app = await electron.launch({ chromiumSandbox: true, env,
+    app = await stage('launch', () => electron.launch({ chromiumSandbox: true, env,
       ...(process.env.SMOKE_EXECUTABLE ? { executablePath: resolve(process.env.SMOKE_EXECUTABLE) } : {}),
-      args: [...(process.env.SMOKE_EXECUTABLE ? [] : ['.']), `--user-data-dir=${profile}`] });
-    expect(await app.evaluate(({ app }) => app.getPath('userData'))).toBe(profile);
-    await app.evaluate(() => { globalThis.fetch = async () => { throw new Error('No external requests are allowed during settings tests'); }; });
-    return app.firstWindow();
+      args: [...(process.env.SMOKE_EXECUTABLE ? [] : ['.']), `--user-data-dir=${profile}`] }));
+    expect(await stage('profile', () => app!.evaluate(({ app }) => app.getPath('userData')))).toBe(profile);
+    await stage('block-network', () => app!.evaluate(() => { globalThis.fetch = async () => { throw new Error('No external requests are allowed during settings tests'); }; }));
+    const page = await stage('first-window', () => app!.firstWindow());
+    // firstWindow resolves when the window exists, before its navigation finishes.
+    // In particular, the last restart must finish loading before finally closes it.
+    await stage('ready-window', async () => {
+      await page.waitForLoadState('load');
+      await expect(page.getByRole('heading', { name: /좋은 면접은/ })).toBeVisible();
+    });
+    return page;
   }
   try {
     let page = await launch();
@@ -40,17 +54,17 @@ test('separate settings use OS encryption, survive restart and delete saved keys
     const settings = await readFile(join(profile, 'settings.json'), 'utf8');
     expect(settings).not.toContain(key); expect(settings).not.toContain(Buffer.from(key).toString('base64'));
     // Actual Electron safeStorage decrypt, no synthetic OS/crypto adapter in this test.
-    expect(await app!.evaluate(({ safeStorage }, raw) => {
+    expect(await stage('decrypt', () => app!.evaluate(({ safeStorage }, raw) => {
       const data = JSON.parse(raw);
       return safeStorage.isEncryptionAvailable() && safeStorage.decryptString(Buffer.from(data.keys.gemini, 'base64')) === 'synthetic-windows-protected-key-never-real';
-    }, settings)).toBe(true);
+    }, settings))).toBe(true);
     await page.screenshot({ path: 'test-results/settings-dialog.png', fullPage: true });
     await page.keyboard.press('Escape'); await expect(dialog).toHaveCount(0);
     await expect(page.getByRole('button', { name: '설정', exact: true })).toBeFocused();
-    await app!.close(); app = undefined;
+    await stage('close', () => app!.close()); app = undefined;
     page = await launch();
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
-    const status = await page.evaluate(() => window.studio!.getAIStatus());
+    const status = await stage('status', () => page.evaluate(() => window.studio!.getAIStatus()));
     expect(status).toMatchObject({ ok: true, value: { remainingRequests: 36, preferences: { provider: 'gemini', models: { gemini: 'synthetic-gemini-model' } }, providers: expect.arrayContaining([{ provider: 'gemini', configured: true, saved: true }]) } });
     expect(JSON.stringify(status)).not.toContain(key);
     dialog = await openAPISettings(page);
@@ -59,9 +73,12 @@ test('separate settings use OS encryption, survive restart and delete saved keys
     await expect(dialog.getByLabel('API 키 (저장 후 화면에서 비움)', { exact: true })).toHaveValue('');
     await dialog.getByRole('button', { name: '선택 서비스 키 삭제', exact: true }).click();
     await expect(dialog.getByText('저장된 키와 이번 실행의 키를 삭제했습니다.', { exact: true })).toBeVisible();
-    await app!.close(); app = undefined;
+    await stage('close', () => app!.close()); app = undefined;
     page = await launch();
-    expect(await page.evaluate(() => window.studio!.getAIStatus())).toMatchObject({ ok: true, value: { providers: expect.arrayContaining([{ provider: 'gemini', configured: false, saved: false }]) } });
+    expect(await stage('status', () => page.evaluate(() => window.studio!.getAIStatus()))).toMatchObject({ ok: true, value: { providers: expect.arrayContaining([{ provider: 'gemini', configured: false, saved: false }]) } });
     expect(JSON.parse(await readFile(join(profile, 'settings.json'), 'utf8')).keys).toEqual({});
-  } finally { await app?.close(); await rm(profile, { recursive: true, force: true }); }
+  } finally {
+    if (app) await stage('cleanup-close', () => app!.close());
+    await stage('cleanup-profile', () => rm(profile, { recursive: true, force: true }));
+  }
 });
