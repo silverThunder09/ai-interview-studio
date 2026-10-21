@@ -66,5 +66,10 @@ describe('raw REST review pagination', () => {
 });
 
 describe('승인된 연속 실행 검증', () => {
-  it.todo('허용된 조정자 workflow_dispatch만 CI 증거로 인정한다');
+  it('허용된 조정자 workflow_dispatch만 CI 증거로 인정한다', () => {
+    const f = fixture();
+    const dispatch = { ...f.run, event: 'workflow_dispatch', path: '.github/workflows/loop-validation.yml' };
+    expect(readJobCIEvidence(f.expected, [f.check], dispatch, f.job, f.log)).toEqual(f.proof);
+    expect(() => readJobCIEvidence(f.expected, [f.check], { ...dispatch, path: '.github/workflows/checks.yml' }, f.job, f.log)).toThrow('invalid_or_stale_run');
+  });
 });
