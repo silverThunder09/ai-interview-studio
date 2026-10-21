@@ -1,98 +1,86 @@
-# 아키텍처와 MVP 로드맵
+# 아키텍처와 제품 로드맵
 
-## 현재 결정: MVP 2의 음성 입력·현재 질문 읽기
+## 방향 재정립 — Phase 0 설계안
 
-Windows 우선 개인용 데스크톱 앱. Electron + React + strict TypeScript + Vite를 사용한다. 별도 backend나 production localhost 서버는 없다. `app://studio/index.html`과 허용된 번들 자산만 메모리 partition의 custom protocol로 제공한다. 개발 시에만 `127.0.0.1:5173` Vite를 허용한다. electron-vite는 main, sandbox 호환 CJS preload, renderer를 별도 빌드한다.
+2026-10-22 KST 현재 채팅의 사용자 첨부 「프로젝트 방향 재정립 및 전체 리팩터링」과 재개 지시를 기준으로 한다. 목표는 **Gemini 텍스트 API + 두 면접관 + 무료 로컬 음성·아바타·웹캠**을 사용하는 Windows 면접 시뮬레이터다. 과거의 “로컬 모델은 도입하지 않는다”는 결정은 새 목표에서 STT/TTS에 한해 재검토한다. 질문·평가용 로컬 LLM은 추가하지 않는다.
 
-| 경계 | 책임 | 제한 |
+**이번 범위는 현재 구현 분석과 문서 변경안이다. Phase 1–7은 설계 초안이며 구현·활성화 승인이 아니다.** 실제 유료 호출, 개인 자료 전송 확대, 모델 다운로드·실행, 카메라 허용, 의존성·CI·자동화 정책 변경, 공개 release를 수행하지 않는다. 상세 요구사항·AC는 [리팩터링 스펙](specs/gemini-local-interview.md), 데이터·실행 경계는 [security](security.md#로컬-음성화상-면접의-목표-보안-설계--미활성)를 따른다.
+
+## 현재 구현 — main f908ca4 기준
+
+| 영역 | 실제 동작과 근거 | 다음 설계와 차이 |
 | --- | --- | --- |
-| `src/main` | 수명주기, 리소스 제공, 권한, IPC, 로컬 설정·OS 보호 키, 고정 공급자 API | 선택 대화상자를 거친 파일 한 개만 제한적으로 읽기; 임의 경로·shell·URL API 미제공 |
-| `src/preload` | 설정·이력서 선택·면접 시작/답변·기록 조회/삭제의 좁은 `window.studio` API | ipcRenderer 원본이나 범용 invoke 미노출 |
-| `src/renderer` | 한국어 화면, 상태·오류·테마 표시 | Node·파일·저장된 API 키 조회 없음; 비밀번호 입력을 main으로 일회 전달 후 즉시 비움 |
-| `src/shared` | 타입, 채널, 설정 검증 계약 | Electron/React 의존 없음 |
+| Electron / React / strict TypeScript / Vite | main·sandbox CJS preload·renderer 별도 번들, Windows portable | 기반 유지, 별도 backend/DB 서버 없음 |
+| 이력서 | native dialog의 PDF/DOCX 한 개 → 제한 읽기 → sandbox worker 추출·검토; resume.ts, renderer resume/ | 추출·근거·사용자 수정본 재사용, 원문 전체 자동 전송 금지 |
+| 질문 | external-ai.ts의 OpenAI·Claude·Gemini REST; AIQuestionProvider의 근거 검증·취소 | 두 면접관, speakerId, 공유 문맥·사용량 계측 없음 |
+| 기록 | 내장 node:sqlite, schema 2; 순서·중복·rollback·복원·삭제 | speaker/프로필·사용량·리포트 추가 시 보존형 migration 필요 |
+| 음성 | VoiceService의 OpenAI 전사, SpeechService의 OpenAI MP3; 수동 동의·검토·제출 | 로컬 STT/TTS·실시간 턴·VAD·끼어들기 없음 |
+| 장치·화면 | 사용자 시작 후 한시적 audio-only 마이크; 한국어·테마·설정 dialog | 카메라·얼굴 분석·두 아바타·결과 평가 미구현 |
+| 설정 | LocalSettings, 테마·서비스별 모델·선택한 키의 OS 보호 보관 | 음성 모델/voice·장치·면접관 프로필 보존 없음 |
 
-설정은 `locale: ko-KR`, `interviewRole: backend`, `theme: system|light|dark`만 포함한다. main이 설정을 검증하고 `LocalSettings`가 사용자 profile의 `settings.json`에 원자적으로 보관한다. 테마와 별도의 서비스별 모델 선택을 재시작 후 복원한다. 이력서·답변·전송 동의는 설정 파일에 넣지 않는다. Electron 자체 runtime 캐시·설정 디렉터리 생성 가능성과 제품 개인정보 저장 기능은 별개다.
+개발 자동화 상태와 앱 기능의 검증은 분리한다. 현재 소스에서 확인한 호출·보존 범위와 변경 후보는 [Phase 0 분석](specs/gemini-local-interview.md#현재-상태-분석)을 따른다. 기존 [MVP 1](specs/mvp-01.md)·[MVP 2](specs/mvp-02.md)는 완료된 동작·당시 승인·제한의 기준으로 보존한다.
 
-성공/실패는 판별 가능한 `Result<T>`로 반환하고 renderer는 오류와 재시도를 제공한다. 창·메인 프레임·정확한 URL을 모두 확인한다. 자산 경로는 index와 생성된 assets 이름만 허용한다. 팝업·탐색·webview·장치·다운로드는 차단한다. 상세 위협 모델과 출처는 security 문서를 따른다.
+## 유지하는 프로세스 경계
 
-로컬 이력서 검토는 main의 native dialog → 제한된 파일 읽기 → sandbox renderer의 전용 worker → PDF 페이지/DOCX 본문 단락과 사용자 수정본으로 흐른다. 검토만 하는 동안 원문 파일·추출값·수정본은 메모리에 두며 외부 전송하지 않는다. 검토를 완료하고 로컬 저장에 동의한 후 연습을 시작하면 추출 원문·수정본·질문·답변을 SQLite에 보관한다. renderer는 경로를 main에 전달할 수 없다. PDF.js의 하위 worker와 DOCX 파서는 OS·preload 접근 없이 동작하며 15초/취소 시 종료한다.
+| 경계 | 현재 책임 | 목표 확장안 |
+| --- | --- | --- |
+| src/main | 수명주기, 정확한 창/프레임/URL의 IPC, 고정 공급자 API, SQLite, OS 보호 키 | Gemini 단일 턴 조정, 제한된 로컬 음성 실행기·모델 관리, 리포트 |
+| src/preload | window.studio의 기능별 API만 노출 | 기능별 상태·취소 API; 범용 invoke/shell/파일 경로 API 없음 |
+| src/renderer | 한국어 UI, 문서 worker, 녹음·메모리 재생, 테마·설정 | 준비/진행/결과 UI, 2D 아바타, 카메라 preview·분석 worker |
+| src/shared | 순수 타입·검증·한도 | speaker·상태 전이·사용량·프로필·엔진 capability 계약 |
 
-Electron에 내장된 `node:sqlite`를 main의 저장 adapter에서 사용한다. `questions.ts`의 로컬 질문 공급자가 이력서/사용자 수정본/답변의 인용과 일반 기술 질문을 구분한다. 6개 기본 질문과 각 답변의 인용형 후속 질문으로 총 12개 답변을 연습하며, AI 생성·평가로 표현하지 않는다. `interview-store.ts`의 SQLite 트랜잭션이 질문·답변 순서와 재시도 중복 방지를 담당한다. 외부 AI adapter의 선택/동의 흐름은 아래 확장 단계가 소유한다. React 컴포넌트에서 SQL·외부 AI 호출을 하지 않는다. 현재 사용하지 않는 DB, provider SDK, 장치 라이브러리, microservice는 넣지 않는다.
+production은 app://studio/index.html과 허용된 번들 자산만 제공하며 HTTP 서버가 없다. 개발 Vite는 127.0.0.1:5173만 허용한다. renderer의 Node·외부 통신·탐색·webview 차단과 Electron sandbox/context isolation을 유지한다. 무거운 로컬 추론은 renderer UI thread에서 실행하지 않는다.
 
-다음 스펙 진행 요청에 따라 `ai-question-provider.ts`에 공급자 공통 요청·근거 검증·비동기 수명주기 계약을 준비한다. 이 모듈은 선택된 서비스의 main 전용 transport를 주입해 사용한다. 공통 계약 준비 후 사용자가 OpenAI·Claude·Gemini 외부 API 지원을 명시적으로 요청했다. 아래 외부 API 단계가 현재 상태이며 로컬 모델은 도입하지 않는다. 한도·모의 AC·남은 연결 AC는 `specs/mvp-01.md`가 소유한다.
+현재 custom protocol은 HTML/JS/CSS/font만 허용한다. 향후 로컬 이미지·WASM·모델을 제공하려면 파일별 크기·MIME·경로 검증과 좁은 자산 전달 경로가 필요하다. 폴더 전체 공개나 임의 file:/원격 URL 허용으로 해결하지 않는다.
 
-## 단계별 로드맵
+## 목표 데이터 흐름 — 아직 미구현
 
-각 단계는 별도 승인·PR로 진행한다. 2026-10-17 KST 사용자가 MVP 1의 첫 단계(로컬 파일 선택·PDF/DOCX 추출·근거 위치·수정/검토)를 승인했다. 파일 10MB·PDF 50페이지·텍스트 10만 자·DOCX 압축 해제 30MB·15초 한도도 승인했다. 이후 사용자가 다음 단계 구현과 “로컬 연습·기록부터 완성”을 선택해 텍스트 연습·SQLite 보존/삭제를 승인했다. 이후 외부 API 구현 요청은 아래 단계로 확장한다. 개발 중 유료 호출·개인정보 전송과 음성·영상은 계속 제외한다. 상세 범위는 `specs/mvp-01.md`에 있다.
+```mermaid
+flowchart LR
+  R[이력서 로컬 검토] --> C[동의한 텍스트 문맥]
+  C --> O[main 턴 조정자]
+  O --> G[Gemini 단일 요청]
+  G --> T[질문·speaker 검증]
+  T --> S[로컬 TTS]
+  S --> A[A 또는 B 아바타·재생]
+  M[마이크] --> W[로컬 Whisper]
+  W --> E[전사 검토·직접 제출]
+  E --> O
+  O --> D[SQLite]
+  V[웹캠] --> F[로컬 얼굴 관찰·화면 안내]
+```
 
-### MVP 0 — 기반 구현 완료
+1. PDF/DOCX 로컬 추출·검토 → 전송에 동의한 근거·공유 문맥 → main의 InterviewOrchestrator.
+2. 조정자 → Gemini 텍스트 요청 한 번 → 검증된 질문·speakerId·사용량 → 로컬 TTS → 해당 면접관 아바타·재생.
+3. 사용자가 켠 마이크 → 로컬 Whisper.cpp → 전사 검토·명시적 답변 제출 → 조정자 → 로컬 SQLite.
+4. 종료한 질문·답변 → 별도 동의한 Gemini 결과 평가 → 근거와 AI 의견을 구분한 리포트.
+5. 사용자가 켠 웹캠 → 로컬 preview·얼굴 관찰 worker → 화면 구도 안내만 표시. Gemini 전송과 분리한다.
 
-- 범위·제외: 하네스, 한국어 홈·설정 화면, 실행 가능한 Electron, CI·portable exe. AI, 이력서, DB, 장치, 기록 저장은 제외.
-- 요구사항: 보안 격리, 좁은 검증 IPC, 로컬 자산 로딩, 오류 표시, 설정 구조, reproducible install.
-- AC: 새 설치에서 check/build 성공, 실제 Electron에서 화면 표시와 테마 변경 성공, 재시작 시 기본값, renderer Node 접근 불가, 잘못된 설정 거절, Windows portable artifact 생성. 미구현 버튼은 비활성·예정 표시.
-- 자동 검증: 계약·송신자·자산 경로 부정 테스트, 실제 시작·권한·탐색·설정 smoke, Windows 패키징과 unpacked exe smoke. portable 추출 자체와 사용자 하드웨어는 수동 확인.
-- Windows 수동: Actions artifact 압축 해제 → exe 실행 → 한국어 홈 → 설정 테마 변경 → 닫고 다시 실행하여 초기화 확인. 인터넷을 끄고도 화면이 뜨는지, 별도 서버·API 키·카메라·마이크 요청이 없는지 확인. unsigned exe의 Windows 경고 여부도 기록. 현재 수행됐다고 간주하지 않는다.
-- 보안·개인정보: 장치 권한 거절, 네트워크 CSP 차단, 메모리 설정, telemetry·개인정보 수집 없음, 자격증명 미포함.
+두 면접관은 역할·표현·아바타·음성 프로필이 다르지만 하나의 세션 문맥과 요청 큐를 공유한다. 두 에이전트가 같은 질문을 병렬 생성하는 구조를 만들지 않는다. Gemini 응답의 speakerId와 해당 턴의 허용 발언자를 main에서 대조한다. 영상·음성 원본과 얼굴 특징은 Gemini 질문·평가 payload에 포함하지 않는다.
 
-### MVP 1 — 완료된 로컬 이력서 검토·연습·기록 단계
+## 새 로드맵과 기존 MVP 대응
 
-- 로컬 단계 범위: PDF/DOCX 검토, 로컬 질문 공급자를 통한 텍스트 연습과 SQLite 기록·복원·삭제. 이 단계에서는 외부 AI 질문 생성과 전송을 제외하며 음성·영상·종합 점수도 제공하지 않는다.
-- 요구사항: Java/Spring backend 문맥, 원문/수정본/답변의 인용 구분, 명시적 동의 후 로컬 SQLite 기록, 재시작 복원과 삭제. 실제 AI 서비스는 미연결이다.
-- AC: 문서 추출·근거 검토와 명시적 오류; 동의 없이 저장하지 않음; 질문/후속 질문과 답변을 원자적으로 기록하고 재시작 시 이어하기; 확인 후 세션/전체 기록 삭제; 저장 실패 시 입력·기존 기록 보존.
-- 자동 검증: 합성 문서 parser·한도·실패, 로컬 질문 인용, DB migration·트랜잭션 rollback·중복/충돌 제출·복원·삭제·한도와 IPC 통합. 원본/패키지 Windows smoke가 동의·12개 답변·재시작·저장 실패·삭제를 실제 실행한다. 외부 AI 검증은 해당 단계 승인 후 추가한다.
-- Windows 수동: 실제 파일 선택·한글·취소·네트워크 실패·재시작 기록·삭제 확인. 실제 개인정보는 CI에 올리지 않는다.
-- 보안·개인정보: 비신뢰 문서 파싱 격리, 저장 전 평문 로컬 파일 안내/동의, 보존 위치·삭제 확인. 외부 전송·비용·secret 저장은 활성화하지 않는다.
+| 단계 | 범위 | 기존 기능과 관계 | 착수·완료 기준 |
+| --- | --- | --- | --- |
+| Phase 0 — 이번 작업 | 실제 상태 분석, 구조·비용·라이선스·보안·AC 문서안 | MVP 0–2 구현 보존, 예전 MVP 3/4를 아래 단계로 재배치 | 문서 검토; 앱 동작 변경 없음 |
+| Phase 1 | Gemini 두 면접관·공유 문맥·speaker·사용량 | 기존 텍스트 provider·SQLite 확장 | 승인된 계약·전송 범위·migration, 합성 API·중복/취소/구기록 검사 |
+| Phase 2 | Windows 로컬 TTS 우선 검증, 엔진·음성 선택·재생/중지 | OpenAI 의존 분리; 기존 엔진은 호환용으로 보존 | 한국어 설치 음성·offline·portable 검증, 부족하면 별도 엔진 결정 |
+| Phase 3 | 로컬 2D 면접관 두 명·프리셋·발언/듣기·립싱크 | 예전 MVP 3의 아바타를 분리 | speaker/음성 일치·자원 정리·렌더링 실패 후 텍스트 지속 |
+| Phase 4 | Whisper.cpp 로컬 전사·모델 선택·검토/적용 | 기존 녹음/전사 검토 UI 재사용 | 모델 provenance·Windows 실행·기술 용어 정확도/속도 비교 |
+| Phase 5 | 웹캠 선택·preview·중단, 선택적 MediaPipe 관찰 | 예전 MVP 3의 사용자 영상 | 카메라 한정 권한·track 해제·영상/특징 미보존·로컬 worker |
+| Phase 6 | VAD·일시정지·끼어들기·턴 상태 머신 | 기존 수동 음성 모드를 보존하며 확장 | 침묵은 종료 제안, 자동 유료 전송 없음; 에코·중복·취소 검사 |
+| Phase 7 | 근거 기반 Gemini 리포트·기록 비교·선택적 export | 예전 MVP 4 | 평가 동의·허구 인용 거절·migration/삭제/export 실패 검사 |
 
-### MVP 1 확장 — 외부 API 텍스트 면접
+각 Phase의 작은 PR에 측정 가능한 AC와 영향 검사를 붙인다. 다음 Phase 승인을 큐·스펙 초안에서 자동 추론하지 않는다. 3D/VRM, 사용자 제공 음성 모델·에셋 import는 기본 2D/설치 모델 경로를 검증한 뒤 확장한다. 압박형 성격도 비하·차별·근거 없는 경험 단정이나 평가 기준 변경을 허용하지 않는다.
 
-2026-10-17 KST 사용자는 “외부 api쓸수있게 해줘 … claude,gemini,openai”라고 요청했다. 실제 계정·모델·키는 앱에서 사용자가 선택하며 개발 검증에는 합성 응답만 쓴다. 이 요청은 정책·CI·권한 변경, 실제 유료 검증, 새 음성/영상 기능을 승인하지 않는다.
+## 호환성·설정·기록
 
-- `external-ai.ts`의 OpenAI Chat Completions, Claude Messages, Gemini generateContent REST adapter가 main의 native fetch만 사용한다. 새 SDK·의존성·backend·로컬 모델은 없다. 임의 endpoint나 프록시는 받지 않는다.
-- 키 등록은 별도 설정 창의 비밀번호 입력 → 좁은 IPC → main의 write-only 보관이다. 입력은 즉시 비우고 저장된 키를 renderer에 반환하지 않는다. 2026-10-18 KST 사용자의 UI 개선·외부 API 입력 분리·재실행 보존 요청에 따라 선택한 키를 Electron safeStorage로 암호화해 `settings.json`에 보관한다. 암호화 불가/기본 평문 backend는 보존을 거절한다. 키 삭제는 디스크 저장본을 성공적으로 갱신한 후 메모리에도 반영하며 종료 시에는 메모리 참조만 해제한다.
-- 기본은 기존 비모델 로컬 연습이다. 외부 API 선택 시 서비스 키·모델 ID·검토본에 실제 포함된 짧은 구절·첫 전송 동의·별도 로컬 저장 동의가 있어야 시작한다. 매 답변 제출에도 해당 요청의 전송/과금 확인이 필요하다.
-- `InterviewService`가 DB 밖에서 기다리고 취소/30초/종료 후 늦은 응답을 버린다. 성공한 질문과 답변 전이는 SQLite에 원자적으로 저장한다. schema 2는 nullable AI 설정만 추가하고 schema 1 기록/기존 요청 hash를 보존한다. 공급자·모델은 세션에 고정하고 키는 저장하지 않는다.
-- 요청당 출력 최대 600토큰·응답 64KiB·30초, 세션 12문항, 실행당 최대 36요청(실패·취소·수동 재시도 포함), AI 답변 2,000자. 금액 상한을 보증하지 않으며 서비스 콘솔의 예산/과금/보존 확인을 안내한다. 자동 재시도·다른 공급자/로컬 질문으로의 대체는 없다.
-- 저장한 키는 재시작 시 main에서 복원하고, 저장하지 않았거나 복호화할 수 없는 키는 다시 입력한다. 키 없는 재시작은 기존 질문을 읽을 수 있으나 새 생성은 인증 오류로 멈춘다. 외부 공급자·모델의 실제 권한/과금/생성 품질은 미검증이며 Windows smoke도 합성 요청/응답만 검증한다. 상세 전송/실패 AC는 `specs/mvp-01.md`, 위협 통제는 `security.md`를 따른다.
+Gemini 중심의 새 면접 모드가 목표이며 기존 OpenAI/Claude 세션·키·기록을 일괄 삭제하거나 Gemini로 자동 전환하지 않는다. 기존 준비된 질문 연습도 유지한다. 이전 호출 adapter와 테스트는 새 경로가 검증될 때까지 보존하며 제거 여부는 사용 중인 세션의 복원·키 삭제까지 확인한 별도 변경으로 결정한다.
 
-### MVP 2 — 음성 입력·질문 읽기 구현 및 자동 검증 완료
+현재 DB는 평문이고 secure_delete/DELETE journal을 사용한다. 설정은 settings.json에 원자적으로 저장하며 키는 OS 보호 암호문만 보관한다. 손상·미래 버전 파일은 덮어쓰지 않는다. schema 1/2의 요청 hash·질문 순서·기존 미답변 상태를 유지하며 migration 실패는 rollback한다. 새 민감 데이터의 보존·삭제·export는 기존 동의로 자동 확대하지 않는다.
 
-2026-10-17 KST 사용자가 `specs/mvp-02.md`의 녹음 시작/중지 → OpenAI 전사 → 텍스트 검토/수정 → 직접 답변 제출, 60초·8MiB 한도와 세 문서 갱신/push/PR/검증 후 머지를 명시적으로 승인했다. 이 승인은 제품 내 별도 동의를 거친 음성 전송 구현이며 개발 검증은 합성 음성/응답만 사용한다. 실제 유료 호출·개인 음성 전송·질문 음성 재생·실시간 스트리밍·카메라는 이번 단계에 포함하지 않는다.
+모델/voice·프로필·장치 보존은 별도 버전 계약이 필요하다. 장치 ID가 복원돼도 권한·녹음·카메라·전송 동의를 복원하거나 자동 시작하지 않는다. 설정 dialog의 초점 격리·Escape·닫기 후 초점 복원과 작성 중 입력 보존을 유지한다.
 
-- `VoiceRecorder`는 명시적 사용자 시작 후에만 마이크를 요청하고, 중지/이탈/실패/늦은 허용에서 트랙·타이머·버퍼를 정리한다. 원본 음성은 메모리에만 준비하며 자동 전송/저장하지 않는다.
-- `VoiceService`는 현재 미답변 질문과 작업 ID를 묶고, 정확한 창/프레임/URL의 audio-only 권한을 한시적으로 허용한다. `stopVoice` 후 별도 전송 동의와 모델·bounded WebM/Opus를 확인해야 고정 OpenAI 전사 endpoint를 호출한다. 실행당 전사 36회와 질문 생성 36회를 분리한다.
-- 전사는 DB를 변경하지 않는다. 검토·명시 적용·기존 답변 제출 순서를 거치며 질문 생성 동의는 다시 확인한다. 전사 중 취소/키 변경/세션 변경의 늦은 응답은 버린다. 음성 원본의 보존·TTS·실시간 대화는 다음 범위 승인 전이다.
+## 자동화는 별도 작업
 
-음성 입력은 PR #19, 질문 읽기는 PR #21로 구현했고 원본·패키지 Windows 자동 검증을 완료했다. [검증 기록](testing/latest.md)에 실제 검사 SHA·실행 링크·미검증 하드웨어/API를 구분한다. 전체 실시간 음성 단계의 완료와는 구분한다.
-
-2026-10-18 KST 사용자가 문서 우선 작업 완료 뒤 다음 단계 진행을 재지시하고 “위 TTS 기능·문서의 push·PR·검증 후 머지 승인”으로 명시 승인한 현재 질문 음성 읽기를 구현했다. `SpeechService`가 SQLite의 현재 질문/미리보기를 대조하고 main 메모리 키·고정 OpenAI speech endpoint·별도 36회 예산으로 MP3를 생성한다. 원본 bytes는 파일/DB에 쓰지 않으며 renderer의 `SpeechPlayer`가 메모리 Blob만 사용자 동작으로 재생한다. 중복 생성/재생은 메모리를 재사용하고 취소·키/질문 변경·삭제·이탈/종료에서 늦은 결과와 리소스를 정리한다. CSP는 오디오에 필요한 `media-src blob:`만 허용하며 renderer 네트워크·카메라·격리를 유지한다. 음성 입력과 읽기는 UI에서 상호 배제한다. 실시간 대화·끼어들기는 아직 범위 밖이다.
-
-- 범위·제외: 실시간 음성·전사·발화. 카메라·아바타·화면 평가 제외.
-- 요구사항: 사용자 시작/중지, 명시적 마이크 권한, 끼어들기·연결 실패, 세션 종료 해제, provider 분리.
-- AC: 음성 turn과 텍스트 transcript 연결, 권한 거절 후 앱 사용 가능, 중지/종료 시 트랙·연결 해제, 녹음 보존은 별도 선택.
-- 자동 검증: 합성 오디오·fake streaming, 권한 거절, timeout·중단·재연결·중복 turn, 리소스 해제.
-- Windows 수동: 마이크 선택, Windows 권한 거절, 스피커/헤드셋·지연·중단·종료 확인.
-- 보안·개인정보: 음성 외부 전송과 분당/토큰 비용 고지, 자동 녹음/업로드 금지, 보존·삭제 검증.
-
-### MVP 3 — 승인 전
-
-- 범위·제외: webcam preview, 로컬 얼굴 존재·head pose, 라이선스 확인된 AI interviewer avatar. 정직성·성격·감정·직무역량 추론 제외.
-- 요구사항: 사용자 선택 후 카메라, 장치 선택·해제, 로컬 추론과 결과 한계 명시, 원본 영상 기본 미보존.
-- AC: preview/중지·종료 해제, 미검출·다중 얼굴·조명 저하 안내, 영상 자동 외부 전송 없음.
-- 자동 검증: 합성 frame, 권한 거절·장치 제거·모델 로드 실패·track cleanup, 금지 추론 필드 부재 검토.
-- Windows 수동: 실제 webcam·권한·장치 제거·저조도·CPU 사용과 종료 확인.
-- 보안·개인정보: 모델/아바타/음성 저작권, biometrics 최소화, 영상 보존은 별도 동의와 삭제.
-
-### MVP 4 — 승인 전
-
-- 범위·제외: 근거 기반 보고서, history, 평가 rubric, export. 채용 결정 자동화·얼굴 점수 제외.
-- 요구사항: transcript·resume 인용, 기술 정확성/답변 구조, 누락 정보와 개선점, 사실/AI 의견 구분, 기록 검색/삭제/export.
-- AC: 각 평가의 근거 표시, 부족한 증거는 불확실로 표현, 보고서 재조회, 사용자 선택한 파일만 export, 삭제 결과 확인.
-- 자동 검증: 합성 transcript로 rubric·근거 연결, 허구 인용 거절, export path·실패·취소·삭제, 저장소 회귀.
-- Windows 수동: 긴 한국어 기록·내보내기·권한 오류·삭제·재시작 확인.
-- 보안·개인정보: 보고서 민감정보·export 고지, 외부 평가 전송 동의/비용, 근거와 AI 추정의 표시 확인.
-
-## 설정 UI와 보존 경계
-
-연결 설정은 native modal dialog로 분리해 키/모델 입력을 면접 폼에서 제거한다. 면접 화면은 선택된 서비스·모델과 설정 진입점만 보여주고, 설정을 열어도 검토본/작성 중 답변 component를 유지한다. 설정을 열면 음성 component를 정리해 녹음 트랙/재생/미적용 전사와 요청을 폐기하고, 닫아도 자동 재개하지 않는다. native dialog의 초점 격리·Escape·닫기 후 초점 복원을 사용한다. 저장된 연결 정보는 전송 동의를 대체하지 않으며 기존 세션의 공급자/모델도 바꾸지 않는다.
-
-main의 `LocalSettings`는 버전·허용 키·32KiB 파일 상한을 검사한다. 같은 디렉터리의 독점 생성 임시 파일을 flush/rename하고 성공 후 메모리를 반영한다. 충돌·권한·손상 시 기존 파일과 설정을 보존하고 정형 오류를 반환한다. 설정/자격증명은 SQLite와 분리한다. Windows DPAPI 보호는 같은 OS 계정의 악성 앱에 대한 격리가 아니다. 보존 범위는 테마·질문 생성 서비스별 모델·선택한 API 키이며 음성 모델/voice, 미제출 답변, 녹음, 전송 동의의 추가 보존은 포함하지 않는다.
+이 문서안은 .github/·리뷰 도구·권한·큐·ledger를 변경하지 않는다. 실제 관측은 [스펙의 자동화 상태](specs/gemini-local-interview.md#자동화의-현재-관측)를 따른다. [#35](https://github.com/silverThunder09/ai-interview-studio/issues/35)의 무인 검증 미완료와 제품 구현은 별도 완료 조건이다. 설계안 자체를 승인된 자동 개발 작업으로 등록하지 않는다.
