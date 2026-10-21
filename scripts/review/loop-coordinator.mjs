@@ -9,6 +9,7 @@ import { buildDevelopmentRequest, parseDevelopmentResult, planConnectedResult } 
 import { GitHub, APIError, allPages } from './event-worker.ts';
 import { countChangeRequests, evaluateMergeGate, validatePRBody } from './policy.mjs';
 import { latestCheck, readAllReviews, readJobCIEvidence } from './ci-proof.mjs';
+import { parseNativeReviewResult } from './native-review.mjs';
 
 export const REPO = 'silverThunder09/ai-interview-studio';
 export const LOOP_BRANCH = 'automation/approved-loop';
@@ -134,7 +135,7 @@ export function renderLoopPRBody(original, task, review) {
   ensure(new Set(proofs.map(p => p.context)).size === 3 && ['checks', 'package', 'pr-policy'].every(n => proofs.some(p => p.context === n)), 'missing_pr_record_evidence');
   ensure(proofs.every(p => p.repository === REPO && p.pr_number === task.pr && p.head_sha === task.head && p.base_sha === task.base && p.checkout_sha === task.checkout && /^[0-9]+$/.test(p.run_id)) && review.head_sha === task.head && review.base_sha === task.base, 'stale_pr_record_evidence');
   const validation = `head=${task.head}; base=${task.base}; 실제 merge checkout=${task.checkout}.\n` + proofs.map(p => `- [${p.context}](https://github.com/${REPO}/actions/runs/${p.run_id}): 성공한 Record 단계의 실제 stdout과 최신 run/attempt/job/SHA를 확인했습니다.`).join('\n') + '\n개발 작업의 로컬 검사 보고와 GitHub Actions의 실제 CI 증거를 별도로 확인했습니다. 제품 CI는 원본/패키지 smoke·notices 검사를 포함하며 실제 사용자 하드웨어·유료 모델 호출은 검증하지 않았습니다.';
-  const reviewed = `AI 코드 검토입니다. 독립적인 사람의 승인이 아닙니다.\nhead=${task.head}; base=${task.base}\n${review.findings.length ? review.findings.join('\n\n') : '발견한 구체적 결함 없음.'}\n실제 검토 작업: ${review.task_url}`;
+  const reviewed = `AI 코드 검토입니다. 독립적인 사람의 승인이 아닙니다.\nhead=${task.head}; base=${task.base}\n${review.findings.length ? review.findings.join('\n\n') : '발견한 구체적 결함 없음.'}\n검토 결과 원본: ${review.task_url}`;
   let body = original;
   for (const [name, text] of [['검증', validation], ['리뷰 결과', reviewed]]) body = body.replace(new RegExp(`^## ${name}\\s*\\n[\\s\\S]*?(?=^## |$(?![\\s\\S]))`, 'm'), `## ${name}\n${text}\n\n`);
   ensure(validatePRBody(body).length === 0, 'invalid_generated_pr_body'); return body;
@@ -332,11 +333,12 @@ export async function runLoop({ api, sender, store, config, policy, now = Date.n
           await update(t => { t.delivery.phase = 'sent'; t.delivery.id = sent.id; }); continue;
         }
         const marker = task.phase === 'review' ? `<!-- ais-code-review-result:${task.request.request_key} -->` : `<!-- ais-development-result-v2:${task.request.request_key} -->`;
-        const candidates = (await comments(api, task.pr)).filter(c => c.body?.startsWith(marker));
-        if (!candidates.length) return { state: 'waiting-cloud', changes };
-        ensure(candidates.length === 1, 'ambiguous_cloud_result');
+        const responses = await comments(api, task.pr);
+        const candidates = responses.filter(c => c.body?.startsWith(marker));
+        ensure(candidates.length <= 1, 'ambiguous_cloud_result');
         if (task.phase === 'review') {
-          const review = parseReviewResult(candidates[0], task.request);
+          const review = candidates.length ? parseReviewResult(candidates[0], task.request) : parseNativeReviewResult(responses, task.request);
+          if (!review) return { state: 'waiting-cloud', changes };
           const body = `AI 코드 검토입니다. 독립된 사람의 승인이 아닙니다.\nhead=${task.head}; base=${task.base}\n${review.findings.length ? review.findings.join('\n\n') : '발견한 구체적 결함 없음.'}\n${review.task_url}\n<!-- ais-loop-review:${task.request.request_key} -->`;
           const existing = (await readAllReviews(api, task.pr)).filter(r => r.body === body && r.commit_id === task.head && r.state === 'COMMENTED' && r.user?.login === 'github-actions[bot]');
           ensure(existing.length <= 1, 'ambiguous_ai_comment');
@@ -346,6 +348,7 @@ export async function runLoop({ api, sender, store, config, policy, now = Date.n
           ensure(review.findings.length === 0, 'ai_findings_require_repair');
           await update(t => { t.phase = 'merge'; t.review = { ...review, request: task.request }; }); continue;
         }
+        if (!candidates.length) return { state: 'waiting-cloud', changes };
         const report = parseDevelopmentResult(candidates[0], task.request); ensure(report.report.outcome === 'succeeded', 'development_failed_or_blocked');
         const commit = await api.request('GET', `/git/commits/${task.head}`), tree = await api.request('GET', `/git/trees/${commit.tree.sha}?recursive=1`); ensure(tree.truncated === false, 'incomplete_patch_tree');
         const contents = {};
