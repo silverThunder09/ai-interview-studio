@@ -20,7 +20,7 @@ class MemoryStore {
   async save(old: { head: string }, value: LoopState) { expect(old.head).toBe(String(this.revision)); parseLoopState(value, config); this.state = structuredClone(value); this.revision++; return this.load(); }
 }
 class FixtureAPI {
-  main = base; sends: { pr: number; body: string }[] = []; dispatches: number[] = []; merges: number[] = []; reads: string[] = []; storedComments = new Map<number, ReturnType<typeof resultComment>[]>();
+  main = base; sends: { pr: number; body: string }[] = []; dispatches: number[] = []; wakeups: number[] = []; merges: number[] = []; reads: string[] = []; storedComments = new Map<number, ReturnType<typeof resultComment>[]>();
   mergedPRs = new Map<number, string>(); updatedBodies = new Map<number, string>(); failSend = false; now = () => Date.parse('2026-10-20T10:00:00.000Z'); store = new MemoryStore(); ciDone = false; mainDone = false;
   pr(pr: number) { return { number: pr, node_id: `PR_${pr}`, state: this.mergedPRs.has(pr) ? 'closed' : 'open', merged: this.mergedPRs.has(pr), draft: false, body: this.updatedBodies.get(pr) ?? ['변경 목적', '범위와 제외', '연결 이슈', '검증', '위험과 보안', '리뷰 결과', '머지 조건'].map(n => `## ${n}\n초기 미검증 안내`).join('\n\n'), head: { sha: head, ref: `probe-${pr}`, repo: { full_name: repository, fork: false } }, base: { sha: this.main, ref: 'main', repo: { full_name: repository } }, user: { login: 'silverThunder09' }, mergeable: true, mergeable_state: 'clean', merge_commit_sha: this.mergedPRs.get(pr) ?? checkout, labels: [] }; }
   async request(method: string, path: string, value?: unknown): Promise<unknown> {
@@ -37,6 +37,7 @@ class FixtureAPI {
     if (path.includes('/git/trees/')) return { truncated: false, tree: [{ path: 'tests/unit/probe.test.ts', mode: '100644', type: 'blob', sha: blob }] };
     if (path.includes('/git/blobs/')) return { encoding: 'base64', size: 5, content: Buffer.from('test\n').toString('base64') };
     if (method === 'POST' && path === '/actions/workflows/loop-validation.yml/dispatches') { this.dispatches.push(Number((body?.inputs as Record<string, unknown>).pr)); return null; }
+    if (method === 'POST' && path === '/actions/workflows/loop-completion.yml/dispatches') { expect(body?.ref).toBe('main'); const inputs = body?.inputs as Record<string, unknown>; if (inputs.pr === '0') { expect(inputs.head).toBe(inputs.checkout); expect(inputs.base).toBe(inputs.checkout); } this.wakeups.push(Number(inputs.pr)); return null; }
     if (method === 'POST' && path.includes('/comments')) return { id: 900, body: body?.body };
     if (method === 'POST' && path.includes('/reviews')) return { id: 901 };
     if (method === 'PUT' && path.endsWith('/merge')) { expect(body?.sha).toBe(head); expect(body?.merge_method).toBe('squash'); this.merges.push(n); this.main = merged; this.mergedPRs.set(n, merged); return { merged: true, sha: merged }; }
@@ -119,10 +120,12 @@ describe('event-driven A → merge/main CI → B', () => {
     await runLoop(f.options()); expect(f.sends).toHaveLength(1);
     f.respond(false); expect((await runLoop(f.options())).state).toBe('waiting-ci'); expect(f.dispatches).toEqual([56]);
     await runLoop(f.options()); expect(f.dispatches).toEqual([56]); expect(f.sends).toHaveLength(1);
+    expect(f.wakeups).toEqual([56]);
     f.ciDone = true; expect((await runLoop(f.options())).state).toBe('waiting-cloud'); expect(f.sends).toHaveLength(2);
     f.respond(true); expect((await runLoop(f.options())).state).toBe('waiting-main-ci'); expect(f.merges).toEqual([56]); expect(f.dispatches).toEqual([56, 0]); expect(f.sends.map(s => s.pr)).toEqual([56, 56]);
     expect(f.updatedBodies.get(56)).toContain('실제 merge checkout=' + checkout); expect(f.updatedBodies.get(56)).toContain('실제 검토 작업: https://chatgpt.com/s/cd_'); expect(f.reads.filter(x => x === 'PATCH /pulls/56')).toHaveLength(1);
     await runLoop(f.options()); expect(f.merges).toEqual([56]); expect(f.dispatches).toEqual([56, 0]);
+    expect(f.wakeups).toEqual([56, 0]);
     f.mainDone = true; expect((await runLoop(f.options())).state).toBe('waiting-cloud'); expect(f.sends.map(s => s.pr)).toEqual([56, 56, 57]);
     await runLoop(f.options()); expect(f.sends.map(s => s.pr)).toEqual([56, 56, 57]); expect(f.store.state.tasks[0]!.phase).toBe('completed');
   });

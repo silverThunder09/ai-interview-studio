@@ -219,3 +219,14 @@ node --experimental-strip-types scripts/review/connected-controller.ts plan resu
 활성화 후 첫 요청 전에는 조정자가 같은 main의 read-only Loop validation을 1회 dispatch하고 checks/package·실제 checkout 성공을 확인한다. 기존 초기화 상태에 bootstrap 필드가 없으면 기존 task/outbox를 보존한 checkpoint로만 추가하며, 진행 중/응답 유실 때 같은 CI를 다시 보내지 않는다. PR의 검증·리뷰 결과 절도 실제 검증된 head/base/checkout/CI run과 공식 AI 리뷰 작업으로 갱신한다. 기존 승인 범위·보안 절은 보존하며 본문 생성 전후 main의 템플릿 검사를 적용한다.
 
 PR #57의 이전 head 08df3e446af65a93cfe8f44c3b5baf2c682c9052에서 Windows settings smoke가 90초 시간 초과로 두 번 실패했다. 검사를 삭제·skip하거나 sandbox·timeout을 약화하지 않았다. 최종 head CI에서는 실패한 Playwright API의 이름/완료 상태만 출력하는 진단을 추가한다. selector·입력·키·페이지 본문·원본 오류/개인 경로를 출력하지 않으며 기존 실패 상태를 바꾸지 않는다. 정확한 원인/최종 성공은 새 실제 CI에서 확인해야 한다. 과거 artifact는 삭제하지 않고 실패 진단은 기존 1일 보관을 유지한다.
+
+### CI 완료 재개 보완안 — 구현·설치 검증 승인됨
+
+2026-10-21의 #63 설치 main `a0c689fdabab26e5139643c3b933333bb56b18e1`에서 일반 main 검사와 [bootstrap 실행](https://github.com/silverThunder09/ai-interview-studio/actions/runs/39545913888)은 모두 성공했다. 두 Record tested main 실제 stdout도 같은 SHA였다. 그러나 완료 후 후속 조정자 실행은 없었고 bootstrap.ready=false·A/B queued·A 댓글0이 유지됐다. 동적 이름 필터 보완만으로는 #62를 해결하지 못했으며 실제 A→B 완료를 주장하지 않는다. [GitHub의 토큰 이벤트 제한](https://docs.github.com/en/actions/concepts/security/github_token)과 [workflow 이름 필터](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#onworkflow_runworkflows)는 참고 근거이며, 관찰되지 않은 내부 원인을 확정하는 증거는 아니다.
+
+준비한 보완안은 CI dispatch 때 고정 `loop-completion.yml`도 main에서 1회 시작하는 것이다. 별도 job은 PR 소스·artifact·npm·사용자 토큰을 읽지 않고, main의 고정 코드와 contents:read·actions:write만 사용한다. 제품 CI의 read-only 권한은 그대로다. 2026-10-21 현재 채팅에서 사용자가 새 완료 확인 job·고정 조정자 호출, 8개 파일 push/PR/CI 후 머지 및 다음 설치 PR의 #62 운영 인수 검증만 머지 후 수행하는 예외를 명시적으로 승인했다. 기존 CI dispatch 한정 범위를 이 고정 재개 호출에 한해 확장하며 영구 머지 정책·필수 검사·사람 리뷰 예외는 승인하지 않았다. 토큰 자체는 Actions 쓰기 권한이지만 구현은 고정 조정자 dispatch 외 취소·삭제·권한 변경 API를 호출하지 않는다.
+
+- 작업 상태에 보존된 key·PR·head/base/checkout과 일치하는 CI만 최대35분 동안30초 간격으로 읽는다. CI당 한정된 Actions job이며 시간 예약·반복 채팅·추가 모델 호출이 아니다. Actions 실행 시간과 API 요청은 발생한다. 큐 누락·다른 작업·이미 소비된 key는 재개하지 않는다.
+- 실제 CI run의 repository/path/event/head/key·완료 상태를 확인하고 고정 조정자를 main에서 한 번 dispatch한다. CI 실패도 조정자에 전달하지만 성공으로 바꾸지 않는다. 원래 조정자가 최신 실제 job/attempt/stdout 증거·리뷰·라벨·정책을 그대로 재검증한다. 완료 job 자체는 commit·merge·다음 Codex 댓글을 보내지 않는다.
+- 같은 key는 직렬화하고 조정자 실행의 원본 API 영수증을 먼저 확인한다. 쓰기 응답 유실은 재전송하지 않는다. job 재실행에서 영수증이 없으면 ambiguous_wait_delivery로 실패하며 운영자 확인을 요구한다. 이 장치는 정책 판정·ledger reset·과거 요청 재개를 대신하지 않는다.
+- 현재 로컬 typecheck/lint, 관련 회귀46개·정책41개가 성공했다. 실제 새 workflow dispatch→CI 종료→조정자→A→main CI→B와 중복0은 아직 미검증이다. 설치 인수 검증이 끝나기 전 #62/#35는 열린 상태로 유지한다.

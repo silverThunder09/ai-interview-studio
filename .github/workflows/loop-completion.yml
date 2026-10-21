@@ -1,0 +1,46 @@
+name: Loop completion bridge
+run-name: CI completion ${{ inputs.key }}
+on:
+  workflow_dispatch:
+    inputs:
+      pr:
+        required: true
+        type: string
+      head:
+        required: true
+        type: string
+      base:
+        required: true
+        type: string
+      checkout:
+        required: true
+        type: string
+      key:
+        required: true
+        type: string
+permissions:
+  contents: read
+  actions: write # Only dispatch the fixed trusted-main coordinator after CI completion.
+concurrency:
+  group: loop-completion-${{ inputs.key }}
+  cancel-in-progress: false
+jobs:
+  wait-and-resume:
+    if: github.repository == 'silverThunder09/ai-interview-studio' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - name: Observe actual CI completion and resume once
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          export AIS_CHECKOUT_SHA="$(git rev-parse HEAD)"
+          node --experimental-strip-types scripts/review/loop-waiter.mjs

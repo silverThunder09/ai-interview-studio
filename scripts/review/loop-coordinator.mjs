@@ -202,7 +202,9 @@ export async function gatherMergeEvidence(api, definition, task, policy) {
   return { pr, reviews, checks, evidence, review: { source: 'current-run', head_sha: pr.head.sha, base_sha: main, outstanding_findings: review.findings.length, unresolved_threads: unresolved, open_review_issues: openFindings, change_requests: countChangeRequests(reviews), changed_paths: files.map(f => f.filename) }, authorization: { scope_approved: true, protected_change_explicitly_approved: false, source: definition.approval } };
 }
 async function dispatch(api, task, main) {
-  await api.request('POST', '/actions/workflows/loop-validation.yml/dispatches', { ref: main ? 'main' : task.branch, inputs: { pr: main ? '0' : String(task.pr), head: task.head, base: task.base, checkout: main ? task.merged : task.checkout, key: task.operation.key } });
+  const inputs = { pr: main ? '0' : String(task.pr), head: main ? task.merged : task.head, base: main ? task.merged : task.base, checkout: main ? task.merged : task.checkout, key: task.operation.key };
+  await api.request('POST', '/actions/workflows/loop-validation.yml/dispatches', { ref: main ? 'main' : task.branch, inputs });
+  await api.request('POST', '/actions/workflows/loop-completion.yml/dispatches', { ref: 'main', inputs });
 }
 async function mainSuccess(api, task) {
   const runs = await api.pagesObject(`/actions/runs?event=workflow_dispatch&branch=main&head_sha=${task.merged}`, 'workflow_runs');
