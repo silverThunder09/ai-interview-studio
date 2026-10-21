@@ -2,7 +2,7 @@
 
 ## 상태와 승인 범위
 
-**Actions 조정자를 설치 검증 중이며 아직 비활성이다.** 사용자는 「기획 승인 → Codex 구현·테스트 → GitHub CI·자동 머지 → 다음 승인 작업 자동 요청」과 자동화 완성을 우선 요청했다. 이후 2026-10-20 KST 현재 채팅에서 새 조정자의 코드 반영·조건부 머지·CI 시작·다음 Codex 요청 권한, push·PR·검증 후 머지와 한정 A/B 실제 운영 검증을 명시적으로 승인했다. 설치 PR은 `enabled=false`, 작업 목록은 빈 상태로 검증하고, 설치·main CI 확인 후 별도 승인 큐 변경 PR과 상태 초기화를 검증한다. 기존 v1/v2와 PR #52는 이관/reset하지 않는다. 설치·합성 검사만으로 무인 운영 완료라고 판단하지 않는다.
+**Actions 조정자를 설치 검증 중이며 아직 비활성이다.** 사용자는 「기획 승인 → Codex 구현·테스트 → GitHub CI·자동 머지 → 다음 승인 작업 자동 요청」과 자동화 완성을 우선 요청했다. 이후 2026-10-20 KST 현재 채팅에서 새 조정자의 코드 반영·조건부 머지·CI 시작·다음 Codex 요청 권한, push·PR·검증 후 머지와 한정 A/B 실제 운영 검증을 명시적으로 승인했다. 설치 PR은 `enabled=false`, 작업 목록은 빈 상태로 검증하고, 설치·main CI 확인 후 PR #57에서 승인 큐와 상태 초기화를 검증한다. 기존 v1/v2와 PR #52는 이관/reset하지 않는다. 설치·합성 검사만으로 무인 운영 완료라고 판단하지 않는다.
 
 **역할 분리 경계의 구현을 진행 중이며 무인 운영은 활성화하지 않았다.** 2026-10-20 KST 사용자는 현재 채팅에서 「기존 연결로 역할 분리 설계: GitHub API·CI·머지 담당과 Legacy 코드·테스트 담당을 분리하고 이벤트/종료 전달 방안을 설계 PR로 제시」를 선택했다. 작성·검증·Draft PR 제출 뒤 같은 채팅에서 「문서만 검증 후 머지 승인」으로 PR #53의 문서2개 머지를 별도로 승인했다. 당시 승인은 문서에 한정됐다. 이후 같은 채팅의 「구현 실행안해? 그럼?」 요청으로 선택한 역할 분리의 구현에 착수했다. 새 인증 등록·권한 확대·기존 v1 종료 검사 완화·이벤트 활성화는 이 구현 요청에 포함하지 않는다. CI 성공을 미승인 운영 전환의 근거로 삼지 않는다.
 
@@ -198,6 +198,12 @@ node --experimental-strip-types scripts/review/connected-controller.ts plan resu
 
 2026-10-20 KST 로컬 타입·린트·추가 경계24개·기존 정책40개가 통과했다. 첫 전체 검사는 기존 native CLI child-process 테스트1개가 spawnSync EPERM으로 환경 차단됐다(당시422/423 통과). 해당 테스트·sandbox는 유지했으며 최종 전체 결과는 PR CI로 재검증한다. 앱의 최신/아카이브 테스트 기준은 교체하지 않는다.
 
+## 한정 A/B 운영 검증 준비
+
+설치 PR #56의 실제 merged SHA는 889e7eb946f92182c5f76d1d4e6c2f940e056c66이다. 해당 head의 단위428·정책41·Windows source9/packaged9와 main 판정기 허용을 확인했다. 설치 후 main CI와 별도 승인 큐 PR을 확인하기 전 운영 완료로 표시하지 않는다.
+
+승인된 합성 작업 A는 CI dispatch 출처의 허용/거절 경계 테스트, B는 첫 작업의 차단 라벨이 다음 발신을 막는 테스트다. 각각 기존 테스트 파일 하나만 수정하며 제품 기능·새 인증·외부 API 호출은 없다. 두 Draft PR 번호를 승인 목록에 고정하고 새 상태를 main tree/parent 기준으로 준비한 뒤 활성화 PR의 최신 필수 CI/리뷰를 확인한다. 초기화/전환 전후 기존 v1/v2·PR #52와 원래 요청 이력을 보존했는지 대조한다. A 완료·main CI 후 B가 한 번 시작되고 중복 이벤트 추가0을 확인하기 전 #35를 닫지 않는다.
+
 ## 참고 링크
 
 - [Work의 이벤트 기반 작업](https://help.openai.com/en/articles/20001275-chatgpt-work-and-codex): 지원되는 GitHub PR 활동·등록 환경과 권한의 기준. 현재 도구의 등록 성공을 보장하는 자료는 아니다.
@@ -205,3 +211,22 @@ node --experimental-strip-types scripts/review/connected-controller.ts plan resu
 - [Legacy 환경](https://learn.chatgpt.com/docs/environments/cloud-environment): 실행 단계·환경변수/secret 경계. setup 전용 secret을 agent 단계에 남기는 우회는 설계에 포함하지 않는다.
 
 승인 검토 시 핵심은 **문서 머지 여부**, 다음 구현에서 다룰 **v2 결과 계약·patch 전달·이벤트 경로**, 그 구현 이후의 **활성화/기존 요청 이관 여부**를 구분하는 것이다.
+
+운영 PR #57의 고정 대상은 A [#58](https://github.com/silverThunder09/ai-interview-studio/pull/58), B [#59](https://github.com/silverThunder09/ai-interview-studio/pull/59)다. 설치 main의 Validation/Windows build가 모두 성공했으며 신규 성공 exe 업로드는 없다. 전환 직전 기존 v1의 정상 lease를 CAS로 잠시 확보해 실행 중인 이전 담당과 겹치지 않게 하고, tasks/outbox/보류 이력은 바꾸지 않는다. 기존 job의 5분 timeout보다 긴 10분 전환 lease를 두고 새 main의 enabled guard로 이후 v1 발신을 막는다. 새 승인 큐를 끄거나 과거 요청을 재개하는 별도 전환은 자동 수행하지 않는다. 새 조정자는 이 두 승인 작업 외 새 MVP를 생성하지 않는다.
+
+### 운영 연결의 추가 검증
+
+활성화 후 첫 요청 전에는 조정자가 같은 main의 read-only Loop validation을 1회 dispatch하고 checks/package·실제 checkout 성공을 확인한다. 기존 초기화 상태에 bootstrap 필드가 없으면 기존 task/outbox를 보존한 checkpoint로만 추가하며, 진행 중/응답 유실 때 같은 CI를 다시 보내지 않는다. PR의 검증·리뷰 결과 절도 실제 검증된 head/base/checkout/CI run과 공식 AI 리뷰 작업으로 갱신한다. 기존 승인 범위·보안 절은 보존하며 본문 생성 전후 main의 템플릿 검사를 적용한다.
+
+PR #57의 이전 head 08df3e446af65a93cfe8f44c3b5baf2c682c9052에서 Windows settings smoke가 90초 시간 초과로 두 번 실패했다. 검사를 삭제·skip하거나 sandbox·timeout을 약화하지 않았다. 최종 head CI에서는 실패한 Playwright API의 이름/완료 상태만 출력하는 진단을 추가한다. selector·입력·키·페이지 본문·원본 오류/개인 경로를 출력하지 않으며 기존 실패 상태를 바꾸지 않는다. 정확한 원인/최종 성공은 새 실제 CI에서 확인해야 한다. 과거 artifact는 삭제하지 않고 실패 진단은 기존 1일 보관을 유지한다.
+
+### CI 완료 재개 보완안 — 구현·설치 검증 승인됨
+
+2026-10-21의 #63 설치 main `a0c689fdabab26e5139643c3b933333bb56b18e1`에서 일반 main 검사와 [bootstrap 실행](https://github.com/silverThunder09/ai-interview-studio/actions/runs/39545913888)은 모두 성공했다. 두 Record tested main 실제 stdout도 같은 SHA였다. 그러나 완료 후 후속 조정자 실행은 없었고 bootstrap.ready=false·A/B queued·A 댓글0이 유지됐다. 동적 이름 필터 보완만으로는 #62를 해결하지 못했으며 실제 A→B 완료를 주장하지 않는다. [GitHub의 토큰 이벤트 제한](https://docs.github.com/en/actions/concepts/security/github_token)과 [workflow 이름 필터](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#onworkflow_runworkflows)는 참고 근거이며, 관찰되지 않은 내부 원인을 확정하는 증거는 아니다.
+
+준비한 보완안은 CI dispatch 때 고정 `loop-completion.yml`도 main에서 1회 시작하는 것이다. 별도 job은 PR 소스·artifact·npm·사용자 토큰을 읽지 않고, main의 고정 코드와 contents:read·actions:write만 사용한다. 제품 CI의 read-only 권한은 그대로다. 2026-10-21 현재 채팅에서 사용자가 새 완료 확인 job·고정 조정자 호출, 8개 파일 push/PR/CI 후 머지 및 다음 설치 PR의 #62 운영 인수 검증만 머지 후 수행하는 예외를 명시적으로 승인했다. 기존 CI dispatch 한정 범위를 이 고정 재개 호출에 한해 확장하며 영구 머지 정책·필수 검사·사람 리뷰 예외는 승인하지 않았다. 토큰 자체는 Actions 쓰기 권한이지만 구현은 고정 조정자 dispatch 외 취소·삭제·권한 변경 API를 호출하지 않는다.
+
+- 작업 상태에 보존된 key·PR·head/base/checkout과 일치하는 CI만 최대35분 동안30초 간격으로 읽는다. CI당 한정된 Actions job이며 시간 예약·반복 채팅·추가 모델 호출이 아니다. Actions 실행 시간과 API 요청은 발생한다. 큐 누락·다른 작업·이미 소비된 key는 재개하지 않는다.
+- 실제 CI run의 repository/path/event/head/key·완료 상태를 확인하고 고정 조정자를 main에서 한 번 dispatch한다. CI 실패도 조정자에 전달하지만 성공으로 바꾸지 않는다. 원래 조정자가 최신 실제 job/attempt/stdout 증거·리뷰·라벨·정책을 그대로 재검증한다. 완료 job 자체는 commit·merge·다음 Codex 댓글을 보내지 않는다.
+- 같은 key는 직렬화하고 조정자 실행의 원본 API 영수증을 먼저 확인한다. 쓰기 응답 유실은 재전송하지 않는다. job 재실행에서 영수증이 없으면 ambiguous_wait_delivery로 실패하며 운영자 확인을 요구한다. 이 장치는 정책 판정·ledger reset·과거 요청 재개를 대신하지 않는다.
+- 현재 로컬 typecheck/lint, 관련 회귀46개·정책41개가 성공했다. 실제 새 workflow dispatch→CI 종료→조정자→A→main CI→B와 중복0은 아직 미검증이다. 설치 인수 검증이 끝나기 전 #62/#35는 열린 상태로 유지한다.

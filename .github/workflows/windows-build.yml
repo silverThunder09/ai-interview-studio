@@ -57,6 +57,9 @@ jobs:
             release-notices/THIRD-PARTY-NOTICES.txt
           if-no-files-found: error
           retention-days: 3
+      - name: Summarize failed smoke API calls without inputs
+        if: failure()
+        run: node scripts/review/smoke-diagnostics.mjs
       - name: Upload smoke diagnostics
         if: failure()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6

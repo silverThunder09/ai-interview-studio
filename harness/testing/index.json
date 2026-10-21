@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "repository": "silverThunder09/ai-interview-studio",
-  "recorded_at_kst": "2026-10-19T00:58:47.198349+09:00",
+  "recorded_at_kst": "2026-10-21",
   "current_record_id": "tests-2026-10-19-pr34",
   "notes": [
     "Counts refer to each recorded SHA, not cumulative coverage.",
@@ -1102,6 +1102,89 @@
           "url": "https://github.com/silverThunder09/ai-interview-studio/actions/runs/39142276466/job/117718955183"
         }
       }
+    },
+    {
+      "id": "tests-2026-10-21-pr68-automation",
+      "scope": "automation",
+      "status": "archived",
+      "date_kst": "2026-10-21",
+      "pr": 68,
+      "title": "CI 대상 merge 부모 SHA 검증·자동화 단계 관측",
+      "path": "archive/2026-10-21/pr-68-automation.md",
+      "tags": [
+        "automation",
+        "merge-checkout",
+        "ci-evidence",
+        "duplicate-prevention"
+      ],
+      "result": "passed",
+      "tested_head_sha": "6a302852969e570e1998304f7ad2b36dcae12a51",
+      "tested_base_sha": "9fe12c97b00e1f111fd02cb45c2ccb6a62e664eb",
+      "tested_checkout_sha": "e0fd176605d7c020ee92b7ca1f24aabd3d6a2fdb",
+      "merged_main_sha": "d933f6e692dcee846c98ac7cfc90f5fced422cf0",
+      "counts": {
+        "unit": 464,
+        "review_policy": 41,
+        "windows_source": 9,
+        "windows_packaged": 9
+      },
+      "evidence": [
+        {
+          "context": "checks",
+          "run_id": 39560868165,
+          "job_id": 119091518513,
+          "url": "https://github.com/silverThunder09/ai-interview-studio/actions/runs/39560868165/job/119091518513",
+          "result": "success",
+          "evidence_step": "success",
+          "ci_evidence": {
+            "repository": "silverThunder09/ai-interview-studio",
+            "pr_number": 68,
+            "context": "checks",
+            "head_sha": "6a302852969e570e1998304f7ad2b36dcae12a51",
+            "base_sha": "9fe12c97b00e1f111fd02cb45c2ccb6a62e664eb",
+            "checkout_sha": "e0fd176605d7c020ee92b7ca1f24aabd3d6a2fdb",
+            "run_id": "39560868165"
+          }
+        },
+        {
+          "context": "package",
+          "run_id": 39560868134,
+          "job_id": 119091517521,
+          "url": "https://github.com/silverThunder09/ai-interview-studio/actions/runs/39560868134/job/119091517521",
+          "result": "success",
+          "evidence_step": "success",
+          "ci_evidence": {
+            "repository": "silverThunder09/ai-interview-studio",
+            "pr_number": 68,
+            "context": "package",
+            "head_sha": "6a302852969e570e1998304f7ad2b36dcae12a51",
+            "base_sha": "9fe12c97b00e1f111fd02cb45c2ccb6a62e664eb",
+            "checkout_sha": "e0fd176605d7c020ee92b7ca1f24aabd3d6a2fdb",
+            "run_id": "39560868134"
+          }
+        },
+        {
+          "context": "pr-policy",
+          "run_id": 39561463691,
+          "job_id": 119093484225,
+          "url": "https://github.com/silverThunder09/ai-interview-studio/actions/runs/39561463691/job/119093484225",
+          "result": "success",
+          "evidence_step": "success",
+          "ci_evidence": {
+            "repository": "silverThunder09/ai-interview-studio",
+            "pr_number": 68,
+            "context": "pr-policy",
+            "head_sha": "6a302852969e570e1998304f7ad2b36dcae12a51",
+            "base_sha": "9fe12c97b00e1f111fd02cb45c2ccb6a62e664eb",
+            "checkout_sha": "e0fd176605d7c020ee92b7ca1f24aabd3d6a2fdb",
+            "run_id": "39561463691"
+          }
+        }
+      ],
+      "limits": [
+        "PR68의 코드/CI 검증 성공 기록이며 전체 A→B 완료는 미검증",
+        "#69 native 리뷰 종료 연결은 미설치 후보, 실제 callback 미검증"
+      ]
     }
   ]
 }
