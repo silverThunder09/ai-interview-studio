@@ -213,6 +213,24 @@ async function synchronizedPR(api, task, definition, pr, main, sleep) {
   }
   throw new Error('pr_sync_pending');
 }
+export function isCurrentMergeCheckout(pr, main, commit) {
+  return SHA.test(pr?.merge_commit_sha ?? '') && SHA.test(pr?.head?.sha ?? '') && SHA.test(main ?? '') &&
+    pr.base?.sha === main && commit?.sha === pr.merge_commit_sha && Array.isArray(commit.parents) &&
+    commit.parents.length === 2 && commit.parents[0]?.sha === main && commit.parents[1]?.sha === pr.head.sha;
+}
+async function preparedMergeCheckout(api, task, definition, sleep) {
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const { pr, main } = await scope(api, task, definition);
+    ensure(main === task.base && pr.draft === false && pr.state === 'open' && pr.merged === false, 'stale_ci_snapshot');
+    ensure(identity((await api.request('GET', `/git/ref/heads/${task.branch}`)).object.sha) === task.head, 'stale_ci_snapshot');
+    if (pr.head.sha === task.head && pr.base.sha === main && SHA.test(pr.merge_commit_sha ?? '')) {
+      const commit = await api.request('GET', `/git/commits/${pr.merge_commit_sha}`);
+      if (isCurrentMergeCheckout(pr, main, commit)) return pr;
+    }
+    if (attempt < 5) await sleep(2000);
+  }
+  throw new Error('merge_checkout_pending');
+}
 export async function gatherMergeEvidence(api, definition, task, policy) {
   const { pr, main, files } = await scope(api, task, definition);
   ensure(pr.head.sha === task.review.head_sha && main === task.review.base_sha && pr.base.sha === main, 'stale_current_review');
@@ -355,14 +373,15 @@ export async function runLoop({ api, sender, store, config, policy, now = Date.n
         await update(t => { t.phase = 'ci'; t.head = t.applied.sha; t.operation = null; }); continue;
       }
       if (task.phase === 'ci') {
-        ensure(pr.head.sha === task.head && main === task.base && pr.base.sha === main && pr.draft === false, 'stale_ci_snapshot');
-        identity(pr.merge_commit_sha);
         if (!task.operation) {
+          const fresh = await preparedMergeCheckout(api, task, definition, sleep);
           const key = randomBytes(32).toString('hex');
-          await update(t => { t.operation = { key, dispatched: true }; t.checkout = pr.merge_commit_sha; });
-          await dispatch(api, { ...task, checkout: pr.merge_commit_sha, operation: { key } }, false);
+          await update(t => { t.operation = { key, dispatched: true }; t.checkout = fresh.merge_commit_sha; });
+          await dispatch(api, { ...task, checkout: fresh.merge_commit_sha, operation: { key } }, false);
           return { state: 'waiting-ci', changes };
         }
+        ensure(pr.head.sha === task.head && main === task.base && pr.base.sha === main && pr.draft === false, 'stale_ci_snapshot');
+        identity(pr.merge_commit_sha);
         const checks = await allChecks(api, task.head);
         if (policy.required_checks.some(name => { try { return latestCheck(checks, name).status !== 'completed'; } catch { return true; } })) return { state: 'waiting-ci', changes };
         const proofs = [];
