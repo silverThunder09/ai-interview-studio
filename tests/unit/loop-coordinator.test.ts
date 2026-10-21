@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createHash } from 'node:crypto';
-import { emptyLoopState, parseLoopConfig, parseLoopState, parseReviewResult, buildReviewRequest, renderLoopPRBody, runLoop, LoopStore, type LoopState } from '../../scripts/review/loop-coordinator.mjs';
+import { acceptsLoopWakeup, emptyLoopState, parseLoopConfig, parseLoopState, parseReviewResult, buildReviewRequest, renderLoopPRBody, runLoop, LoopStore, type LoopState } from '../../scripts/review/loop-coordinator.mjs';
 import { readFileSync } from 'node:fs';
 import { GitHub } from '../../scripts/review/event-worker';
 
@@ -56,6 +56,24 @@ class FixtureAPI {
   } }; }
   respond(review: boolean) { const task = this.store.state.tasks.find(t => t.phase === (review ? 'review' : 'development'))!; const request = task.request as ReturnType<typeof reviewRequest>; const list = this.storedComments.get(task.pr) ?? []; list.push(resultComment(request, review, 2000 + list.length)); this.storedComments.set(task.pr, list); }
 }
+describe('workflow completion wake-up', () => {
+  const event = { repository: { full_name: repository }, workflow_run: { id: 39531052934, name: 'Approved loop ' + 'c'.repeat(64), path: '.github/workflows/loop-validation.yml', head_repository: { full_name: repository }, head_sha: base, status: 'completed' } };
+  it('accepts the actual dynamic CI name using its stable workflow path', () => {
+    expect(acceptsLoopWakeup(event)).toBe(true);
+    expect(acceptsLoopWakeup({ ...event, workflow_run: { ...event.workflow_run, name: 'Review wake-up', path: '.github/workflows/review-wakeup.yml' } })).toBe(true);
+  });
+  it('rejects name spoofing, another repository, pending runs and self wake-ups', () => {
+    for (const run of [
+      { ...event.workflow_run, name: 'Loop validation', path: '.github/workflows/unrelated.yml' },
+      { ...event.workflow_run, path: '.github/workflows/approved-loop.yml' },
+      { ...event.workflow_run, status: 'in_progress' },
+      { ...event.workflow_run, head_repository: { full_name: 'untrusted/fork' } },
+      { ...event.workflow_run, head_sha: 'invalid' },
+    ]) expect(acceptsLoopWakeup({ ...event, workflow_run: run })).toBe(false);
+    expect(acceptsLoopWakeup({ ...event, repository: { full_name: 'untrusted/fork' } })).toBe(false);
+    expect(acceptsLoopWakeup(null)).toBe(false);
+  });
+});
 describe('approved task/config boundary', () => {
   it('requires an explicit main-owned task list and rejects protected/escaping/duplicate/legacy tasks', () => {
     expect(parseLoopConfig(config).enabled).toBe(true);
@@ -144,6 +162,22 @@ describe('event-driven A → merge/main CI → B', () => {
     const f = new FixtureAPI(); delete f.store.state.bootstrap; await runLoop(f.options());
     await expect(runLoop({ ...f.options(), verifyMain: async () => { throw new Error('main_ci_failed'); } })).rejects.toThrow('main_ci_failed'); expect(f.sends).toHaveLength(0);
   });
+  it('preserves an earlier bootstrap key and tests an advanced main exactly once before sending', async () => {
+    const f = new FixtureAPI(); delete f.store.state.bootstrap;
+    await runLoop(f.options()); const original = structuredClone(f.store.state.bootstrap!);
+    f.main = merged;
+    expect((await runLoop(f.options())).state).toBe('waiting-bootstrap-ci'); expect(f.dispatches).toEqual([0, 0]);
+    expect(f.store.state.bootstrap).toMatchObject({ main: original.main, key: original.key, ready: false, checks: [{ main: merged, ready: false }] });
+    await runLoop(f.options()); expect(f.dispatches).toEqual([0, 0]); expect(f.sends).toHaveLength(0);
+    f.mainDone = true; expect((await runLoop(f.options())).state).toBe('waiting-cloud'); expect(f.sends).toHaveLength(1);
+    expect(f.store.state.bootstrap!.checks![0]!.ready).toBe(true); expect(f.store.state.tasks[0]!.base).toBe(merged); expect(f.store.state.tasks[1]!.phase).toBe('queued');
+  });
+  it('stops after three bootstrap attempts when main keeps moving', async () => {
+    const f = new FixtureAPI(); delete f.store.state.bootstrap; await runLoop(f.options());
+    for (const main of [merged, '5'.repeat(40)]) { f.main = main; await runLoop(f.options()); }
+    f.main = '6'.repeat(40); await expect(runLoop(f.options())).rejects.toThrow('bootstrap_retry_limit');
+    expect(f.dispatches).toEqual([0, 0, 0]); expect(f.sends).toHaveLength(0); expect(f.store.state.bootstrap!.checks).toHaveLength(2);
+  });
   it('passes original blocking human reviews to the existing policy and denies merge', async () => {
     const f = new FixtureAPI(); await runLoop(f.options()); f.respond(false); await runLoop(f.options()); f.ciDone = true; await runLoop(f.options()); f.respond(true);
     const options = f.options(), normal = options.verifyMerge;
@@ -172,6 +206,15 @@ describe('durable store fail-closed boundary', () => {
     await expect(store.save({ head, tree: base, state }, { ...state, revision: 1 })).rejects.toThrow('loop_cas_conflict');
     state.tasks[0]!.phase = 'completed'; const next = structuredClone(state); next.revision++; next.tasks[0]!.phase = 'queued'; store.load = async () => ({ head, tree: base, state });
     await expect(store.save({ head, tree: base, state }, next)).rejects.toThrow('completed_history_changed');
+  });
+  it('rejects bootstrap checkpoint removal, identity changes and verified-result rollback before writes', async () => {
+    const api = { async request() { throw new Error('unexpected_write'); } }, store = new LoopStore(api, config), state = emptyLoopState(config);
+    state.bootstrap = { main: base, key: 'c'.repeat(64), ready: false, checks: [{ main: merged, key: 'd'.repeat(64), ready: true }] };
+    store.load = async () => ({ head, tree: base, state });
+    for (const checks of [[], [{ ...state.bootstrap.checks![0]!, key: 'e'.repeat(64) }], [{ ...state.bootstrap.checks![0]!, ready: false }]]) {
+      const next = structuredClone(state); next.revision++; next.bootstrap!.checks = checks;
+      await expect(store.save({ head, tree: base, state }, next)).rejects.toThrow('bootstrap_history_changed');
+    }
   });
 });
 describe('workflow privilege and storage boundaries', () => {

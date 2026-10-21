@@ -5,7 +5,7 @@ on:
   pull_request_target:
     types: [opened, reopened, synchronize, ready_for_review, closed, labeled, unlabeled]
   workflow_run:
-    workflows: [Loop validation, Review wake-up]
+    workflows: [Loop validation, 'Approved loop *', Review wake-up]
     types: [completed]
   workflow_dispatch:
 permissions:
@@ -17,6 +17,10 @@ jobs:
   coordinate:
     if: >-
       github.repository == 'silverThunder09/ai-interview-studio' &&
+      (github.event_name != 'workflow_run' ||
+       (github.event.workflow_run.head_repository.full_name == 'silverThunder09/ai-interview-studio' &&
+        (github.event.workflow_run.path == '.github/workflows/loop-validation.yml' ||
+         github.event.workflow_run.path == '.github/workflows/review-wakeup.yml'))) &&
       (github.event_name != 'issue_comment' ||
        (github.event.comment.user.login == 'chatgpt-codex-connector[bot]' &&
         (startsWith(github.event.comment.body, '<!-- ais-development-result-v2:') ||

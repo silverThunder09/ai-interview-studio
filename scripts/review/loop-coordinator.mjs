@@ -28,6 +28,12 @@ function compactJSON(value) {
   return result;
 }
 const identity = value => { ensure(typeof value === 'string' && SHA.test(value), 'invalid_sha'); return value; };
+export function acceptsLoopWakeup(event) {
+  const run = event?.workflow_run;
+  return event?.repository?.full_name === REPO && run?.head_repository?.full_name === REPO &&
+    run.status === 'completed' && number(run.id) && SHA.test(run.head_sha ?? '') &&
+    ['.github/workflows/loop-validation.yml', '.github/workflows/review-wakeup.yml'].includes(run.path);
+}
 function protectedPath(path) { return /(^|\/)AGENTS\.md$/.test(path) || ['.github/', '.agents/', 'harness/', 'scripts/review/'].some(p => path.startsWith(p)) || /(^|\/)(package(-lock)?\.json|\.npmrc|\.node-version|.*\.lock)$/.test(path); }
 export function parseLoopConfig(value) {
   const c = obj(value);
@@ -49,6 +55,14 @@ export function parseLoopState(value, config) {
   ensure(v.schema === 1 && v.repository === REPO && Number.isSafeInteger(v.revision) && v.revision >= 0 && v.config_hash === hash(JSON.stringify(c.tasks)) && Array.isArray(v.tasks) && v.tasks.length === c.tasks.length, 'invalid_loop_state');
   if (v.lease !== null) ensure(HASH.test(v.lease.owner) && number(v.lease.until), 'invalid_loop_lease');
   if (v.bootstrap !== undefined && v.bootstrap !== null) ensure(SHA.test(v.bootstrap.main) && HASH.test(v.bootstrap.key) && typeof v.bootstrap.ready === 'boolean', 'invalid_bootstrap');
+  if (v.bootstrap?.checks !== undefined) {
+    ensure(Array.isArray(v.bootstrap.checks) && v.bootstrap.checks.length <= 2, 'bootstrap_retry_limit');
+    const keys = new Set([v.bootstrap.key]);
+    for (const check of v.bootstrap.checks) {
+      ensure(SHA.test(check.main) && HASH.test(check.key) && !keys.has(check.key) && typeof check.ready === 'boolean', 'invalid_bootstrap_check'); keys.add(check.key);
+    }
+    ensure(!v.bootstrap.ready || v.bootstrap.checks.length === 0 || v.bootstrap.checks.at(-1).ready, 'unverified_bootstrap_check');
+  }
   let active = false, queued = false;
   v.tasks.forEach((t, i) => {
     ensure(t.id === c.tasks[i].id && t.pr === c.tasks[i].pr && PHASES.includes(t.phase) && Number.isSafeInteger(t.cycles) && t.cycles >= 0 && t.cycles <= 3, 'invalid_loop_task');
@@ -75,6 +89,9 @@ export class LoopStore {
     parseLoopState(next, this.config); ensure(next.revision === old.state.revision + 1, 'invalid_state_revision');
     const current = await this.load(); ensure(current.head === old.head && JSON.stringify(current.state) === JSON.stringify(old.state), 'loop_cas_conflict');
     if (old.state.bootstrap) ensure(next.bootstrap?.main === old.state.bootstrap.main && next.bootstrap.key === old.state.bootstrap.key && (!old.state.bootstrap.ready || next.bootstrap.ready === true), 'bootstrap_history_changed');
+    const beforeChecks = old.state.bootstrap?.checks ?? [], afterChecks = next.bootstrap?.checks ?? [];
+    ensure(afterChecks.length >= beforeChecks.length && afterChecks.length <= beforeChecks.length + 1 && (!old.state.bootstrap?.ready || JSON.stringify(beforeChecks) === JSON.stringify(afterChecks)), 'bootstrap_history_changed');
+    beforeChecks.forEach((before, i) => { const after = afterChecks[i]; ensure(after.main === before.main && after.key === before.key && (!before.ready || after.ready), 'bootstrap_history_changed'); });
     for (let i = 0; i < old.state.tasks.length; i++) {
       const before = old.state.tasks[i], after = next.tasks[i];
       ensure(before.phase !== 'completed' || JSON.stringify(before) === JSON.stringify(after), 'completed_history_changed');
@@ -227,10 +244,16 @@ export async function runLoop({ api, sender, store, config, policy, now = Date.n
       return { state: 'waiting-bootstrap-ci', changes };
     }
     if (!snap.state.bootstrap.ready) {
-      const boot = snap.state.bootstrap, main = identity((await api.request('GET', '/branches/main')).commit.sha);
-      ensure(main === boot.main, 'bootstrap_main_changed');
+      const initial = snap.state.bootstrap, boot = initial.checks?.at(-1) ?? initial, main = identity((await api.request('GET', '/branches/main')).commit.sha);
+      if (main !== boot.main) {
+        ensure((initial.checks?.length ?? 0) < 2, 'bootstrap_retry_limit');
+        const key = randomBytes(32).toString('hex');
+        await save(s => { (s.bootstrap.checks ??= []).push({ main, key, ready: false }); });
+        await dispatch(api, { pr: 0, head: main, base: main, merged: main, operation: { key } }, true);
+        return { state: 'waiting-bootstrap-ci', changes };
+      }
       if (!await verifyMain(api, { merged: boot.main, operation: { key: boot.key } })) return { state: 'waiting-bootstrap-ci', changes };
-      await save(s => { s.bootstrap.ready = true; });
+      await save(s => { if (s.bootstrap.checks?.length) s.bootstrap.checks.at(-1).ready = true; s.bootstrap.ready = true; });
     }
     for (let transitions = 0; transitions < 20; transitions++) {
       ensure(snap.state.lease?.owner === owner && snap.state.lease.until > now(), 'loop_lease_expired');
@@ -375,6 +398,10 @@ class RuntimeAPI extends GitHub {
 }
 async function main() {
   ensure(process.env.GITHUB_REPOSITORY === REPO && process.env.GITHUB_TOKEN && process.env.AIS_CHECKOUT_SHA, 'missing_trusted_context');
+  if (process.env.GITHUB_EVENT_NAME === 'workflow_run') {
+    ensure(process.env.GITHUB_EVENT_PATH, 'missing_event_context');
+    if (!acceptsLoopWakeup(JSON.parse(await readFile(process.env.GITHUB_EVENT_PATH, 'utf8')))) { console.log('Unrelated workflow completion; no state or requests changed.'); return; }
+  }
   const config = parseLoopConfig(JSON.parse(await readFile('.github/approved-loop.json', 'utf8'))); if (!config.enabled) { console.log('Approved loop disabled; no state or requests changed.'); return; }
   const api = new RuntimeAPI(process.env.GITHUB_TOKEN), main = (await api.request('GET', '/branches/main')).commit.sha;
   ensure(process.env.AIS_CHECKOUT_SHA === main, 'trusted_main_moved');
