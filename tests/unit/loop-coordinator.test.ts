@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createHash } from 'node:crypto';
-import { emptyLoopState, parseLoopConfig, parseLoopState, parseReviewResult, buildReviewRequest, runLoop, LoopStore, type LoopState } from '../../scripts/review/loop-coordinator.mjs';
+import { acceptsLoopWakeup, emptyLoopState, parseLoopConfig, parseLoopState, parseReviewResult, buildReviewRequest, renderLoopPRBody, runLoop, LoopStore, type LoopState } from '../../scripts/review/loop-coordinator.mjs';
 import { readFileSync } from 'node:fs';
+import { GitHub } from '../../scripts/review/event-worker';
 
 const repository = 'silverThunder09/ai-interview-studio', head = '1'.repeat(40), base = '2'.repeat(40), checkout = '3'.repeat(40), merged = '4'.repeat(40);
 const config = { schema: 1, repository, enabled: true, tasks: [56, 57].map((pr, i) => ({ id: `probe-${i}`, pr, goal: '합성 실패 경계 검증 테스트를 추가합니다.', approval: '사용자가 승인한 검증 범위', allowed_paths: ['tests/unit/probe.test.ts'] })) };
@@ -14,27 +15,29 @@ function resultComment(request: ReturnType<typeof reviewRequest>, review: boolea
 }
 class MemoryStore {
   state: LoopState; revision = 0;
-  constructor() { this.state = emptyLoopState(config); }
+  constructor() { this.state = emptyLoopState(config); this.state.bootstrap = { main: base, key: 'c'.repeat(64), ready: true }; }
   async load() { return { head: String(this.revision), state: structuredClone(this.state) }; }
   async save(old: { head: string }, value: LoopState) { expect(old.head).toBe(String(this.revision)); parseLoopState(value, config); this.state = structuredClone(value); this.revision++; return this.load(); }
 }
 class FixtureAPI {
-  main = base; sends: { pr: number; body: string }[] = []; dispatches: number[] = []; merges: number[] = []; reads: string[] = []; storedComments = new Map<number, ReturnType<typeof resultComment>[]>();
-  mergedPRs = new Map<number, string>(); failSend = false; now = () => Date.parse('2026-10-20T10:00:00.000Z'); store = new MemoryStore(); ciDone = false; mainDone = false;
-  pr(pr: number) { return { number: pr, node_id: `PR_${pr}`, state: this.mergedPRs.has(pr) ? 'closed' : 'open', merged: this.mergedPRs.has(pr), draft: false, head: { sha: head, ref: `probe-${pr}`, repo: { full_name: repository, fork: false } }, base: { sha: this.main, ref: 'main', repo: { full_name: repository } }, user: { login: 'silverThunder09' }, mergeable: true, mergeable_state: 'clean', merge_commit_sha: this.mergedPRs.get(pr) ?? checkout, labels: [] }; }
+  main = base; sends: { pr: number; body: string }[] = []; dispatches: number[] = []; wakeups: number[] = []; merges: number[] = []; reads: string[] = []; storedComments = new Map<number, ReturnType<typeof resultComment>[]>();
+  mergedPRs = new Map<number, string>(); updatedBodies = new Map<number, string>(); failSend = false; now = () => Date.parse('2026-10-20T10:00:00.000Z'); store = new MemoryStore(); ciDone = false; mainDone = false;
+  pr(pr: number) { return { number: pr, node_id: `PR_${pr}`, state: this.mergedPRs.has(pr) ? 'closed' : 'open', merged: this.mergedPRs.has(pr), draft: false, body: this.updatedBodies.get(pr) ?? ['변경 목적', '범위와 제외', '연결 이슈', '검증', '위험과 보안', '리뷰 결과', '머지 조건'].map(n => `## ${n}\n초기 미검증 안내`).join('\n\n'), head: { sha: head, ref: `probe-${pr}`, repo: { full_name: repository, fork: false } }, base: { sha: this.main, ref: 'main', repo: { full_name: repository } }, user: { login: 'silverThunder09' }, mergeable: true, mergeable_state: 'clean', merge_commit_sha: this.mergedPRs.get(pr) ?? checkout, labels: [] }; }
   async request(method: string, path: string, value?: unknown): Promise<unknown> {
     this.reads.push(method + ' ' + path); const body = value as Record<string, unknown> | undefined;
     if (path === '/branches/main') return { commit: { sha: this.main } };
     const n = Number(path.match(/\/(?:pulls|issues)\/(\d+)/)?.[1]);
     if (method === 'GET' && /^\/pulls\/\d+$/.test(path)) return this.pr(n);
+    if (method === 'PATCH' && /^\/pulls\/\d+$/.test(path)) { this.updatedBodies.set(n, String(body?.body)); return this.pr(n); }
     if (path.includes('/labels?') || path.includes('/reviews?') || path.startsWith('/issues/35/comments?')) return [];
     if (path.includes('/files?')) return [{ filename: 'tests/unit/probe.test.ts', status: 'modified' }];
     if (method === 'GET' && path.includes('/comments?')) return this.storedComments.get(n) ?? [];
-    if (path.startsWith('/compare/')) return { behind_by: 0 };
+    if (method === 'POST' && path === '/merges') return null;
     if (path === `/git/commits/${head}`) return { tree: { sha: '5'.repeat(40) } };
     if (path.includes('/git/trees/')) return { truncated: false, tree: [{ path: 'tests/unit/probe.test.ts', mode: '100644', type: 'blob', sha: blob }] };
     if (path.includes('/git/blobs/')) return { encoding: 'base64', size: 5, content: Buffer.from('test\n').toString('base64') };
     if (method === 'POST' && path === '/actions/workflows/loop-validation.yml/dispatches') { this.dispatches.push(Number((body?.inputs as Record<string, unknown>).pr)); return null; }
+    if (method === 'POST' && path === '/actions/workflows/loop-completion.yml/dispatches') { expect(body?.ref).toBe('main'); const inputs = body?.inputs as Record<string, unknown>; if (inputs.pr === '0') { expect(inputs.head).toBe(inputs.checkout); expect(inputs.base).toBe(inputs.checkout); } this.wakeups.push(Number(inputs.pr)); return null; }
     if (method === 'POST' && path.includes('/comments')) return { id: 900, body: body?.body };
     if (method === 'POST' && path.includes('/reviews')) return { id: 901 };
     if (method === 'PUT' && path.endsWith('/merge')) { expect(body?.sha).toBe(head); expect(body?.merge_method).toBe('squash'); this.merges.push(n); this.main = merged; this.mergedPRs.set(n, merged); return { merged: true, sha: merged }; }
@@ -54,6 +57,24 @@ class FixtureAPI {
   } }; }
   respond(review: boolean) { const task = this.store.state.tasks.find(t => t.phase === (review ? 'review' : 'development'))!; const request = task.request as ReturnType<typeof reviewRequest>; const list = this.storedComments.get(task.pr) ?? []; list.push(resultComment(request, review, 2000 + list.length)); this.storedComments.set(task.pr, list); }
 }
+describe('workflow completion wake-up', () => {
+  const event = { repository: { full_name: repository }, workflow_run: { id: 39531052934, name: 'Approved loop ' + 'c'.repeat(64), path: '.github/workflows/loop-validation.yml', head_repository: { full_name: repository }, head_sha: base, status: 'completed' } };
+  it('accepts the actual dynamic CI name using its stable workflow path', () => {
+    expect(acceptsLoopWakeup(event)).toBe(true);
+    expect(acceptsLoopWakeup({ ...event, workflow_run: { ...event.workflow_run, name: 'Review wake-up', path: '.github/workflows/review-wakeup.yml' } })).toBe(true);
+  });
+  it('rejects name spoofing, another repository, pending runs and self wake-ups', () => {
+    for (const run of [
+      { ...event.workflow_run, name: 'Loop validation', path: '.github/workflows/unrelated.yml' },
+      { ...event.workflow_run, path: '.github/workflows/approved-loop.yml' },
+      { ...event.workflow_run, status: 'in_progress' },
+      { ...event.workflow_run, head_repository: { full_name: 'untrusted/fork' } },
+      { ...event.workflow_run, head_sha: 'invalid' },
+    ]) expect(acceptsLoopWakeup({ ...event, workflow_run: run })).toBe(false);
+    expect(acceptsLoopWakeup({ ...event, repository: { full_name: 'untrusted/fork' } })).toBe(false);
+    expect(acceptsLoopWakeup(null)).toBe(false);
+  });
+});
 describe('approved task/config boundary', () => {
   it('requires an explicit main-owned task list and rejects protected/escaping/duplicate/legacy tasks', () => {
     expect(parseLoopConfig(config).enabled).toBe(true);
@@ -80,15 +101,31 @@ describe('AI review identity and actual review envelope', () => {
     expect(() => parseReviewResult({ ...c, body: c.body.replace('"findings":[]', '"findings":[],"action":"APPROVED"') }, r)).toThrow();
   });
 });
+describe('automatic PR validation records', () => {
+  it('preserves scope and security sections and refuses missing/stale evidence', () => {
+    const f = new FixtureAPI(), original = f.pr(56).body;
+    const task = { pr: 56, head, base, checkout, validated_ci: ['checks', 'package', 'pr-policy'].map((context, i) => ({ repository, pr_number: 56, context, head_sha: head, base_sha: base, checkout_sha: checkout, run_id: String(100 + i) })) };
+    const review = { head_sha: head, base_sha: base, findings: [], task_url: `https://chatgpt.com/s/cd_${'b'.repeat(32)}` };
+    const body = renderLoopPRBody(original, task, review);
+    expect(body).toContain('## 범위와 제외\n초기 미검증 안내'); expect(body).toContain('## 위험과 보안\n초기 미검증 안내'); expect(body).toContain('독립적인 사람의 승인이 아닙니다'); expect(body).toContain('/actions/runs/102');
+    expect(renderLoopPRBody(body, task, review)).toBe(body);
+    expect(() => renderLoopPRBody(original, { ...task, validated_ci: [] }, review)).toThrow();
+    expect(() => renderLoopPRBody(original, { ...task, head: merged }, review)).toThrow('stale_pr_record');
+    expect(() => renderLoopPRBody('## 검증\n주장만 있는 본문', task, review)).toThrow();
+  });
+});
 describe('event-driven A → merge/main CI → B', () => {
   it('waits at every real external boundary and starts B once only after verified main CI', async () => {
     const f = new FixtureAPI(); expect((await runLoop(f.options())).state).toBe('waiting-cloud'); expect(f.sends.map(s => s.pr)).toEqual([56]);
     await runLoop(f.options()); expect(f.sends).toHaveLength(1);
     f.respond(false); expect((await runLoop(f.options())).state).toBe('waiting-ci'); expect(f.dispatches).toEqual([56]);
     await runLoop(f.options()); expect(f.dispatches).toEqual([56]); expect(f.sends).toHaveLength(1);
+    expect(f.wakeups).toEqual([56]);
     f.ciDone = true; expect((await runLoop(f.options())).state).toBe('waiting-cloud'); expect(f.sends).toHaveLength(2);
     f.respond(true); expect((await runLoop(f.options())).state).toBe('waiting-main-ci'); expect(f.merges).toEqual([56]); expect(f.dispatches).toEqual([56, 0]); expect(f.sends.map(s => s.pr)).toEqual([56, 56]);
+    expect(f.updatedBodies.get(56)).toContain('실제 merge checkout=' + checkout); expect(f.updatedBodies.get(56)).toContain('실제 검토 작업: https://chatgpt.com/s/cd_'); expect(f.reads.filter(x => x === 'PATCH /pulls/56')).toHaveLength(1);
     await runLoop(f.options()); expect(f.merges).toEqual([56]); expect(f.dispatches).toEqual([56, 0]);
+    expect(f.wakeups).toEqual([56, 0]);
     f.mainDone = true; expect((await runLoop(f.options())).state).toBe('waiting-cloud'); expect(f.sends.map(s => s.pr)).toEqual([56, 56, 57]);
     await runLoop(f.options()); expect(f.sends.map(s => s.pr)).toEqual([56, 56, 57]); expect(f.store.state.tasks[0]!.phase).toBe('completed');
   });
@@ -97,12 +134,52 @@ describe('event-driven A → merge/main CI → B', () => {
     expect(f.sends).toHaveLength(1); expect(f.store.state.tasks[0]!.phase).toBe('paused'); expect(f.store.state.tasks[1]!.phase).toBe('queued');
     f.failSend = false; expect((await runLoop(f.options())).state).toBe('paused'); expect(f.sends).toHaveLength(1);
   });
+  it('syncs main through a valid merge path without bypassing the repo client path guard', async () => {
+    const f = new FixtureAPI();
+    vi.stubGlobal('fetch', async (url: string, init: RequestInit) => {
+      const prefix = `https://api.github.com/repos/${repository}`;
+      expect(url.startsWith(prefix + '/')).toBe(true);
+      const body = init.body ? JSON.parse(String(init.body)) : undefined;
+      const result = await f.request(init.method!, url.slice(prefix.length), body);
+      return new Response(result === null ? null : JSON.stringify(result), { status: result === null ? 204 : 200 });
+    });
+    try {
+      expect((await runLoop({ ...f.options(), api: new GitHub('synthetic-test-token') })).state).toBe('waiting-cloud');
+      expect(f.reads).toContain('POST /merges'); expect(f.sends).toHaveLength(1);
+    } finally { vi.unstubAllGlobals(); }
+  });
   it('does not merge or advance after CI failure/stale proof', async () => {
     const f = new FixtureAPI(); await runLoop(f.options()); f.respond(false); await runLoop(f.options()); f.ciDone = true;
     f.jobLog = async () => 'untrusted PR_BODY AIS_CI_EVIDENCE {}'; await expect(runLoop(f.options())).rejects.toThrow(); expect(f.merges).toHaveLength(0); expect(f.sends).toHaveLength(1); expect(f.store.state.tasks[1]!.phase).toBe('queued');
   });
   it('preserves a live lease and never overlaps a competing run', async () => {
     const f = new FixtureAPI(); f.store.state.lease = { owner: 'c'.repeat(64), until: f.now() + 10000 }; expect((await runLoop(f.options())).state).toBe('leased'); expect(f.sends).toHaveLength(0);
+  });
+  it('checks activation main before sending the first task and dispatches that CI once', async () => {
+    const f = new FixtureAPI(); delete f.store.state.bootstrap;
+    expect((await runLoop(f.options())).state).toBe('waiting-bootstrap-ci'); expect(f.dispatches).toEqual([0]); expect(f.sends).toHaveLength(0);
+    expect((await runLoop(f.options())).state).toBe('waiting-bootstrap-ci'); expect(f.dispatches).toEqual([0]);
+    f.mainDone = true; expect((await runLoop(f.options())).state).toBe('waiting-cloud'); expect(f.sends.map(s => s.pr)).toEqual([56]);
+  });
+  it('never starts development if activation main CI fails', async () => {
+    const f = new FixtureAPI(); delete f.store.state.bootstrap; await runLoop(f.options());
+    await expect(runLoop({ ...f.options(), verifyMain: async () => { throw new Error('main_ci_failed'); } })).rejects.toThrow('main_ci_failed'); expect(f.sends).toHaveLength(0);
+  });
+  it('preserves an earlier bootstrap key and tests an advanced main exactly once before sending', async () => {
+    const f = new FixtureAPI(); delete f.store.state.bootstrap;
+    await runLoop(f.options()); const original = structuredClone(f.store.state.bootstrap!);
+    f.main = merged;
+    expect((await runLoop(f.options())).state).toBe('waiting-bootstrap-ci'); expect(f.dispatches).toEqual([0, 0]);
+    expect(f.store.state.bootstrap).toMatchObject({ main: original.main, key: original.key, ready: false, checks: [{ main: merged, ready: false }] });
+    await runLoop(f.options()); expect(f.dispatches).toEqual([0, 0]); expect(f.sends).toHaveLength(0);
+    f.mainDone = true; expect((await runLoop(f.options())).state).toBe('waiting-cloud'); expect(f.sends).toHaveLength(1);
+    expect(f.store.state.bootstrap!.checks![0]!.ready).toBe(true); expect(f.store.state.tasks[0]!.base).toBe(merged); expect(f.store.state.tasks[1]!.phase).toBe('queued');
+  });
+  it('stops after three bootstrap attempts when main keeps moving', async () => {
+    const f = new FixtureAPI(); delete f.store.state.bootstrap; await runLoop(f.options());
+    for (const main of [merged, '5'.repeat(40)]) { f.main = main; await runLoop(f.options()); }
+    f.main = '6'.repeat(40); await expect(runLoop(f.options())).rejects.toThrow('bootstrap_retry_limit');
+    expect(f.dispatches).toEqual([0, 0, 0]); expect(f.sends).toHaveLength(0); expect(f.store.state.bootstrap!.checks).toHaveLength(2);
   });
   it('passes original blocking human reviews to the existing policy and denies merge', async () => {
     const f = new FixtureAPI(); await runLoop(f.options()); f.respond(false); await runLoop(f.options()); f.ciDone = true; await runLoop(f.options()); f.respond(true);
@@ -132,6 +209,15 @@ describe('durable store fail-closed boundary', () => {
     await expect(store.save({ head, tree: base, state }, { ...state, revision: 1 })).rejects.toThrow('loop_cas_conflict');
     state.tasks[0]!.phase = 'completed'; const next = structuredClone(state); next.revision++; next.tasks[0]!.phase = 'queued'; store.load = async () => ({ head, tree: base, state });
     await expect(store.save({ head, tree: base, state }, next)).rejects.toThrow('completed_history_changed');
+  });
+  it('rejects bootstrap checkpoint removal, identity changes and verified-result rollback before writes', async () => {
+    const api = { async request() { throw new Error('unexpected_write'); } }, store = new LoopStore(api, config), state = emptyLoopState(config);
+    state.bootstrap = { main: base, key: 'c'.repeat(64), ready: false, checks: [{ main: merged, key: 'd'.repeat(64), ready: true }] };
+    store.load = async () => ({ head, tree: base, state });
+    for (const checks of [[], [{ ...state.bootstrap.checks![0]!, key: 'e'.repeat(64) }], [{ ...state.bootstrap.checks![0]!, ready: false }]]) {
+      const next = structuredClone(state); next.revision++; next.bootstrap!.checks = checks;
+      await expect(store.save({ head, tree: base, state }, next)).rejects.toThrow('bootstrap_history_changed');
+    }
   });
 });
 describe('workflow privilege and storage boundaries', () => {
