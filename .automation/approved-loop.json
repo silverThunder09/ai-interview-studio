@@ -1,12 +1,9 @@
 {
   "schema": 1,
   "repository": "silverThunder09/ai-interview-studio",
-  "revision": 12,
+  "revision": 13,
   "config_hash": "f3fbd1393cd5ba27cfdd14d59dd1ec71efdb6a7af3a9a4b75d35a5d71e4c8460",
-  "lease": {
-    "owner": "812157f7f6eb0268d2d3f21644db7e0445e5e98b3da4d1cdea4b59b67e585338",
-    "until": 1792562726974
-  },
+  "lease": null,
   "tasks": [
     {
       "id": "ci-dispatch-origin",
