@@ -20,9 +20,9 @@ class MemoryStore {
   async save(old: { head: string }, value: LoopState) { expect(old.head).toBe(String(this.revision)); parseLoopState(value, config); this.state = structuredClone(value); this.revision++; return this.load(); }
 }
 class FixtureAPI {
-  main = base; sends: { pr: number; body: string }[] = []; dispatches: number[] = []; wakeups: number[] = []; merges: number[] = []; reads: string[] = []; storedComments = new Map<number, ReturnType<typeof resultComment>[]>();
+  main = base; currentHead = head; sends: { pr: number; body: string }[] = []; dispatches: number[] = []; wakeups: number[] = []; merges: number[] = []; reads: string[] = []; storedComments = new Map<number, ReturnType<typeof resultComment>[]>();
   mergedPRs = new Map<number, string>(); updatedBodies = new Map<number, string>(); failSend = false; now = () => Date.parse('2026-10-20T10:00:00.000Z'); store = new MemoryStore(); ciDone = false; mainDone = false;
-  pr(pr: number) { return { number: pr, node_id: `PR_${pr}`, state: this.mergedPRs.has(pr) ? 'closed' : 'open', merged: this.mergedPRs.has(pr), draft: false, body: this.updatedBodies.get(pr) ?? ['변경 목적', '범위와 제외', '연결 이슈', '검증', '위험과 보안', '리뷰 결과', '머지 조건'].map(n => `## ${n}\n초기 미검증 안내`).join('\n\n'), head: { sha: head, ref: `probe-${pr}`, repo: { full_name: repository, fork: false } }, base: { sha: this.main, ref: 'main', repo: { full_name: repository } }, user: { login: 'silverThunder09' }, mergeable: true, mergeable_state: 'clean', merge_commit_sha: this.mergedPRs.get(pr) ?? checkout, labels: [] }; }
+  pr(pr: number) { return { number: pr, node_id: `PR_${pr}`, state: this.mergedPRs.has(pr) ? 'closed' : 'open', merged: this.mergedPRs.has(pr), draft: false, body: this.updatedBodies.get(pr) ?? ['변경 목적', '범위와 제외', '연결 이슈', '검증', '위험과 보안', '리뷰 결과', '머지 조건'].map(n => `## ${n}\n초기 미검증 안내`).join('\n\n'), head: { sha: this.currentHead, ref: `probe-${pr}`, repo: { full_name: repository, fork: false } }, base: { sha: this.main, ref: 'main', repo: { full_name: repository } }, user: { login: 'silverThunder09' }, mergeable: true, mergeable_state: 'clean', merge_commit_sha: this.mergedPRs.get(pr) ?? checkout, labels: [] }; }
   async request(method: string, path: string, value?: unknown): Promise<unknown> {
     this.reads.push(method + ' ' + path); const body = value as Record<string, unknown> | undefined;
     if (path === '/branches/main') return { commit: { sha: this.main } };
@@ -33,6 +33,7 @@ class FixtureAPI {
     if (path.includes('/files?')) return [{ filename: 'tests/unit/probe.test.ts', status: 'modified' }];
     if (method === 'GET' && path.includes('/comments?')) return this.storedComments.get(n) ?? [];
     if (method === 'POST' && path === '/merges') return null;
+    if (method === 'GET' && path.startsWith('/git/ref/heads/probe-')) return { object: { sha: this.currentHead } };
     if (path === `/git/commits/${head}`) return { tree: { sha: '5'.repeat(40) } };
     if (path.includes('/git/trees/')) return { truncated: false, tree: [{ path: 'tests/unit/probe.test.ts', mode: '100644', type: 'blob', sha: blob }] };
     if (path.includes('/git/blobs/')) return { encoding: 'base64', size: 5, content: Buffer.from('test\n').toString('base64') };
@@ -115,6 +116,38 @@ describe('automatic PR validation records', () => {
   });
 });
 describe('event-driven A → merge/main CI → B', () => {
+  it.each([false, true])('waits for delayed PR snapshots after a normal merge (204=%s) without another POST', async noContent => {
+    const f = new FixtureAPI(), original = f.request.bind(f), updated = '7'.repeat(40); let merged = false, staleReads = 0, posts = 0;
+    f.request = async (method, path, value) => {
+      if (method === 'POST' && path === '/merges') { posts++; merged = true; f.currentHead = updated; return noContent ? null : { sha: updated }; }
+      if (merged && method === 'GET' && path === '/pulls/56' && staleReads++ < 2) return { ...f.pr(56), head: { ...f.pr(56).head, sha: head } };
+      return original(method, path, value);
+    };
+    expect((await runLoop({ ...f.options(), sleep: async () => {} })).state).toBe('waiting-cloud');
+    expect(posts).toBe(1); expect(f.sends).toHaveLength(1); expect(f.store.state.tasks[0]!.request).toMatchObject({ head_sha: updated, base_sha: base });
+    expect(f.sends[0]!.body).toContain(updated);
+  });
+  it('bounds stale snapshot reads without preparing or sending an old request', async () => {
+    const f = new FixtureAPI(), original = f.request.bind(f); let merged = false, posts = 0, waits = 0;
+    f.request = async (method, path, value) => {
+      if (method === 'POST' && path === '/merges') { posts++; merged = true; f.currentHead = '7'.repeat(40); return { sha: f.currentHead }; }
+      if (merged && method === 'GET' && path === '/pulls/56') return { ...f.pr(56), head: { ...f.pr(56).head, sha: head } };
+      return original(method, path, value);
+    };
+    await expect(runLoop({ ...f.options(), sleep: async () => { waits++; } })).rejects.toThrow('pr_sync_pending');
+    expect(posts).toBe(1); expect(waits).toBe(5); expect(f.sends).toHaveLength(0); expect(f.store.state.tasks[0]!.request).toBeNull();
+  });
+  it.each(['main', 'ref', 'label'])('stops on a concurrent %s change before preparing a request', async change => {
+    const f = new FixtureAPI(), original = f.request.bind(f); let merged = false;
+    f.request = async (method, path, value) => {
+      if (method === 'POST' && path === '/merges') { merged = true; f.currentHead = '7'.repeat(40); if (change === 'main') f.main = '8'.repeat(40); return { sha: f.currentHead }; }
+      if (merged && change === 'ref' && path.startsWith('/git/ref/heads/')) return { object: { sha: '8'.repeat(40) } };
+      if (merged && change === 'label' && path.startsWith('/issues/56/labels?')) return [{ name: 'needs-user' }];
+      return original(method, path, value);
+    };
+    await expect(runLoop({ ...f.options(), sleep: async () => {} })).rejects.toThrow({ main: 'sync_main_changed', ref: 'sync_branch_changed', label: 'blocking_label' }[change]);
+    expect(f.sends).toHaveLength(0); expect(f.store.state.tasks[0]!.request).toBeNull();
+  });
   it('waits at every real external boundary and starts B once only after verified main CI', async () => {
     const f = new FixtureAPI(); expect((await runLoop(f.options())).state).toBe('waiting-cloud'); expect(f.sends.map(s => s.pr)).toEqual([56]);
     await runLoop(f.options()); expect(f.sends).toHaveLength(1);
