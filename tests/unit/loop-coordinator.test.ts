@@ -364,3 +364,15 @@ describe('workflow privilege and storage boundaries', () => {
     const validation = readFileSync('.github/workflows/loop-validation.yml', 'utf8'); expect(validation).toContain('contents: read'); expect(validation).not.toContain('secrets.'); expect(validation).not.toContain('contents: write'); expect(validation).toContain('npm run test:smoke'); expect(validation).toContain('SMOKE_EXECUTABLE'); expect(validation).toContain('retention-days: 1'); expect(validation).not.toContain('Upload Windows download');
   });
 });
+
+describe('승인된 연속 실행 검증', () => {
+  it('첫 작업의 needs-user 라벨은 Codex 발신과 다음 작업을 막는다', async () => {
+    const f = new FixtureAPI(), original = f.request.bind(f);
+    f.request = async (method, path, value) => path.startsWith('/issues/56/labels?')
+      ? [{ name: 'needs-user' }]
+      : original(method, path, value);
+
+    await expect(runLoop(f.options())).rejects.toThrow('blocking_label');
+    expect(f.sends).toHaveLength(0); expect(f.merges).toHaveLength(0); expect(f.store.state.tasks[1]!.phase).toBe('queued');
+  });
+});
