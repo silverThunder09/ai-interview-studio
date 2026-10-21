@@ -337,7 +337,8 @@ export async function runLoop({ api, sender, store, config, policy, now = Date.n
         const candidates = responses.filter(c => c.body?.startsWith(marker));
         ensure(candidates.length <= 1, 'ambiguous_cloud_result');
         if (task.phase === 'review') {
-          const review = candidates.length ? parseReviewResult(candidates[0], task.request) : parseNativeReviewResult(responses, task.request);
+          const nativeEvidence = candidates.length ? null : { head_sha: pr.head.sha, base_sha: main, reviews: await readAllReviews(api, task.pr), review_comments: await allPages(api, `/pulls/${task.pr}/comments`) };
+          const review = candidates.length ? parseReviewResult(candidates[0], task.request) : parseNativeReviewResult(responses, task.request, nativeEvidence);
           if (!review) return { state: 'waiting-cloud', changes };
           const body = `AI 코드 검토입니다. 독립된 사람의 승인이 아닙니다.\nhead=${task.head}; base=${task.base}\n${review.findings.length ? review.findings.join('\n\n') : '발견한 구체적 결함 없음.'}\n${review.task_url}\n<!-- ais-loop-review:${task.request.request_key} -->`;
           const existing = (await readAllReviews(api, task.pr)).filter(r => r.body === body && r.commit_id === task.head && r.state === 'COMMENTED' && r.user?.login === 'github-actions[bot]');

@@ -36,6 +36,7 @@ class FixtureAPI {
     if (method === 'PATCH' && /^\/pulls\/\d+$/.test(path)) { this.updatedBodies.set(n, String(body?.body)); return this.pr(n); }
     if (path.includes('/labels?') || path.includes('/reviews?') || path.startsWith('/issues/35/comments?')) return [];
     if (path.includes('/files?')) return [{ filename: 'tests/unit/probe.test.ts', status: 'modified' }];
+    if (method === 'GET' && /^\/pulls\/\d+\/comments\?/.test(path)) return [];
     if (method === 'GET' && path.includes('/comments?')) return this.storedComments.get(n) ?? [];
     if (method === 'POST' && path === '/merges') return null;
     if (method === 'GET' && path.startsWith('/git/ref/heads/probe-')) return { object: { sha: this.currentHead } };
@@ -211,7 +212,7 @@ describe('event-driven A → merge/main CI → B', () => {
   });
   it('continues once from official native review receipts and still waits for main CI before B', async () => {
     const f = new FixtureAPI(); await runLoop(f.options()); f.respond(false); await runLoop(f.options()); f.ciDone = true; await runLoop(f.options());
-    f.storedComments.set(56, nativeResultComments());
+    f.storedComments.set(56, nativeResultComments().map(c => ({ ...c, body: c.body.replaceAll('"has_any_findings":false', '"has_any_findings":null').replaceAll('"has_unresolved_findings":false', '"has_unresolved_findings":null') })));
     const original = f.request.bind(f), posted: unknown[] = [];
     f.request = async (method, path, value) => { if (method === 'POST' && path === '/pulls/56/reviews') posted.push(value); return original(method, path, value); };
     expect((await runLoop(f.options())).state).toBe('waiting-main-ci');
@@ -219,6 +220,20 @@ describe('event-driven A → merge/main CI → B', () => {
     expect(f.updatedBodies.get(56)).toContain('검토 결과 원본: https://github.com/');
     await runLoop(f.options()); expect(posted).toHaveLength(1); expect(f.merges).toEqual([56]); expect(f.sends.map(x => x.pr)).toEqual([56, 56]);
     f.mainDone = true; await runLoop(f.options()); expect(f.store.state.tasks[0]!.phase).toBe('completed'); expect(f.sends.map(x => x.pr)).toEqual([56, 56, 57]);
+  });
+  it('reads every REST review-comment page before accepting null native finding metadata', async () => {
+    const f = new FixtureAPI(); await runLoop(f.options()); f.respond(false); await runLoop(f.options()); f.ciDone = true; await runLoop(f.options());
+    f.storedComments.set(56, nativeResultComments().map(c => ({ ...c, body: c.body.replaceAll('"has_any_findings":false', '"has_any_findings":null').replaceAll('"has_unresolved_findings":false', '"has_unresolved_findings":null') })));
+    const original = f.request.bind(f); let secondPage = false;
+    f.request = async (method, path, value) => {
+      if (path.startsWith('/pulls/56/comments?')) {
+        if (path.endsWith('page=1')) return Array.from({ length: 100 }, (_, i) => ({ id: i + 1, user: { login: 'person', type: 'User' } }));
+        secondPage = true; return [{ id: 101, user: { login: 'chatgpt-codex-connector[bot]', type: 'Bot' } }];
+      }
+      return original(method, path, value);
+    };
+    await expect(runLoop(f.options())).rejects.toThrow('native_review_has_findings');
+    expect(secondPage).toBe(true); expect(f.merges).toHaveLength(0); expect(f.store.state.tasks[1]!.phase).toBe('queued');
   });
   it('never treats native code review as completion of a Cloud development request', async () => {
     const f = new FixtureAPI(); await runLoop(f.options()); f.storedComments.set(56, nativeResultComments());
