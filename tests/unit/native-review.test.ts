@@ -12,6 +12,28 @@ function fixture() {
   return [summary, receipt];
 }
 describe('official GitHub native review evidence', () => {
+  const apiEvidence = () => ({ head_sha: head, base_sha: request.base_sha, reviews: [], review_comments: [] });
+  const unknownFixture = () => fixture().map(c => ({ ...c, body: c.body.replaceAll('"has_any_findings":false', '"has_any_findings":null').replaceAll('"has_unresolved_findings":false', '"has_unresolved_findings":null') }));
+  it('requires independent complete REST evidence when native finding flags are null', () => {
+    const comments = unknownFixture();
+    expect(parseNativeReviewResult(comments, request)).toBeNull();
+    expect(parseNativeReviewResult(comments, request, apiEvidence())?.findings).toEqual([]);
+    comments[1]!.body += '\nAPI reviews=[]; review_comments=[]';
+    expect(parseNativeReviewResult(comments, request)).toBeNull();
+  });
+  it.each(['reviews', 'review_comments'])('blocks an actual native finding in REST %s despite null summary flags', field => {
+    const proof = { ...apiEvidence(), [field]: [{ id: 20, user: { login: 'chatgpt-codex-connector[bot]', type: 'Bot' } }] };
+    expect(() => parseNativeReviewResult(unknownFixture(), request, proof)).toThrow('native_review_has_findings');
+  });
+  it('rejects missing, stale or malformed REST evidence instead of assuming zero findings', () => {
+    for (const proof of [{}, { ...apiEvidence(), head_sha: '3'.repeat(40) }, { ...apiEvidence(), base_sha: '3'.repeat(40) }, { ...apiEvidence(), reviews: undefined }, { ...apiEvidence(), review_comments: null }, { ...apiEvidence(), reviews: [{ id: 1 }] }]) expect(() => parseNativeReviewResult(unknownFixture(), request, proof)).toThrow('invalid_native_api_evidence');
+  });
+  it('compares microsecond completion time with the entire second represented by GitHub updated_at', () => {
+    const comments = fixture(); comments[0]!.updated_at = '2026-10-21T07:38:51Z';
+    expect(parseNativeReviewResult(comments, request)?.findings).toEqual([]);
+    comments[1]!.created_at = '2026-10-21T07:38:52Z';
+    expect(parseNativeReviewResult(comments, request)?.findings).toEqual([]);
+  });
   it('accepts the observed complete summary/receipt pair and identifies its GitHub source', () => {
     const result = parseNativeReviewResult(fixture(), request);
     expect(result).toMatchObject({ head_sha: head, base_sha: request.base_sha, request_key: request.request_key, findings: [], source: 'official-github-codex-review', comment_id: 11, summary_id: 10, task_url: `https://github.com/${repository}/pull/58#issuecomment-10` });

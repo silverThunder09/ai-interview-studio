@@ -237,8 +237,13 @@ export async function gatherMergeEvidence(api, definition, task, policy) {
   ensure(pr.head.sha === task.review.head_sha && main === task.review.base_sha && pr.base.sha === main, 'stale_current_review');
   const raw = await comments(api, task.pr), candidates = raw.filter(c => c.id === task.review.comment_id);
   ensure(candidates.length === 1, 'missing_current_ai_review');
-  const review = parseReviewResult(candidates[0], task.review.request);
-  const reviews = await readAllReviews(api, task.pr), unresolved = await threadCount(api, task.pr);
+  const reviews = await readAllReviews(api, task.pr);
+  const native = task.review.source === 'official-github-codex-review';
+  const review = native
+    ? parseNativeReviewResult(raw, task.review.request, { head_sha: pr.head.sha, base_sha: main, reviews, review_comments: await allPages(api, `/pulls/${task.pr}/comments`) })
+    : parseReviewResult(candidates[0], task.review.request);
+  ensure(review && review.comment_id === task.review.comment_id && (!native || review.summary_id === task.review.summary_id), 'missing_current_ai_review');
+  const unresolved = await threadCount(api, task.pr);
   const issues = await allPages(api, '/issues?state=open');
   const openFindings = issues.filter(i => !i.pull_request && (i.labels?.some(l => ['review', 'bug'].includes(l.name)) || /^\[Review\]/.test(i.title))).length;
   const checks = await allChecks(api, pr.head.sha), evidence = [];
@@ -337,7 +342,8 @@ export async function runLoop({ api, sender, store, config, policy, now = Date.n
         const candidates = responses.filter(c => c.body?.startsWith(marker));
         ensure(candidates.length <= 1, 'ambiguous_cloud_result');
         if (task.phase === 'review') {
-          const review = candidates.length ? parseReviewResult(candidates[0], task.request) : parseNativeReviewResult(responses, task.request);
+          const nativeEvidence = candidates.length ? null : { head_sha: pr.head.sha, base_sha: main, reviews: await readAllReviews(api, task.pr), review_comments: await allPages(api, `/pulls/${task.pr}/comments`) };
+          const review = candidates.length ? parseReviewResult(candidates[0], task.request) : parseNativeReviewResult(responses, task.request, nativeEvidence);
           if (!review) return { state: 'waiting-cloud', changes };
           const body = `AI 코드 검토입니다. 독립된 사람의 승인이 아닙니다.\nhead=${task.head}; base=${task.base}\n${review.findings.length ? review.findings.join('\n\n') : '발견한 구체적 결함 없음.'}\n${review.task_url}\n<!-- ais-loop-review:${task.request.request_key} -->`;
           const existing = (await readAllReviews(api, task.pr)).filter(r => r.body === body && r.commit_id === task.head && r.state === 'COMMENTED' && r.user?.login === 'github-actions[bot]');
