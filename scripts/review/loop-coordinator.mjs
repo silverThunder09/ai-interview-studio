@@ -3,6 +3,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { Buffer } from 'node:buffer';
 import { readFile } from 'node:fs/promises';
+import { setTimeout as pause } from 'node:timers/promises';
 import { pathToFileURL, URL } from 'node:url';
 import { buildDevelopmentRequest, parseDevelopmentResult, planConnectedResult } from './connected-controller.ts';
 import { GitHub, APIError, allPages } from './event-worker.ts';
@@ -188,6 +189,30 @@ async function ready(api, pr) {
   const r = await api.graphql('mutation($id:ID!){markPullRequestReadyForReview(input:{pullRequestId:$id}){pullRequest{isDraft}}}', { id: pr.node_id });
   ensure(r.data?.markPullRequestReadyForReview?.pullRequest?.isDraft === false, 'ready_failed');
 }
+async function synchronizedPR(api, task, definition, pr, main, sleep) {
+  // A successful /merges response does not make the REST PR snapshot immediately current.
+  // Commit once, then only read until the branch and reviewed PR identities agree.
+  const synced = await api.request('POST', '/merges', { base: pr.head.ref, head: main, commit_message: 'chore: merge current main before approved work' });
+  const initial = identity(pr.head.sha);
+  const expected = synced === null
+    ? identity((await api.request('GET', `/git/ref/heads/${pr.head.ref}`)).object.sha)
+    : identity(synced.sha);
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const latest = await api.request('GET', `/pulls/${task.pr}`);
+    const ref = identity((await api.request('GET', `/git/ref/heads/${pr.head.ref}`)).object.sha);
+    ensure((await api.request('GET', '/branches/main')).commit.sha === main, 'sync_main_changed');
+    ensure([initial, expected].includes(ref), 'sync_branch_changed');
+    if (ref === expected && latest.head.sha === expected && latest.base.sha === main) {
+      const fresh = await scope(api, task, definition);
+      ensure(fresh.main === main, 'sync_main_changed');
+      ensure(identity((await api.request('GET', `/git/ref/heads/${pr.head.ref}`)).object.sha) === expected, 'sync_branch_changed');
+      ensure(fresh.pr.state === 'open' && fresh.pr.merged === false, 'unexpected_closed_pr');
+      if (fresh.pr.head.sha === expected && fresh.pr.base.sha === main) return fresh.pr;
+    }
+    if (attempt < 5) await sleep(2000);
+  }
+  throw new Error('pr_sync_pending');
+}
 export async function gatherMergeEvidence(api, definition, task, policy) {
   const { pr, main, files } = await scope(api, task, definition);
   ensure(pr.head.sha === task.review.head_sha && main === task.review.base_sha && pr.base.sha === main, 'stale_current_review');
@@ -226,7 +251,7 @@ async function mainSuccess(api, task) {
 }
 
 /** Runs until the next external event is needed; no timer, sleeps or speculative next work. */
-export async function runLoop({ api, sender, store, config, policy, now = Date.now, verifyMerge = gatherMergeEvidence, verifyMain = mainSuccess }) {
+export async function runLoop({ api, sender, store, config, policy, now = Date.now, sleep = pause, verifyMerge = gatherMergeEvidence, verifyMain = mainSuccess }) {
   const c = parseLoopConfig(config); if (!c.enabled) return { state: 'disabled', changes: 0 };
   ensure(policy.repository === REPO && policy.max_prs_per_run <= 2 && policy.max_fix_cycles <= 3, 'invalid_loop_policy');
   ensure(c.tasks.every(t => t.allowed_paths.every(path => !policy.protected_paths.some(p => p.endsWith('/') ? path.startsWith(p) : path === p))), 'protected_task_path');
@@ -270,16 +295,14 @@ export async function runLoop({ api, sender, store, config, policy, now = Date.n
       }
       if (task.phase !== 'main-ci') ensure(pr.state === 'open' && pr.merged === false, 'unexpected_closed_pr');
       if (task.phase === 'queued') {
-        // The repo client deliberately rejects '..' paths, including compare ranges.
-        // /merges is a normal, non-force merge and returns 204 when already up to date.
-        const synced = await api.request('POST', '/merges', { base: pr.head.ref, head: main, commit_message: 'chore: merge current main before approved work' });
-        if (synced !== null) { identity(synced.sha); ensure(synced.sha !== pr.head.sha, 'unexpected_merge_receipt'); continue; }
-        const request = requestFor(task.pr, pr.head.sha, main, 'repair', definition.allowed_paths, now);
+        const fresh = await synchronizedPR(api, task, definition, pr, main, sleep);
+        const request = requestFor(task.pr, fresh.head.sha, main, 'repair', definition.allowed_paths, now);
         const body = buildDevelopmentRequest(request) + '\n\n승인된 작업 내용(고정 main 기획):\n' + definition.goal;
-        await update(t => { t.phase = 'development'; t.head = pr.head.sha; t.base = main; t.branch = pr.head.ref; t.request = request; t.delivery = { phase: 'sending', hash: hash(body), body, id: null, attempted: false }; }); continue;
+        await update(t => { t.phase = 'development'; t.head = fresh.head.sha; t.base = main; t.branch = fresh.head.ref; t.request = request; t.delivery = { phase: 'sending', hash: hash(body), body, id: null, attempted: false }; }); continue;
       }
       if (task.phase === 'development' || task.phase === 'review') {
         ensure(pr.head.sha === task.request.head_sha && main === task.request.base_sha && pr.base.sha === main, 'stale_development_request');
+        ensure(identity((await api.request('GET', `/git/ref/heads/${pr.head.ref}`)).object.sha) === task.request.head_sha, 'stale_development_request');
         if (task.delivery.phase === 'sending') {
           let sent = await receipt(api, task);
           if (!sent && task.delivery.attempted) throw new Error('ambiguous_request_delivery');
