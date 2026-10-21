@@ -1,11 +1,11 @@
 {
   "schema": 1,
   "repository": "silverThunder09/ai-interview-studio",
-  "revision": 4,
+  "revision": 5,
   "config_hash": "f3fbd1393cd5ba27cfdd14d59dd1ec71efdb6a7af3a9a4b75d35a5d71e4c8460",
   "lease": {
     "owner": "b02fd963cc172decf229d0fc88ba80094d636318d271d2fc44937a38c458543b",
-    "until": 1792556758572
+    "until": 1792557289855
   },
   "tasks": [
     {
