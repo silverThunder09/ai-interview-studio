@@ -67,6 +67,8 @@ worker는 코드 수정·PR 생성·merge API를 직접 수행하지 않는다. 
 
 ## 실제 검증과 한계
 
+2026-10-21 KST v2 조정자의 [관측 기록](testing/archive/2026-10-21/pr-68-automation.md): 실제 Cloud 개발 결과→patch 반영→현재 merge 부모의 CI→완료 이벤트→다음 AI 리뷰 요청까지 확인했다. 중복 job의 추가 CI/개발 요청은0이다. 일반 GitHub 코드 리뷰 완료와 개발 작업 종료는 구분한다. 현재 native **리뷰** 완료를 기다리는 연결 결함 [#69](https://github.com/silverThunder09/ai-interview-studio/issues/69)은 미해결이며 A 자동 머지/main CI→B는 미검증이다. 아래 v1의 과거 설치/미확인 상태는 당시 기록이며 v2 전체 운영 성공을 의미하지 않는다. 최신 실행·승인·보류 상태는 [#35](https://github.com/silverThunder09/ai-interview-studio/issues/35)를 확인한다.
+
 - [상태 전환 순수 함수](../scripts/review/event-loop.ts)와 [기존 합성 테스트](../tests/unit/event-loop.test.ts)는 유지한다. 공개 이벤트를 성공/승인 결과로 승격하지 않는다.
 - [실행기 합성 테스트](../tests/unit/event-worker.test.ts): 중복 이벤트, Cloud 종료 전 새 head, 가짜 종료 댓글, POST 후 응답 유실, 전송 불명확 시 보류, 동시 lease·CAS·expiry, CI 누락/진행/출처 위조, 보호 경로, 상한, 페이지네이션, main 이동·머지 후 확인, 권한 실패를 검증한다.
 - 로컬 Node 24.19.0에서 check·native TypeScript module 로딩을 실행한다. 이 테스트는 실제 GitHub token 권한·Codex 작업 시작·원격 crash 복구 성공을 대신하지 않는다. 실제 receiver 실행은 이 PR을 main에 설치한 뒤 Actions·ledger·댓글·Cloud 결과로 확인한다.

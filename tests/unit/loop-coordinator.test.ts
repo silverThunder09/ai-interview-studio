@@ -13,6 +13,11 @@ function resultComment(request: ReturnType<typeof reviewRequest>, review: boolea
   const report = review ? { schema: 1, repository, pr_number: request.pr_number, request_key: request.request_key, head_sha: request.head_sha, base_sha: request.base_sha, findings: [] } : { schema: 2, kind: 'development-result', repository, pr_number: request.pr_number, request_key: request.request_key, checkout_sha: request.head_sha, requested_base_sha: request.base_sha, outcome: 'succeeded', tests: [{ command: 'npm run check', exit_code: 0 }], change: { kind: 'none' }, blocker: null };
   return { id, user: { login: 'chatgpt-codex-connector[bot]', type: 'Bot' }, html_url: `https://github.com/${repository}/pull/${request.pr_number}#issuecomment-${id}`, created_at: request.requested_at, body: `<!-- ${review ? 'ais-code-review-result' : 'ais-development-result-v2'}:${request.request_key} -->\n\`\`\`json\n${JSON.stringify(report)}\n\`\`\`\n\n [View task →](https://chatgpt.com/s/cd_${'b'.repeat(32)} )`.replace(' )', ')') };
 }
+function nativeResultComments() {
+  const state = { code_review: { commit_sha: head, has_any_findings: false, has_unresolved_findings: false, status: 'completed' }, security_review: { commit_sha: null, has_any_findings: null, has_unresolved_findings: null, status: null } };
+  const comment = (id: number, body: string) => ({ id, user: { login: 'chatgpt-codex-connector[bot]', type: 'Bot' }, html_url: `https://github.com/${repository}/pull/56#issuecomment-${id}`, created_at: '2026-10-20T10:00:01Z', updated_at: '2026-10-20T10:00:03Z', body });
+  return [comment(11, `<!-- codex-review-receipt:v1 -->\n\n**Reviewed commit:** \`${head.slice(0, 10)}\``), comment(12, `<!-- codex-pull-request-review-summary -->\n<!-- codex-review-state:v1 ${JSON.stringify(state)} -->\n| 📝 **Code Review** | ✅ **Completed** <relative-time datetime="2026-10-20T10:00:02Z">done</relative-time> |`)];
+}
 class MemoryStore {
   state: LoopState; revision = 0;
   constructor() { this.state = emptyLoopState(config); this.state.bootstrap = { main: base, key: 'c'.repeat(64), ready: true }; }
@@ -198,11 +203,28 @@ describe('event-driven A → merge/main CI → B', () => {
     expect(f.wakeups).toEqual([56]);
     f.ciDone = true; expect((await runLoop(f.options())).state).toBe('waiting-cloud'); expect(f.sends).toHaveLength(2);
     f.respond(true); expect((await runLoop(f.options())).state).toBe('waiting-main-ci'); expect(f.merges).toEqual([56]); expect(f.dispatches).toEqual([56, 0]); expect(f.sends.map(s => s.pr)).toEqual([56, 56]);
-    expect(f.updatedBodies.get(56)).toContain('실제 merge checkout=' + checkout); expect(f.updatedBodies.get(56)).toContain('실제 검토 작업: https://chatgpt.com/s/cd_'); expect(f.reads.filter(x => x === 'PATCH /pulls/56')).toHaveLength(1);
+    expect(f.updatedBodies.get(56)).toContain('실제 merge checkout=' + checkout); expect(f.updatedBodies.get(56)).toContain('검토 결과 원본: https://chatgpt.com/s/cd_'); expect(f.reads.filter(x => x === 'PATCH /pulls/56')).toHaveLength(1);
     await runLoop(f.options()); expect(f.merges).toEqual([56]); expect(f.dispatches).toEqual([56, 0]);
     expect(f.wakeups).toEqual([56, 0]);
     f.mainDone = true; expect((await runLoop(f.options())).state).toBe('waiting-cloud'); expect(f.sends.map(s => s.pr)).toEqual([56, 56, 57]);
     await runLoop(f.options()); expect(f.sends.map(s => s.pr)).toEqual([56, 56, 57]); expect(f.store.state.tasks[0]!.phase).toBe('completed');
+  });
+  it('continues once from official native review receipts and still waits for main CI before B', async () => {
+    const f = new FixtureAPI(); await runLoop(f.options()); f.respond(false); await runLoop(f.options()); f.ciDone = true; await runLoop(f.options());
+    f.storedComments.set(56, nativeResultComments());
+    const original = f.request.bind(f), posted: unknown[] = [];
+    f.request = async (method, path, value) => { if (method === 'POST' && path === '/pulls/56/reviews') posted.push(value); return original(method, path, value); };
+    expect((await runLoop(f.options())).state).toBe('waiting-main-ci');
+    expect(posted).toHaveLength(1); expect(posted[0]).toMatchObject({ event: 'COMMENT', commit_id: head });
+    expect(f.updatedBodies.get(56)).toContain('검토 결과 원본: https://github.com/');
+    await runLoop(f.options()); expect(posted).toHaveLength(1); expect(f.merges).toEqual([56]); expect(f.sends.map(x => x.pr)).toEqual([56, 56]);
+    f.mainDone = true; await runLoop(f.options()); expect(f.store.state.tasks[0]!.phase).toBe('completed'); expect(f.sends.map(x => x.pr)).toEqual([56, 56, 57]);
+  });
+  it('never treats native code review as completion of a Cloud development request', async () => {
+    const f = new FixtureAPI(); await runLoop(f.options()); f.storedComments.set(56, nativeResultComments());
+    expect((await runLoop(f.options())).state).toBe('waiting-cloud');
+    expect(f.store.state.tasks[0]!.phase).toBe('development'); expect(f.store.state.tasks[1]!.phase).toBe('queued');
+    expect(f.merges).toHaveLength(0); expect(f.dispatches).toHaveLength(0); expect(f.sends).toHaveLength(1);
   });
   it('does not resend uncertain requests after restart or start another task', async () => {
     const f = new FixtureAPI(); f.failSend = true; await expect(runLoop(f.options())).rejects.toThrow('response_lost');
