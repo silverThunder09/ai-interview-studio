@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createHash } from 'node:crypto';
-import { acceptsLoopWakeup, emptyLoopState, parseLoopConfig, parseLoopState, parseReviewResult, buildReviewRequest, renderLoopPRBody, runLoop, LoopStore, type LoopState } from '../../scripts/review/loop-coordinator.mjs';
+import { acceptsLoopWakeup, isCurrentMergeCheckout, emptyLoopState, parseLoopConfig, parseLoopState, parseReviewResult, buildReviewRequest, renderLoopPRBody, runLoop, LoopStore, type LoopState } from '../../scripts/review/loop-coordinator.mjs';
 import { readFileSync } from 'node:fs';
 import { GitHub } from '../../scripts/review/event-worker';
 
@@ -34,6 +34,7 @@ class FixtureAPI {
     if (method === 'GET' && path.includes('/comments?')) return this.storedComments.get(n) ?? [];
     if (method === 'POST' && path === '/merges') return null;
     if (method === 'GET' && path.startsWith('/git/ref/heads/probe-')) return { object: { sha: this.currentHead } };
+    if (path === `/git/commits/${checkout}`) return { sha: checkout, parents: [{ sha: this.main }, { sha: this.currentHead }] };
     if (path === `/git/commits/${head}`) return { tree: { sha: '5'.repeat(40) } };
     if (path.includes('/git/trees/')) return { truncated: false, tree: [{ path: 'tests/unit/probe.test.ts', mode: '100644', type: 'blob', sha: blob }] };
     if (path.includes('/git/blobs/')) return { encoding: 'base64', size: 5, content: Buffer.from('test\n').toString('base64') };
@@ -116,6 +117,47 @@ describe('automatic PR validation records', () => {
   });
 });
 describe('event-driven A → merge/main CI → B', () => {
+  it('binds merge checkout identity to exactly base/head parents in that order', () => {
+    const pr = { head: { sha: head }, base: { sha: base }, merge_commit_sha: checkout }, commit = { sha: checkout, parents: [{ sha: base }, { sha: head }] };
+    expect(isCurrentMergeCheckout(pr, base, commit)).toBe(true);
+    for (const wrong of [null, { ...commit, sha: head }, { ...commit, parents: [{ sha: head }, { sha: base }] }, { ...commit, parents: [{ sha: base }] }, { ...commit, parents: [...commit.parents, { sha: merged }] }, { ...commit, parents: [{ sha: base }, { sha: merged }] }]) expect(isCurrentMergeCheckout(pr, base, wrong)).toBe(false);
+    expect(isCurrentMergeCheckout({ ...pr, base: { sha: merged } }, base, commit)).toBe(false);
+  });
+  it('waits for merge checkout parents to catch up before starting CI once', async () => {
+    const f = new FixtureAPI(), original = f.request.bind(f), stale = '7'.repeat(40); let reads = 0, sleeps = 0; const sent: unknown[] = [];
+    Object.assign(f.store.state.tasks[0]!, { phase: 'ci', head, base, branch: 'probe-56', operation: null });
+    f.request = async (method, path, value) => {
+      if (method === 'GET' && path === '/pulls/56') return { ...f.pr(56), merge_commit_sha: reads++ < 3 ? stale : checkout };
+      if (path === `/git/commits/${stale}`) return { sha: stale, parents: [{ sha: base }, { sha: '8'.repeat(40) }] };
+      if (method === 'POST' && path === '/actions/workflows/loop-validation.yml/dispatches') sent.push(value);
+      return original(method, path, value);
+    };
+    expect((await runLoop({ ...f.options(), sleep: async () => { sleeps++; } })).state).toBe('waiting-ci');
+    expect(sleeps).toBeGreaterThan(0); expect(sent).toHaveLength(1); expect(sent[0]).toMatchObject({ inputs: { checkout, head, base } }); expect(f.store.state.tasks[0]!.checkout).toBe(checkout); expect(f.wakeups).toEqual([56]);
+  });
+  it('never dispatches CI for a merge checkout whose parents remain stale', async () => {
+    const f = new FixtureAPI(), original = f.request.bind(f), stale = '7'.repeat(40); let sleeps = 0;
+    Object.assign(f.store.state.tasks[0]!, { phase: 'ci', head, base, branch: 'probe-56', operation: null });
+    f.request = async (method, path, value) => {
+      if (method === 'GET' && path === '/pulls/56') return { ...f.pr(56), merge_commit_sha: stale };
+      if (path === `/git/commits/${stale}`) return { sha: stale, parents: [{ sha: base }, { sha: '8'.repeat(40) }] };
+      return original(method, path, value);
+    };
+    await expect(runLoop({ ...f.options(), sleep: async () => { sleeps++; } })).rejects.toThrow('merge_checkout_pending');
+    expect(sleeps).toBe(5); expect(f.dispatches).toHaveLength(0); expect(f.wakeups).toHaveLength(0); expect(f.sends).toHaveLength(0); expect(f.store.state.tasks[0]!.operation).toBeNull();
+  });
+  it.each(['main', 'ref', 'label'])('rejects concurrent %s changes while waiting for CI checkout', async change => {
+    const f = new FixtureAPI(), original = f.request.bind(f), stale = '7'.repeat(40); let changed = false;
+    Object.assign(f.store.state.tasks[0]!, { phase: 'ci', head, base, branch: 'probe-56', operation: null });
+    f.request = async (method, path, value) => {
+      if (method === 'GET' && path === '/pulls/56') return { ...f.pr(56), merge_commit_sha: stale };
+      if (path === `/git/commits/${stale}`) { changed = true; if (change === 'main') f.main = merged; if (change === 'ref') f.currentHead = merged; return { sha: stale, parents: [{ sha: base }, { sha: merged }] }; }
+      if (changed && change === 'label' && path.startsWith('/issues/56/labels?')) return [{ name: 'needs-user' }];
+      return original(method, path, value);
+    };
+    await expect(runLoop({ ...f.options(), sleep: async () => {} })).rejects.toThrow(change === 'label' ? 'blocking_label' : 'stale_ci_snapshot');
+    expect(f.dispatches).toHaveLength(0); expect(f.wakeups).toHaveLength(0); expect(f.sends).toHaveLength(0);
+  });
   it.each([false, true])('waits for delayed PR snapshots after a normal merge (204=%s) without another POST', async noContent => {
     const f = new FixtureAPI(), original = f.request.bind(f), updated = '7'.repeat(40); let merged = false, staleReads = 0, posts = 0;
     f.request = async (method, path, value) => {
