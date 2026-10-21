@@ -71,3 +71,10 @@ A #58의 head `b3abefda5c9bec942c5840b650568ca3484fbe70`, base `d6d4dd72440f0070
 | `git diff --check` | 성공 |
 
 후속 후보의 원격 CI·설치·운영 검증은 아직 수행하지 않았다. A는 paused/cycles3, B는 queued이며 전체 루프는 미완료다. #70의 PR 1회 예외는 이미 사용했으며 이 기록은 추가 PR/추가 복구 승인이나 카운터 초기화가 아니다.
+
+
+### #71 머지 경계 재검증 추가
+
+최종 호출부 점검에서 `gatherMergeEvidence`가 저장된 native receipt를 기존 custom JSON parser로 다시 해석해 `wrong_review_key`로 멈추는 것도 재현했다. 모의 `verifyMerge`를 사용하지 않고 실제 수집기를 거치는 회귀 테스트가 수정 전 native 두 형식에서 실패함을 확인한 뒤, 같은 parser·모든 페이지 원본 API 근거를 머지 직전 두 번 재검증하도록 연결했다. native의 true/null 형식과 기존 custom 형식 모두 A 머지 후 main CI를 기다리며, 마지막 조회에서 새 finding이나 사람 변경 요청이 생기면 머지하지 않는 것을 확인했다.
+
+추가 변경 후 타입·lint·native/조정자/CI 근거 테스트 **81개**·정책 **41개**·diff 검사가 성공했다. 합성 API를 통한 회귀이며 실제 A/B 운영 완료를 뜻하지 않는다.

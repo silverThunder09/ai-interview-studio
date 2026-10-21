@@ -237,8 +237,13 @@ export async function gatherMergeEvidence(api, definition, task, policy) {
   ensure(pr.head.sha === task.review.head_sha && main === task.review.base_sha && pr.base.sha === main, 'stale_current_review');
   const raw = await comments(api, task.pr), candidates = raw.filter(c => c.id === task.review.comment_id);
   ensure(candidates.length === 1, 'missing_current_ai_review');
-  const review = parseReviewResult(candidates[0], task.review.request);
-  const reviews = await readAllReviews(api, task.pr), unresolved = await threadCount(api, task.pr);
+  const reviews = await readAllReviews(api, task.pr);
+  const native = task.review.source === 'official-github-codex-review';
+  const review = native
+    ? parseNativeReviewResult(raw, task.review.request, { head_sha: pr.head.sha, base_sha: main, reviews, review_comments: await allPages(api, `/pulls/${task.pr}/comments`) })
+    : parseReviewResult(candidates[0], task.review.request);
+  ensure(review && review.comment_id === task.review.comment_id && (!native || review.summary_id === task.review.summary_id), 'missing_current_ai_review');
+  const unresolved = await threadCount(api, task.pr);
   const issues = await allPages(api, '/issues?state=open');
   const openFindings = issues.filter(i => !i.pull_request && (i.labels?.some(l => ['review', 'bug'].includes(l.name)) || /^\[Review\]/.test(i.title))).length;
   const checks = await allChecks(api, pr.head.sha), evidence = [];
