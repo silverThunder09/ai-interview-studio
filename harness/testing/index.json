@@ -1265,6 +1265,33 @@
           }
         }
       ]
+    },
+    {
+      "id": "tests-2026-10-23-pr76-local-queue",
+      "status": "archived",
+      "date_kst": "2026-10-23",
+      "pr": 76,
+      "title": "후속 승인 큐 연결 · 로컬 검사",
+      "path": "archive/2026-10-23/pr-76-local-automation.md",
+      "tags": [
+        "automation",
+        "queue",
+        "history",
+        "cas",
+        "local-only"
+      ],
+      "result": "local-check-passed",
+      "tested_head_sha": "8cd9b8e3c253f1f5ff62d25c5db766606442901f",
+      "tested_base_sha": "750f9304b64cefcb8a2e8ad34fdee179d68912e4",
+      "counts": {
+        "unit": 520,
+        "review_policy": 41
+      },
+      "evidence": [],
+      "limitations": [
+        "이 기록은 로컬 코드 검사이며 원격 Cloud/머지 성공 증거가 아니다",
+        "최종 CI 및 실제 후속 실행은 PR76/PR75/이슈35에서 확인"
+      ]
     }
   ],
   "historical_main_verification": {
