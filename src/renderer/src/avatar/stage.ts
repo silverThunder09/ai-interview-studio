@@ -23,7 +23,9 @@ export class AvatarStage {
   private readonly motion = matchMedia('(prefers-reduced-motion: reduce)');
   state: StageState = { active: 'a', speaking: null, quality: 'low', paused: false };
   constructor(private readonly canvas: HTMLCanvasElement, private readonly metrics: (m: StageMetrics) => void, private readonly failure: (message: string) => void) {
-    try { this.renderer = new T.WebGLRenderer({ canvas, antialias: false, alpha: false, powerPreference: 'low-power' }); }
+    // Keep the last displayed frame while the 30FPS cap or pause skips rendering.
+    // Also makes real screenshots independent of the browser's drawing-buffer discard timing.
+    try { this.renderer = new T.WebGLRenderer({ canvas, antialias: false, alpha: false, preserveDrawingBuffer: true, powerPreference: 'low-power' }); }
     catch (error) { Object.values(this.actors).forEach(a => a.dispose()); throw error; }
     this.renderer.setClearColor(0x10282d); this.renderer.outputColorSpace = T.SRGBColorSpace;
     this.camera.position.set(0, 1.55, 6.6);

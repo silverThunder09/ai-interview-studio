@@ -18,9 +18,10 @@ test('two WebGL interviewers, offline GLB/glTF import, motion, restoration and c
   async function launch() {
     app = await electron.launch({ chromiumSandbox: true, env,
       ...(process.env.SMOKE_EXECUTABLE ? { executablePath: resolve(process.env.SMOKE_EXECUTABLE) } : {}),
-      args: [...(process.env.SMOKE_EXECUTABLE ? [] : ['.']), ...(process.env.STUDIO_SMOKE_HEADLESS === '1' ? ['--ozone-platform=headless'] : []), `--user-data-dir=${profile}`],
+      args: [...(process.env.SMOKE_EXECUTABLE ? [] : ['.']), ...(process.env.STUDIO_SMOKE_HEADLESS === '1' ? ['--ozone-platform=headless', '--use-gl=angle', '--use-angle=swiftshader'] : []), `--user-data-dir=${profile}`],
     });
     const page = await app.firstWindow(); page.on('pageerror', e => errors.push(e.message));
+    await app.evaluate(({ app: electronApp }) => { electronApp.getAppMetrics(); });
     page.on('console', message => { if (message.type() === 'error' && /3D 초기화:|THREE.WebGLRenderer/.test(message.text())) console.log(message.text().slice(0, 600)); });
     await page.getByRole('button', { name: '3D 면접관', exact: true }).click();
     await expect(page.locator('.avatar-viewport canvas')).toHaveAttribute('data-studio-ready', 'true');
@@ -32,11 +33,27 @@ test('two WebGL interviewers, offline GLB/glTF import, motion, restoration and c
     const canvas = page.locator('.avatar-viewport canvas');
     await expect.poll(async () => Number(await canvas.getAttribute('data-fps')), { timeout: 10_000 }).toBeGreaterThan(0);
     expect(await canvas.evaluate(c => (c as HTMLCanvasElement).getContext('webgl2')?.getParameter(0x1f02))).toContain('WebGL');
+    async function visibleCharacters() {
+      return canvas.evaluate(async c => {
+        await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+        const gl = (c as HTMLCanvasElement).getContext('webgl2'); if (!gl || gl.isContextLost()) throw new Error('Expected a live WebGL scene');
+        const width = gl.drawingBufferWidth, height = gl.drawingBufferHeight, pixels = new Uint8Array(width * height * 4);
+        gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+        const left = new Set<string>(), right = new Set<string>();
+        for (let y = 0; y < height; y += 4) for (let x = 0; x < width; x += 4) {
+          const offset = (y * width + x) * 4;
+          (x < width / 2 ? left : right).add(`${pixels[offset]},${pixels[offset + 1]},${pixels[offset + 2]}`);
+        }
+        return { left: left.size, right: right.size };
+      });
+    }
+    const rendered = await visibleCharacters();
+    expect(rendered.left).toBeGreaterThan(20); expect(rendered.right).toBeGreaterThan(20);
     await page.getByRole('button', { name: '오른쪽 시점', exact: true }).click();
     await canvas.focus(); await page.keyboard.press('ArrowLeft');
     await page.getByRole('button', { name: '시점 초기화', exact: true }).click();
     await page.screenshot({ path: 'test-results/avatar-room-default.png', fullPage: true });
-    console.log(JSON.stringify({ avatar_metrics: { rendered_fps: await canvas.getAttribute('data-fps'), runtime: process.platform,
+    console.log(JSON.stringify({ avatar_metrics: { rendered_fps: await canvas.getAttribute('data-fps'), runtime: process.platform, snapshot_not_peak: true,
       processes: await app!.evaluate(({ app: electronApp }) => electronApp.getAppMetrics().map(m => ({ type: m.type, cpu_percent: m.cpu.percentCPUUsage, working_set_kib: m.memory.workingSetSize }))),
       gpu_features: await app!.evaluate(({ app: electronApp }) => electronApp.getGPUFeatureStatus()),
     } }));
@@ -45,6 +62,8 @@ test('two WebGL interviewers, offline GLB/glTF import, motion, restoration and c
     await expect(canvas).toHaveAttribute('data-speaking', 'b');
     await expect(canvas).toHaveAttribute('data-speaking', 'none', { timeout: 8_000 });
     await page.getByLabel('움직임 일시정지').check(); await expect(canvas).toHaveAttribute('data-paused', 'true');
+    const paused = await visibleCharacters();
+    expect(paused.left).toBeGreaterThan(20); expect(paused.right).toBeGreaterThan(20);
     await page.getByLabel('움직임 일시정지').uncheck();
     await page.getByText('면접관 모델 설정', { exact: true }).click();
     for (const [slot, path] of [['A', glb], ['B', gltf]] as const) {
