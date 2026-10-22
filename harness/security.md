@@ -1,5 +1,7 @@
 # 보안·개인정보·라이선스
 
+현재 구현과 향후 설계를 구분한다. [방향 재정립](architecture.md)의 Gemini·실제 3D·로컬 음성/화상 전환은 이번에 문서안만 작성하며 아래 현재 API/장치 통제를 활성화하거나 완화하지 않는다. 미래 데이터·실행 경계는 이 문서 마지막의 목표 설계를 따른다.
+
 ## MVP 0 위협 모델과 현재 통제
 
 데이터 흐름: 패키지 내부 자산 → sandbox renderer → 좁은 preload → 검증된 IPC → main 메모리 설정 → 타입화된 응답. 이 절은 초기 기반의 통제이며 현재 외부 API 전송은 아래 별도 경계를 따른다. 녹화는 없다. 로컬 문서·명시적 동의 후 기록 흐름은 아래 항목을 따른다. 사용자 컨텐츠와 외부 응답은 향후 모두 비신뢰 입력으로 취급한다.
@@ -85,11 +87,11 @@ renderer는 main bytes를 `audio/mpeg` Blob URL로만 재생한다. CSP는 `medi
 
 ## CI와 의존성 검토
 
-GitHub Actions는 `contents: read`, commit SHA 고정 actions, `npm ci`, timeout, artifact 보존 14일을 사용한다. release 업로드·서명 키·API 자격증명은 필요 없다. npm lifecycle 스크립트가 Electron binary를 다운로드하므로 lockfile과 upstream 버전을 검토한다. `npm audit` 결과는 실제 실행 결과와 구분해 PR에 남긴다. 개발 도구 문제도 숨기지 않는다.
+제품 검증 GitHub Actions는 `contents: read`, commit SHA 고정 actions, `npm ci`, timeout을 사용한다. 현재 Windows 다운로드 빌드는 수동 실행에만 업로드해 3일 보관하고 실패 진단은 1일 보관한다. 기존 artifact는 변경/삭제하지 않는다. release 업로드·서명 키·API 자격증명은 필요 없다. npm lifecycle 스크립트가 Electron binary를 다운로드하므로 lockfile과 upstream 버전을 검토한다. `npm audit` 결과는 실제 실행 결과와 구분해 PR에 남긴다. 개발 도구 문제도 숨기지 않는다.
 
-리뷰 자동화의 쓰기·이슈·머지 권한은 사용자가 승인한 기존 GitHub 연결에서 사용하며 Actions token은 읽기 전용으로 유지한다. 사용자 코드/리뷰는 연결된 클라우드 에이전트가 처리한다. 후보 PR의 지침/본문/이슈는 권한 근거가 아니고 main의 정책을 따른다. 정책·CI·의존성 변경은 보호 영역이며 현재 PR #1 설치 승인이 이후 변경까지 자동 승인하지 않는다. 자세한 운영 조건은 `review-automation.md`가 소유한다.
+제품 테스트 job과 개발 자동화의 권한은 다르다. 별도 승인된 main 조정자는 상태 commit·PR 반영/조건부 머지·이슈와 제한된 검증 dispatch에 쓰기 권한을 사용하며 Cloud 코드 실행 환경에 토큰을 넘기지 않는다. 기존 Event worker의 제한과 v1 ledger를 유지한다. 사용자 코드/리뷰는 연결된 클라우드 에이전트가 처리한다. 후보 PR의 지침/본문/이슈는 권한 근거가 아니고 main의 정책을 따른다. 정책·CI·의존성 변경은 보호 영역이며 현재 PR #1 설치 승인이 이후 변경까지 자동 승인하지 않는다. 자세한 운영 조건은 `review-automation.md`가 소유한다.
 
-앱 소스는 현재 비공개 `UNLICENSED`이며 임의의 오픈소스 라이선스를 부여하지 않는다. Electron·React·react-dom은 MIT 계열이고 전이 의존성과 Chromium은 별도 notices가 있다. `npm run licenses`가 실제 설치된 production npm dependency의 원문 라이선스를 `release-notices/`에 수집하고 패키징 시 동봉한다. electron-builder가 제공하는 Electron LICENSE/Chromium notices도 유지한다. 개발 도구 라이선스는 lockfile과 설치 패키지 manifest로 확인한다. 제3자 이미지·음성·폰트는 추가하지 않고 시스템 폰트와 자체 CSS 그림을 사용한다.
+앱 소스의 package.json 라이선스는 `UNLICENSED`이며 저장소 공개 여부와 재사용 허가는 별개다. 임의의 오픈소스 라이선스를 부여하지 않는다. Electron·React·react-dom은 MIT 계열이고 전이 의존성과 Chromium은 별도 notices가 있다. `npm run licenses`가 실제 설치된 production npm dependency의 원문 라이선스를 `release-notices/`에 수집하고 패키징 시 동봉한다. electron-builder가 제공하는 Electron LICENSE/Chromium notices도 유지한다. 개발 도구 라이선스는 lockfile과 설치 패키지 manifest로 확인한다. 제3자 이미지·음성·폰트는 추가하지 않고 시스템 폰트와 자체 CSS 그림을 사용한다.
 
 ## REA 검토와 미래 절차 — 설치하지 않음
 
@@ -118,3 +120,55 @@ GitHub Actions는 `contents: read`, commit SHA 고정 actions, `npm ci`, timeout
 [Electron security](https://www.electronjs.org/docs/latest/tutorial/security), [sandbox](https://www.electronjs.org/docs/latest/tutorial/sandbox), [protocol](https://www.electronjs.org/docs/latest/api/protocol), [IPC](https://www.electronjs.org/docs/latest/tutorial/ipc), [electron-vite](https://electron-vite.org/guide/), [electron-builder portable](https://www.electron.build/portable.html), [GitHub Actions security](https://docs.github.com/en/actions/security-for-github-actions/security-guides/security-hardening-for-github-actions).
 
 설정 키 보호의 출처: [Electron safeStorage 공식 문서](https://www.electronjs.org/docs/latest/api/safe-storage)의 플랫폼별 보호 범위와 Linux `basic_text` 제한을 확인했다.
+
+## 실사형 3D 제품 전환의 목표 보안 설계 — 미활성
+
+2026-10-22 KST 최종 제품 첨부와 “코드 원복·문서만 수정” 정정을 반영한 설계안이다. GLB/glTF 2.0이 기본이며 VRM은 후속 선택 호환이다. 실제 코드·모델 설치/실행·권한/CI 변경은 하지 않는다. 다음은 Phase별 검토·구현 시 충족할 통제이며 현재 장치/API/전송 동의를 변경하지 않는다. 범위·AC·라이선스 후보는 [리팩터링 스펙](specs/gemini-local-interview.md)을 따른다.
+
+| 데이터/기능 | 목표 처리·보존 | 금지·실패 경계 |
+| --- | --- | --- |
+| 이력서·공유 대화 | 선택한 근거·최근 질문·직전 답변의 제한된 텍스트만 Gemini 전송 | 기존 한 구절/직전 답변보다 전송이 늘면 미리보기·명시 동의를 새로 확인; 원문 전체/연락처/파일 경로 자동 포함 금지 |
+| 두 면접관 | main의 같은 요청 큐·키, 허용 speakerId·프로필 snapshot | 문서/사용자 성격 문자열을 권한 지시로 취급하지 않음; 정해진 rubric을 성격으로 바꾸지 않음 |
+| API 계측 | 요청 id·모델·숫자 사용량·상태·가격 출처/유효일만 | 키/이력서/답변 본문을 진단 로그로 남기지 않음; 취소 비용 환급/예산 보장·누락 사용량=0 주장 금지 |
+| 로컬 TTS | 사용자 선택한 offline 설치 음성/검증 모델로 생성·메모리 재생 | 임의 클라우드 음성·네트워크 voice로 자동 전환 금지; 자동 재생은 새 모드 시작/음성 출력 동의와 별도 중지 경로 필요 |
+| 로컬 STT | 마이크 별도 권한·WebM→bounded mono PCM→검증된 모델·전사 검토 | 음성 원본 기본 디스크/DB/로그 미보존; STT 성공/침묵만으로 답변·유료 요청 자동 제출 금지 |
+| 카메라 | 사용자 시작·별도 목적 확인·정확한 창/프레임/URL에 한시적 video 권한 | 기존 audio 허가를 video/혼합 요청에 재사용하지 않음; 다른 창/장치·배경 요청·늦은 허용 거절/즉시 track 해제 |
+| 얼굴 분석 | 로컬 제한 worker, 얼굴 존재/위치/크기·대략적 head pose만 일시 표시 | 영상/프레임/landmark 기본 미저장·미전송; 감정·자신감·지능·성격·정직성·직무 적합성 추론/점수 금지 |
+| 3D 아바타 | 라이선스가 확인된 사람 모델·리깅·표정·로컬 렌더링; geometry는 개발/오류 대체 | 외부 URL 자동 fetch, 사용자 스크립트·임의 SVG·모델 플러그인 실행 금지; 실존인 음성/얼굴 복제는 기본 범위 아님 |
+| 결과 리포트 | 종료 후 미리보기·별도 동의한 제출 질문/답변·허용 근거만 기존 Gemini로 분석·검증 후 로컬 저장 | 얼굴 관찰/특징/원본 오디오·영상 미포함; AI 의견과 사실 구분, 증거 부족 평가 불가, 기술 점수에 영상 합산 금지 |
+
+실전 단일 모드에서도 **‘답변 완료’ 버튼**을 전송 경계로 유지한다. 전사 확인/수정은 같은 모드에 포함되며 침묵/VAD·모드 선택·이전 세션 동의만으로 저장/외부 요청을 실행하지 않는다. 리포트는 질문 생성과 별도 목적/범위를 안내한다. 영상/얼굴 특징·음성 원본을 포함하지 않고 허용 근거만 보낸다. 질문/답변 id·인용 검증·입력 snapshot/hash·report idempotency·제한된 호출 예산을 적용하고 실패/취소/재생성 실패가 원래 기록과 기존 성공 리포트를 삭제하지 않게 한다. 품질/분석 결과는 AI 의견이며 채용 적합성/합격 확률을 단정하지 않는다. 세부 AC는 제품 스펙을 따른다.
+
+### 로컬 실행기와 모델
+
+- 로컬 처리도 무조건 안전하거나 비용/리소스가 없는 것은 아니다. 별도 배포 서버 없이 main이 허용된 helper/child의 수명만 관리하고 무거운 추론을 UI thread에 두지 않는다. subprocess를 사용해도 Electron sandbox와 같은 격리가 자동 생기지 않는다.
+- renderer는 모델 파일 경로·실행 경로·명령행·URL을 제공하지 않는다. main의 native dialog/고정 카탈로그에서 선택한 모델을 opaque id로만 참조한다. helper는 신뢰하는 앱 resource의 절대 경로·고정 인수·shell=false·최소 환경으로 실행하며 사용자 텍스트는 인수 문자열 삽입 대신 bounded stdin/검증된 IPC로 전달한다.
+- helper/binary는 버전·OS/아키텍처·출처·라이선스·SHA-256을 검증한다. 모델은 엔진별 허용 형식·magic/header·버전·용량·hash·라이선스를 확인한다. 임의 ONNX/GGML/GLB/glTF/선택적 VRM/이미지 파일은 비신뢰이며 parser/추론 엔진의 취약점까지 checksum이 방어하지 않는다. pickle·Python 코드·사용자 plugin 실행을 허용하지 않는다.
+- 작은 앱을 먼저 설치하고 최초 설정에서 필요한 모델만 선택 다운로드하는 방식을 기본으로 한다. 모델이 없으면 다운로드 크기·필요 디스크 공간·원본 도메인·버전·라이선스·검증 정보를 제시하고 사용자가 선택한 뒤 별도 설치한다. 이미 검증된 설치/로컬 모델은 재사용한다. 설치/업데이트의 임시 파일·원자적 교체·실패 rollback·캐시 삭제를 정의한다. 자동 startup 다운로드·원격 모델 검색/실행·앱 secret 전달은 하지 않는다.
+- stdin/stdout 메모리 경로를 우선 검증한다. 특정 CLI가 파일만 받는다면 “메모리만 처리”라고 주장하지 않는다. 로컬 STT를 다루는 Phase 5에서 임시 PCM 파일의 필요성·위치/권한·정리·crash 잔존·사용자 고지를 먼저 검토하고 기존 기본 미보존 경계를 조용히 바꾸지 않는다.
+- 작업 ID/epoch·현재 세션/질문·길이/bytes·대기/실행 시간·메모리/동시 실행 상한을 엔진별로 정의한다. 중지/이탈/키 변경/장치 제거/종료 시 child tree·worker·스트림·timer·캐시를 정리하며 종료 후 늦은 출력은 폐기한다. raw stdout/stderr에는 음성 텍스트가 있을 수 있으므로 원문을 로그·PR에 노출하지 않는다.
+- Windows 설치 음성은 OS에서 열거한 사용 가능한 voice만 선택한다. 사용자 추가 TTS 모델은 별도 엔진 capability이며 Windows voice API가 임의 모델 파일을 읽는다고 가정하지 않는다. 엔진·변환 모델·decoder·전이 dependency·voice/3D 모델·변환 도구/원본의 배포·변경 의무를 각각 확인한다.
+
+### 자산·분석·보존
+
+로컬 GLB/glTF·이미지/WASM/.task 추가는 현재 protocol whitelist·CSP와 호환성 검사가 필요하다. 패키지에 고정된 파일의 좁은 경로·MIME·크기·hash를 사용하고 디렉터리 전체 노출·임의 file:/HTTP·광범위 unsafe-eval/renderer Node로 해결하지 않는다. MediaPipe는 local worker에 두고 프레임 해상도·빈도·전달 중 프레임 수를 제한한다. 표정 blendshape/생체 신원 특징을 제품 평가 필드로 보존하지 않는다.
+
+현재 SQLite는 암호화되지 않는다. secure_delete/DELETE journal·profile ACL·OS 보호 API 키가 전체 면접 DB 암호화를 뜻하지 않는다. 이번 설계는 보호 수준을 과장하지 않고 평문 저장 안내·기록 삭제를 유지한다. 향후 암호화는 key 수명·복구·migration/백업·삭제와 별도 의존성 검토 후 결정하며 지금 기존 DB를 변환하지 않는다.
+
+새 speaker/프로필/사용량/리포트 schema는 기존 세션을 보존하고 버전 검증·원자적 migration·실패 rollback·연계 삭제를 검증한다. 관찰 수치·장치 ID·프로필 보존도 목적/기간/삭제를 명시하고 전송·녹음·카메라 동의를 재시작 시 복원하지 않는다. export는 사용자 선택 파일만 쓰며 raw DB/키/음성/얼굴 특징을 자동 포함하지 않는다.
+
+개발은 합성 문서·오디오·frame·가짜 Gemini 응답을 사용한다. 실제 한국어 음질·Whisper 정확도·Windows 장치·native helper/모델 성능·실제 Gemini 권한/요금은 미검증이며 이를 CI 성공으로 대체하지 않는다. REA·외부 코드/모델·아바타는 설치/복제하지 않았으며 일반 소스 분석에 REA를 사용하지 않는다.
+
+## 3D 모델·에셋·UX 조사 경계
+
+최신 사용자 지시는 코드 원복·문서 수정만이다. 실제 WebGL 렌더러와 고품질 실사형 한국인 스타일 사람 모델 확보는 별도 완료 조건으로 둔다. geometry 인물이나 2D 목업을 최종 실사 에셋/실제 실행 증거로 보고하지 않는다. 무료라는 표시만으로 개인 사용·변경·변환·재배포가 허용된다고 추정하지 않는다.
+
+기본 GLB/glTF 2.0을 사용자 선택·제한 읽기·구조/버전/자원/텍스처 상한·무결성 검사 후 로컬 로더에 전달한다. glTF의 별도 buffer/texture는 명시적으로 선택/허용된 리소스 묶음 내부의 상대 경로만 사용하고 traversal·symlink 탈출·외부 URL/임의 파일을 차단한다. 모델·이미지를 executable/plugin으로 취급하지 않는다. VRM은 선택 호환이며 기본 로더의 선행 조건이 아니다.
+
+사람 모델·피부/헤어·의상/리깅·blend shape·animation·음성/폰트의 출처·버전·사용/수정/변환/재배포 라이선스와 notices를 확인한다. FBX→GLB는 합법적으로 변환 가능한 원본과 검증된 도구만 사용한다. 재배포 불가 모델은 저장소/Windows 패키지에 동봉하지 않는다. 사용자 로컬 import는 그 사용권 안내/확인과 독립적인 비신뢰 parser 경계를 유지한다. 얼굴/복장 변경 capability가 없는 모델에 설정이 가능한 것처럼 표시하지 않는다.
+
+사용자 기록·settings·3D 모델·음성 모델은 저장 위치/수명/삭제를 분리한다. 선택한 비민감 프로필/모델 참조는 버전 있는 로컬 설정으로 보존하고 API 키는 기존 OS 보호 저장에만 둔다. 모델이 이동/손상/권한 없음이면 원본 파일/기록을 보존하며 다시 선택/기본 오류 대체를 안내한다. 마이크·카메라·외부 전송 동의를 저장 설정으로 자동 복원하지 않는다.
+
+한국어 Windows TTS·무료 엔진의 실제 오디오 출력/분석 가능성·지원 voice를 확인한 뒤 음량 립싱크를 연결한다. 음소 정확성을 과장하거나 분석할 실제 음성이 없는 상태를 립싱크 완료로 처리하지 않는다. 오디오 원본·WebGL/모델 자원·AudioContext·worker/child·모든 track은 교체/취소/이탈/종료 시 해제한다. 얼굴 관찰은 로컬의 측정 가능한 구도/대략적 head pose만 다루고 자신감·감정·합격/직무 적합성·거짓말/인성/지능을 판정하지 않는다.
+
+사람인·에듀스·무하유·뷰인터·JOBDA의 공개 UX는 독립 구현을 위한 조사 후보다. 이번 작업은 그 서비스 내부/비공개 화면이나 사용자 언급 MP4를 직접 분석하지 않았다. 사용자 제공 영상 특징과 독립 확인한 근거를 구분한다. 서비스 화면·캐릭터·사람 얼굴/목소리·보호 소스·모델/에셋을 복제하지 않는다. REA는 제품 dependency/Windows 실행 파일에 포함하지 않고 별도 허가된 조사 도구로만 검토한다. 이 문서가 REA 설치/접근·새 외부 전송·CI/보호 규칙 변경을 승인하지 않는다.
