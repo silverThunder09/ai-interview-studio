@@ -1,11 +1,12 @@
-# Phase 1 3D 기반 — 로컬 검사와 실제 실행 검증 대기
+# Phase 1 3D 기반 — 실제 Electron 화면·모델 교체 검증
 
 - 기록 ID: tests-2026-10-22-phase1-local
 - 기준일: 2026-10-22 KST
 - 대상: silverThunder09/ai-interview-studio, main 130fa63e9ba2a70ce42fd552958be577c8601ae2 기준.
-- 코드 커밋: ea62bfa9c077ad9744b36b8dc4c02df5abcc6bc5 (원격), 로컬 검사 커밋42a0b164ad31d56f85a582f2eeff9433d4d54791과 동일한 tree.
+- 초기 코드: ea62bfa9c077ad9744b36b8dc4c02df5abcc6bc5 / tree ce540137b0f3a660dd1431146745e123a15734d6.
+- 프레임 보존·픽셀 검증 수정: 원격02dab4024b008c76c4429c8191c9e35f24379b9f, 로컬f938db3e9fa6eccf60587c1f2b6e45e9c488aaa5와 tree768b9905ac29116eab0e2b4b4492982863ad99ef 일치.
 - 소스 tree: ce540137b0f3a660dd1431146745e123a15734d6.
-- 상태: 부분 검증. 실제 3D 실행/Windows/실사 에셋 품질 완료 아님.
+- 상태: 로컬 실제 3D 기반 검증 성공. 최초 Windows 원본/패키지10/10 성공 후 픽셀 검사를 강화했으며 최종 CI는 [PR #74](https://github.com/silverThunder09/ai-interview-studio/pull/74)의 정확한 head/실행을 확인한다. 실사 에셋 품질 완료 아님.
 - 차단 추적: [이슈 #73](https://github.com/silverThunder09/ai-interview-studio/issues/73).
 
 ## 성공한 검사
@@ -22,14 +23,24 @@
 
 전체 check의 기존 CLI 자식 프로세스 테스트는 최초 실행 도구 제한(spawnSync EPERM)으로 실패했다. 동일 소스/명령을 실행 권한 확인 후 다시 수행해 전체513/41 성공을 확인했다. 테스트를 삭제하거나 sandbox 조건을 낮추지 않았다.
 
-## 실패·미검증
+## 실제 화면과 프레임 보존 수정
 
-1. 일반 Linux Electron 실행은 X 서버/$DISPLAY가 없어 시작 전에 종료했다.
-2. headless Ozone 실행의 data-engine 표시 충돌을 제거했지만, 후속 실행에서도 장면 준비 조건이 충족되지 않아 3D smoke가 통과하지 않았다. GPU 환경 문제인지 장면 초기화 결함인지 현재 증거로 확정하지 않는다. 실제 화면 성공·FPS·GPU/CPU/RAM 측정값을 보고하지 않는다.
-3. Windows 원본/패키지 smoke와 실제 사용자 노트북은 미검증이다. 새 smoke는 WebGL context·실제 프레임·합성 PNG/GLB/glTF·두 모델·동작 시작/중단·복원·잘못된 URL 거절·GPU context 해제를 검사하도록 준비했다. 조건을 건너뛰지 않는다.
-4. 원격 commit API는 이전 문서-only 지시를 이유로 최초 거절됐다. 이후 사용자가 구현 코드·의존성·테스트·관련 문서의 push→PR→Windows 검증→조건 충족 시 머지를 명시 승인했고, 같은 경로의 commit API가 성공했다. main 변경은 없으며 PR/Windows 실제 검증 대기다.
-5. 실사형 한국인 스타일 남성/여성 에셋·배포 라이선스는 미확보다. 기본 geometry는 개발용이며 TTS/실제 음량 립싱크·Gemini 두 역할·웹캠·STT·리포트는 후속이다.
+![실제 Electron에서 실행한 기본 3D 면접관 두 명](screenshots/phase1-3d.png)
 
-## 다음 확인
+모형 그림이 아니라 실제 Electron/WebGL 2.0 화면이다. 자체 geometry 캐릭터이며 실사형 모델이나 최종 아바타 디자인이 아니다. Linux Ozone headless + 명시적 ANGLE SwiftShader, sandbox/contextIsolation/CSP를 유지했다. 테스트 실행 옵션은 Windows 제품의 기본 그래픽 설정을 바꾸지 않는다.
 
-명시 승인된 원격 반영·Draft PR·Windows CI에 같은 작업을 재사용한다. 실제 Windows 실행 결과와 오류 원인을 이 기록/연결 PR에 추가하고, 성공한 소스 SHA·CI attempt·스크린샷/환경·한계를 확인한 뒤에만 최신 앱 기준을 교체한다. 과거 PR #34의 최신 기록과 기존 archive는 지금 변경/삭제하지 않는다.
+기존 프레임 cap에서는 브라우저 drawing buffer 폐기 시점에 캡처가 빈 화면으로 나올 수 있었다. 실제 프레임 픽셀 색 수가447→1로 번갈아 관측됐으며 렌더 호출/삼각형 수만으로 성공을 판정하던 smoke로는 잡히지 않았다. 마지막 frame을 보존하고 기본 인물 A/B 영역의 실제 픽셀 다양성과 일시정지 뒤 장면 유지도 검증하도록 고쳤다. 수정 뒤 연속8프레임이442~447색을 유지하고 GL 오류0·context lost=false였다. 숨김/이탈 시 자원 해제는 유지한다.
+
+로컬 실제 smoke는 모델 두 개·GLB/내장 PNG·glTF·눈/입 morph·무음 동작 시작/중단·잘못된 URL 거절·기존 사본 보존·재시작 복원·기본 모델 복귀·GPU context 해제를 성공 확인했다. 로컬 FPS는 이 조건에서 약30이며 사용자 Galaxy Book3 360의 보장 성능이 아니다. 초기 수집 후 다음 snapshot에서 CPU는 Browser 약1.16%·GPU 프로세스 약37.82%·Tab 약3.93%, working-set은 각각 약154/166/148MiB(Utility 약71MiB)였다. GPU 프로세스의 CPU 사용률은 GPU 사용률이 아니며 working-set은 VRAM이 아니다. 짧은 측정 구간의 값이고 지속 부하/peak·전용 VRAM/GPU 사용률은 미측정이다.
+
+최초 Windows [run39737804211](https://github.com/silverThunder09/ai-interview-studio/actions/runs/39737804211/job/119687522592)은 heada1bcdbdc3e3e0b8198066828941460c34df5836b에서 단위513·정책41·원본10/패키지10을 성공했다. 소프트웨어 그래픽 상태에서 두 장면 측정은22FPS였다. 이 이전 성공을 픽셀 보강 후 최신 head의 CI 증거로 대신 사용하지 않는다. 로그의 process working-set은 VRAM이 아니고 CPU 첫 snapshot0은 지속 사용률/peak를 의미하지 않는다. 강화된 smoke는 수집을 먼저 시작하고 후속 snapshot을 남긴다.
+
+## 실패 이력과 남은 검증
+
+- 최초 기존 CLI 검사 실패(spawnSync EPERM)는 같은 소스/검사로 실행 도구 권한을 확인한 뒤 전체 통과했다.
+- 일반 Linux GUI는 X 서버/$DISPLAY가 없어 시작하지 못했다. headless 자동 그래픽 선택과 테스트 data-engine 속성 충돌도 각각 구분해 해결했다. 이후 명시적인 소프트웨어 renderer를 선택해 실제 장면을 검증했다. sandbox나 검사 조건을 끄지 않았다.
+- 원격 commit은 최초 문서-only 범위 심사로 거절됐지만 사용자의 명시 승인 뒤 같은 API가 성공했다. 우회하지 않았으며 진행/검증은 #73·PR #74에서 추적한다.
+- 사용자 노트북의 실제 GPU/VRAM·CPU/메모리 peak·지속 부하, 실사형 한국인 스타일 남성/여성 에셋과 배포 라이선스는 미검증/미확보다. 기본 geometry를 실사 품질 완료로 표시하지 않는다.
+- 외부 파일 묶음 glTF·압축 확장·모델 다운로드, 실제 TTS 립싱크·Gemini 두 역할·웹캠·STT·리포트는 이번 기반에 포함하지 않는다.
+
+최종 최신 head의 checks/package/pr-policy·Windows 픽셀 smoke·원본 리뷰/라벨/스레드·CI stdout 증거와 main 판정을 확인한 뒤에만 머지한다. 과거 앱 기준/아카이브는 보존하며 기반 PR 머지와 Phase 1 전체/실사 품질 완료를 구분한다.
