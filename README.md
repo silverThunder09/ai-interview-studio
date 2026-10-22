@@ -2,7 +2,7 @@
 
 개인용 Windows AI 면접 데스크톱 앱이며 Codex Cloud에서 개발합니다. PDF/DOCX 이력서 검토, 텍스트 연습·로컬 기록, OpenAI·Claude·Gemini 질문 생성, 선택한 음성의 OpenAI 전사와 현재 질문의 음성 읽기를 제공합니다. 실시간 음성 대화·카메라는 아직 제공하지 않습니다.
 
-**방향 재정립 검토 중:** Gemini 기반 두 면접관과 로컬 TTS·Whisper STT·2D 아바타·웹캠을 단계별로 도입하는 [새 로드맵](harness/architecture.md)과 [Phase 0 분석·설계안](harness/specs/gemini-local-interview.md)을 작성했습니다. 현재 앱 기능을 바꾼 것은 아니며, 문서 검토와 Phase별 구현 승인 후 진행합니다. 실제 유료 API 테스트·개인 자료 전송·모델 설치는 하지 않았습니다.
+**문서로 검토 중인 새 목표:** 한국인 스타일의 실사형 3D 면접관 두 명, **GLB/glTF 2.0 기본 로딩·교체**, 기존 Gemini 한 키, 로컬 TTS/STT·웹캠을 사용하는 독립 실행형 면접 앱입니다. **VRM은 선택 호환**이며 geometry 인물은 개발/오류 대체입니다. [로드맵](harness/architecture.md)·[최종 제품 스펙](harness/specs/gemini-local-interview.md)을 수정하며, 사용자 지시에 따라 **이번 변경은 문서만**입니다. 현재 앱에 이 3D 기능이 구현됐다는 뜻이 아닙니다.
 
 검증 결과는 **[최신 테스트 기록](harness/testing/latest.md)**, 과거 결과와 검색 방법은 **[테스트 색인·아카이브](harness/testing/README.md)**에서 확인합니다. 자동 테스트 성공과 실제 사용자 기기/API 확인은 구분합니다.
 
