@@ -11,6 +11,7 @@ import { InterviewService } from './interview-service';
 import { AICredentials, createAIHandlers, InterviewProviderRouter } from './external-ai';
 import { createVoiceHandlers, VoiceService } from './voice';
 import { createSpeechHandlers, SpeechService } from './speech';
+import { AvatarModels } from './avatar';
 import { APP_URL, assetPath, DEVELOPMENT_CSP, developmentURL, isTrustedSender, PRODUCTION_CSP } from './policy';
 
 protocol.registerSchemesAsPrivileged([
@@ -31,6 +32,14 @@ async function start(): Promise<void> {
   const voice = createVoiceHandlers(voiceService);
   const speechService = new SpeechService(store, credentials);
   const speech = createSpeechHandlers(speechService);
+  const avatars = new AvatarModels(join(app.getPath('userData'), 'avatar-models'), async () => {
+    if (!window) throw new Error('Window unavailable');
+    const selected = await dialog.showOpenDialog(window, {
+      title: '사용 권한이 있는 자기 포함 3D 모델 선택', properties: ['openFile'],
+      filters: [{ name: 'GLB / glTF 2.0 모델', extensions: ['glb', 'gltf'] }],
+    });
+    return selected.canceled ? undefined : selected.filePaths[0];
+  });
   const ai = createAIHandlers(credentials, () => { interview.cancelPending(); voiceService.cancel(); speechService.cancel(); });
   app.on('will-quit', () => { speechService.cancel(); voiceService.cancel(); interview.close(); credentials.clearAll(); interviewStore?.close(); });
   const selectResume = createResumeSelector(async () => {
@@ -62,6 +71,7 @@ async function start(): Promise<void> {
     return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
   });
   for (const [channel, handle] of [
+    [CHANNELS.avatarSelect, avatars.select], [CHANNELS.avatarGet, avatars.get], [CHANNELS.avatarCommit, avatars.commit], [CHANNELS.avatarReset, avatars.reset],
     [CHANNELS.snapshot, handlers.snapshot], [CHANNELS.settings, handlers.update],
     [CHANNELS.resume, selectResume],
     [CHANNELS.interviewHistory, interview.history], [CHANNELS.interviewGet, interview.get],

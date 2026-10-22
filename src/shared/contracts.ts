@@ -1,10 +1,12 @@
 import type { SelectedResume } from './resume';
+import type { AvatarAsset, AvatarSlot, StagedAvatar } from './avatar';
 import type { VoiceRequest, VoiceStart, VoiceStatus } from './voice';
 import type { SpeechRequest, SpeechStatus } from './speech';
 import type { AIPreferences, AIKeyRequest, AIProvider, AIStatus } from './ai';
 import type { DeleteAllInterviewsRequest, DeleteInterviewRequest, InterviewHistory, InterviewSession, StartInterviewRequest, SubmitAnswerRequest } from './interview';
 
 export const CHANNELS = {
+  avatarSelect: 'studio:avatar-select', avatarGet: 'studio:avatar-get', avatarCommit: 'studio:avatar-commit', avatarReset: 'studio:avatar-reset',
   snapshot: 'studio:snapshot', settings: 'studio:settings', resume: 'studio:select-resume',
   interviewHistory: 'studio:interview-history', interviewGet: 'studio:interview-get',
   interviewStart: 'studio:interview-start', interviewAnswer: 'studio:interview-answer',
@@ -27,6 +29,10 @@ export type Result<T> = { ok: true; value: T } | {
   ok: false; error: { code: 'INVALID_REQUEST' | 'UNAUTHORIZED' | 'UNAVAILABLE' | 'CANCELLED' | 'TIMEOUT' | 'RATE_LIMITED' | 'BUDGET_EXHAUSTED' | 'AUTHENTICATION'; message: string };
 };
 export interface DesktopAPI {
+  selectAvatar(slot: AvatarSlot): Promise<Result<StagedAvatar | null>>;
+  getAvatar(slot: AvatarSlot): Promise<Result<AvatarAsset | null>>;
+  commitAvatar(slot: AvatarSlot, token: string): Promise<Result<null>>;
+  resetAvatar(slot: AvatarSlot): Promise<Result<null>>;
   getSnapshot(): Promise<Result<Snapshot>>;
   updateSettings(settings: Settings): Promise<Result<Settings>>;
   selectResume(): Promise<Result<SelectedResume | null>>;

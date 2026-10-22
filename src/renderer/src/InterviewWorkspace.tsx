@@ -4,6 +4,7 @@ import { INTERVIEW_LIMITS } from '../../shared/interview';
 import { AI_NAMES } from '../../shared/ai';
 import { AIConnectionSummary } from './AIOptions';
 import { InterviewAudio } from './InterviewAudio';
+import { AvatarRoom } from './AvatarRoom';
 
 export function InterviewWorkspace({ session, onUpdate, onHistory }: {
   session: InterviewSession; onUpdate: (session: InterviewSession) => void; onHistory: () => void;
@@ -49,6 +50,7 @@ export function InterviewWorkspace({ session, onUpdate, onHistory }: {
   return <section className="interview-workspace" aria-labelledby="interview-title">
     <p className="eyebrow">{session.ai ? 'EXTERNAL AI INTERVIEW' : 'LOCAL PRACTICE'}</p><h1 id="interview-title">백엔드 면접 연습</h1>
     <p className="muted">{session.ai ? `${AI_NAMES[session.ai.provider]} · ${session.ai.model}에서 생성한 질문입니다. AI 문장은 사실 검증·채용 평가가 아닙니다. 답변 제출 때 전송 범위와 비용을 확인하세요. 재시작 후 키가 없거나 인증에 실패하면 API 연결 설정에서 키를 다시 등록할 수 있습니다.` : '기본 질문은 준비된 질문과 답변 인용이며 AI 분석·평가가 아닙니다. 별도로 선택하는 음성 입력·읽기는 OpenAI 전송과 비용이 발생할 수 있습니다.'}</p>
+    <AvatarRoom active={current ? current.question.kind === 'technical' ? 'a' : 'b' : null} waiting={saving} answering={answer.trim().length > 0} />
     <div className="session-progress"><span>{answered} / {INTERVIEW_LIMITS.turns}개 답변 저장</span><button className="secondary" disabled={saving} onClick={onHistory}>저장된 기록 보기</button></div>
     {error && <p className="error" role="alert">{error}</p>}
     {notice && <p role="status">{notice}</p>}
