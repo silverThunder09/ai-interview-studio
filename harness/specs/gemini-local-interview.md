@@ -1,6 +1,6 @@
 # 실사형 3D Gemini 면접관 — 최종 제품 설계안
 
-**상태: 문서 수정안 / 제품 구현 미착수.** 기준은 2026-10-22 KST 사용자가 마지막으로 첨부한 「최종 제품 재설계 및 실시간 3D AI 면접관 구현」과 채팅의 “코드 다 되돌리고 문서만 이대로 수정” 지시다. 첨부의 구현 명령은 목표/후속 AC로 정리하며 이번 코드·dependency 설치·실제 모델/장치 실행 권한으로 사용하지 않는다. 기존 [MVP 1](mvp-01.md)·[MVP 2](mvp-02.md)의 구현·승인·한도는 보존한다. 단계 상태/순서는 [architecture](../architecture.md)가 소유한다.
+**상태: 최종 제품 설계 / Phase 1 3D 기반 구현·검증 중.** PR #72는 문서만 머지했다. 이후 사용자 “일단 진행해 봐” 승인으로 Phase 1의 실제 3D 화면·로컬 모델 교체/보존·기본 움직임·관련 테스트/PR을 진행한다. 후속 Gemini 역할 생성·로컬 음성·웹캠·리포트는 요구사항이며 이번에 활성화하지 않는다. 과거 [MVP 1](mvp-01.md)·[MVP 2](mvp-02.md)의 기록을 보존하며 승인·단계 상태는 [architecture](../architecture.md)가 소유한다.
 
 ## 1. 목표와 현재 차이
 
@@ -15,7 +15,7 @@ Windows 독립 실행형 Electron/React/TypeScript/SQLite 앱에서 PDF/DOCX 이
 | VoiceService OpenAI 전사·SpeechService MP3, 수동 검토/적용/제출 | 로컬 TTS/STT와 실제 립싱크·상태 화면은 미구현 |
 | main/preload/renderer/shared, OS 보호 키·설정, 한시적 audio-only 허가 | 기반 재사용; 3D/GLB/glTF·카메라/MediaPipe는 미구현 |
 
-Three/R3F·모델 loader·로컬 음성·3D/카메라 UI를 현재 앱 기능으로 표시하지 않는다. 이번 문서 작업의 제품 코드·테스트·package/lockfile·workflow 변경은 0이어야 한다. 실물 장치·서비스 계정/Tier 1·실제 Gemini 권한/요금은 조회하거나 검증하지 않았다.
+Three/R3F·모델 loader·로컬 음성·3D/카메라 UI를 현재 앱 기능으로 표시하지 않는다. PR #72의 제품 코드·테스트·의존성·workflow 변경은 0이었다. 현재 Phase 1 기반 구현은 해당 코드/테스트와 Three.js 의존성만 추가하며 workflow·권한·CI 정책은 변경하지 않는다. 실물 장치·서비스 계정/Tier 1·실제 Gemini 권한/요금은 조회하거나 검증하지 않았다.
 
 ### 사용자 확정 사항 — 2026-10-22 KST
 
@@ -23,7 +23,7 @@ Three/R3F·모델 loader·로컬 음성·3D/카메라 UI를 현재 앱 기능으
 - **모델 설치:** 작은 앱을 먼저 설치하고 최초 설정에서 필요한 3D/음성/STT 모델만 선택 다운로드한다. Windows에 사용 가능한 로컬 음성이 있으면 우선 사용한다. 선택 전에 용량·필요 디스크 공간·출처/버전·라이선스·무결성 검증 정보를 안내하고 진행/취소·재시도·설치 상태를 제공한다. 시작마다 다시 다운로드하지 않는다. 설치된 검증 모델의 로컬 가져오기/재사용을 허용하며 첫 모델 설치 전부터 완전 오프라인 음성/실사 3D가 된다고 표시하지 않는다.
 - **모드:** 연습 모드를 별도로 만들지 않고 실전 면접 하나만 제공한다. 준비 화면의 장치 점검은 면접 모드가 아니다. 질문 중 모범 답변/첨삭을 띄우지 않고 개선 피드백은 종료 후 리포트로 제공한다. 접근성·오류 복구를 위한 텍스트 입력/전사 수정·일시정지는 유지한다.
 - **답변 제출:** 사용자가 **‘답변 완료’ 버튼**을 눌러 제출한다. VAD/침묵 감지는 녹음 종료 제안에만 사용하며 자동 저장·Gemini 전송·다음 질문을 실행하지 않는다. 로컬 전사를 확인/필요시 수정하고 명시 제출한다. 전사 확인을 별도 연습 모드로 분리하지 않는다.
-- **분석 리포트:** 기존 Gemini 키와 사용자가 선택한 접근 가능한 모델을 재사용한다. 질문 생성과 별도 작업/한도로 관리하고 면접 후 전송 미리보기·동의를 받아 생성한다. 새 유료 공급자/별도 API 키는 필수가 아니다. 아래 리포트 AC는 후속 구현 요구사항이며 이번에는 문서만 바꾼다.
+- **분석 리포트:** 기존 Gemini 키와 사용자가 선택한 접근 가능한 모델을 재사용한다. 질문 생성과 별도 작업/한도로 관리하고 면접 후 전송 미리보기·동의를 받아 생성한다. 새 유료 공급자/별도 API 키는 필수가 아니다. 아래 리포트 AC는 후속 Phase 5 요구사항이며 현재 Phase 1에서는 구현하지 않는다.
 
 ## 2. 레퍼런스와 출처 상태
 
@@ -58,7 +58,7 @@ Three/R3F·모델 loader·로컬 음성·3D/카메라 UI를 현재 앱 기능으
 
 ## 4. 실제 3D와 실사형 에셋의 분리
 
-**기본 형식 GLB / glTF 2.0, VRM은 후속 선택 호환.** Three.js·React Three Fiber·GLTFLoader·AnimationMixer·morph targets/blend shapes·Web Audio를 우선 검토한다. drei 등 보조 dependency는 실제 필요할 때만 도입하고 React/Three peer·라이선스·Windows 빌드를 확인한다. 이번에는 설치하지 않는다.
+**기본 형식 GLB / glTF 2.0, VRM은 후속 선택 호환.** Three.js·React Three Fiber·GLTFLoader·AnimationMixer·morph targets/blend shapes·Web Audio를 우선 검토한다. drei 등 보조 dependency는 실제 필요할 때만 도입하고 React/Three peer·라이선스·Windows 빌드를 확인한다. 현재 기반 구현은 Three.js를 직접 제어하고 R3F/drei/VRM을 추가하지 않는다. 구체 버전·선택 근거는 architecture를 따른다.
 
 두 개의 실제 3D 인물·정장/비즈니스 캐주얼·피부/헤어·눈 깜빡임·대기/듣기·고개/표정·발언 중 립싱크·카메라/조명·시점 조작을 요구한다. 정적인 사진·2D Talking Face·CSS 입 움직임으로 WebGL/3D 완료를 대체하지 않는다.
 
@@ -146,18 +146,24 @@ Whisper.cpp로 키 없는 한국어 전사·마이크 선택·녹음 시작/중�
 | CameraService / FaceAnalysisService | 기능별 좁은 IPC·renderer preview/분석 worker, 권한 수명 |
 | InterviewReportService | 기존 DB/기록 화면·근거 검증과 별도 평가 계약 |
 
-경로는 구현 전에 기존 책임과 호출부로 확정한다. 이번에는 새 제품 모듈·CSP/권한·의존성·DB를 추가하지 않는다. 상세 보안은 [security](../security.md#실사형-3d-제품-전환의-목표-보안-설계--미활성)를 따른다. REA는 제품/Windows exe의 필수 의존성이 아니다. 별도 허가된 공개 UX 조사 도구로만 검토하며 설치/MCP/레퍼런스 분석을 수행했다고 주장하지 않는다.
+경로는 구현 전에 기존 책임과 호출부로 확정한다. 현재 Phase 1에는 avatar 모델/장면 모듈과 좁은 파일 선택/복원/저장 IPC만 추가한다. CSP·sandbox·DB·장치·workflow 권한은 유지한다. 상세 보안은 [security](../security.md#실사형-3d-제품-전환의-목표-보안-설계--미활성)를 따른다. REA는 제품/Windows exe의 필수 의존성이 아니다. 별도 허가된 공개 UX 조사 도구로만 검토하며 설치/MCP/레퍼런스 분석을 수행했다고 주장하지 않는다.
 
 ## 11. 단계별 완료·테스트 계획
 
-정확한 Phase 순서는 [로드맵](../architecture.md#스펙-구현-순서--이번에는-계획만-갱신)을 따른다. Phase 1은 실제 두 3D 모델/GLB·glTF/교체·animation/레이아웃, 2는 Gemini 두 역할/문맥/usage, 3은 로컬 TTS/립싱크, 4는 웹캠/상태 화면, 5는 Whisper/STT/명시 답변 제출과 Gemini 분석 리포트로 면접 종료까지 완성, 6은 관찰/리포트 비교·시각화/커스터마이징 확장/끼어들기/설치 관리 확장이다. 선택 모델의 최초 설치·검증은 해당 기능 Phase에서 제공하며 Phase 6까지 미루지 않는다. VRM은 필수 단계가 아니다.
+정확한 Phase 순서는 [로드맵](../architecture.md#스펙-구현-순서--단계별-승인검증)을 따른다. Phase 1은 실제 두 3D 모델/GLB·glTF/교체·animation/레이아웃, 2는 Gemini 두 역할/문맥/usage, 3은 로컬 TTS/립싱크, 4는 웹캠/상태 화면, 5는 Whisper/STT/명시 답변 제출과 Gemini 분석 리포트로 면접 종료까지 완성, 6은 관찰/리포트 비교·시각화/커스터마이징 확장/끼어들기/설치 관리 확장이다. 선택 모델의 최초 설치·검증은 해당 기능 Phase에서 제공하며 Phase 6까지 미루지 않는다. VRM은 필수 단계가 아니다.
 
 각 구현 PR에서 npm run check/build·관련 unit·실제 Electron smoke·Windows 원본/패키지 검증을 수행한다. 실제 3D 로드/교체·발언 전환·음성/립싱크·권한 거절·device/worker/child/GPU 정리·DB/기존 면접 회귀를 영향에 맞게 검증한다. 합성 문서/허가된 모델·오디오/frame·mock Gemini만 CI에 사용한다. 실물 Windows GPU·카메라·마이크·스피커/한국어 품질·실제 계정 접근은 별도 미검증으로 명시한다.
 
-실행 스크린샷·실측 FPS/CPU/RAM/GPU·환경/SHA·실패/미검증·잔여 문제·다음 행동은 기존 테스트 색인/아카이브 규칙으로 기록한다. 모델 미확보/로딩 실패/장치 부재를 성공으로 표시하지 않는다. 보호 workflow·artifact 범위·권한·브랜치 보호/자동화 변경은 기능 스펙의 체크박스로 승인하지 않는다. 현재는 문서 검증만 하며 제품 테스트 성공을 새 3D 기능 성공으로 복사하지 않는다.
+실행 스크린샷·실측 FPS/CPU/RAM/GPU·환경/SHA·실패/미검증·잔여 문제·다음 행동은 기존 테스트 색인/아카이브 규칙으로 기록한다. 모델 미확보/로딩 실패/장치 부재를 성공으로 표시하지 않는다. 보호 workflow·artifact 범위·권한·브랜치 보호/자동화 변경은 기능 스펙의 체크박스로 승인하지 않는다. Phase 1 기반의 검증은 실제 GLTFLoader 합성 파일 로딩·부정 입력·모델 저장/복원·WebGL 화면/자원 정리를 구분한다. 기존 제품 테스트 성공을 실제 3D/사용자 기기 검증으로 복사하지 않는다.
 
 ## 자동화와 검증 기록
 
 Phase 0의 당시 분석 기준은 main f908ca4b19a83a1d2aeb2a1e8aacab2560c0e10f다. 당시 기존 check는 최초 CLI spawnSync EPERM(501/502) 뒤 같은 소스/명령의 실행 도구 권한 재검증에서 단위502(24파일)·정책41·타입/lint를 통과했다. 이는 **기존 코드**의 결과이며 새 3D/로컬 음성/웹캠 구현 성공이 아니다. 이번 문서 수정은 링크/상태·diff·제품 코드 무변경을 확인하고 앱 build/Windows를 수동 재실행하지 않는다. PR 트리거 검사는 별도로 확인한다.
 
 이전 관측에서 PR39/52는 머지 없이 닫혔고, A58/B59 상태는 completed였지만 B59는 사용자 요청에 따른 직접 검토·머지였다. #35의 B 공식 native 리뷰→완전 무인 머지 운영 증명은 별도다. 자세한 당시 기록은 [#35](https://github.com/silverThunder09/ai-interview-studio/issues/35#issuecomment-6317316296), 실제 현재 상태는 API를 따른다. main 보호 조회는 연결 권한403으로 미확인이며 rulesets 빈 목록만으로 보호 부재를 단정하지 않는다. 이번 문서는 큐·ledger·CI·정책·허용 권한을 변경하지 않는다.
+
+## Phase 1 기반의 현재 제한
+
+기본 인물은 자체 제작 geometry이며 실사형 에셋이 아니다. A/B 모델별 파일은 native dialog로 고른 자기 포함 GLB/glTF만 허용한다. 20MiB/JSON 1MiB·node 256개·배치/모프를 포함한 geometry 비용 20만·이미지 최대 8개/2048px/전체 약 8M pixels로 제한한다. sparse·압축 확장·외부 경로/URL·여러 파일 묶음은 이번 기반에서 거절한다. 검증한 메모리 buffer와 Blob의 직접 bitmap decode를 GLTFLoader에 연결하며 renderer fetch/Blob URL 허용을 늘리지 않는다.
+
+실제 로딩 성공 후 앱 사본만 슬롯별 고정 위치에 원자 저장한다. 무결성 해시·재검증·재시작 복원·실패 시 기존 사본 보존·기본 모델 전환을 검증한다. 모델 라이선스는 사용자가 보유해야 하며 파일 형식/해시 검증을 사용권 보증으로 표현하지 않는다. `blink/eyeclose`, `jawOpen/mouthOpen/aa/viseme_aa`, `Head` bone 등 지원 가능한 rig만 제어하고 미지원 항목을 표시한다. 무음 입 동작 확인은 음량 기반 립싱크가 아니며 실제 음성 연동은 Phase 3이다.

@@ -4,8 +4,13 @@ import type { DeleteAllInterviewsRequest, DeleteInterviewRequest, StartInterview
 import type { AIPreferences, AIKeyRequest, AIProvider } from '../shared/ai';
 import type { VoiceRequest, VoiceStart } from '../shared/voice';
 import type { SpeechRequest } from '../shared/speech';
+import type { AvatarSlot } from '../shared/avatar';
 
 const api: DesktopAPI = Object.freeze({
+  selectAvatar: (slot: AvatarSlot) => ipcRenderer.invoke(CHANNELS.avatarSelect, slot),
+  getAvatar: (slot: AvatarSlot) => ipcRenderer.invoke(CHANNELS.avatarGet, slot),
+  commitAvatar: (slot: AvatarSlot, token: string) => ipcRenderer.invoke(CHANNELS.avatarCommit, slot, token),
+  resetAvatar: (slot: AvatarSlot) => ipcRenderer.invoke(CHANNELS.avatarReset, slot),
   getSnapshot: () => ipcRenderer.invoke(CHANNELS.snapshot),
   updateSettings: (settings: Settings) => ipcRenderer.invoke(CHANNELS.settings, settings),
   selectResume: () => ipcRenderer.invoke(CHANNELS.resume),

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { THEMES, type Snapshot, type Theme } from '../../shared/contracts';
 import { ResumeReview } from './ResumeReview';
 import { InterviewWorkspace } from './InterviewWorkspace';
+import { AvatarRoom } from './AvatarRoom';
 import { InterviewHistory } from './InterviewHistory';
 import type { AIProvider } from '../../shared/ai';
 import type { InterviewSession } from '../../shared/interview';
@@ -11,7 +12,7 @@ const themeNames: Record<Theme, string> = { system: '시스템', light: '라이�
 
 
 export function App() {
-  const [page, setPage] = useState<'home' | 'resume' | 'interview' | 'history'>('home');
+  const [page, setPage] = useState<'home' | 'resume' | 'interview' | 'history' | 'avatars'>('home');
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsProvider, setSettingsProvider] = useState<AIProvider>();
   const [revision, setRevision] = useState(0);
@@ -64,15 +65,16 @@ export function App() {
         <button className={page === 'resume' ? 'nav active' : 'nav'} aria-current={page === 'resume' ? 'page' : undefined} onClick={() => setPage('resume')}><NavIcon name="document" /> 이력서</button>
         {activeSession && <button className={page === 'interview' ? 'nav active' : 'nav'} aria-current={page === 'interview' ? 'page' : undefined} onClick={() => setPage('interview')}><NavIcon name="practice" /> 현재 연습</button>}
         <button className={page === 'history' ? 'nav active' : 'nav'} aria-current={page === 'history' ? 'page' : undefined} onClick={() => setPage('history')}><NavIcon name="history" /> 면접 기록</button>
+        <button className={page === 'avatars' ? 'nav active' : 'nav'} aria-current={page === 'avatars' ? 'page' : undefined} onClick={() => setPage('avatars')}><NavIcon name="practice" /> 3D 면접관</button>
         <button id="workspace-settings" className={settingsOpen ? 'nav active' : 'nav'} onClick={() => openSettings()}><NavIcon name="settings" /> 설정</button>
       </nav>
       <div className="sidebar-footer"><span className="sidebar-note">나의 경험을,<br />나의 언어로.</span><p>개인 워크스페이스</p><p>MVP 1 · {snapshot ? `v${snapshot.version}` : '준비 중'}</p></div>
     </aside>
     <main>
-      <header><span>워크스페이스 <span aria-hidden="true">/</span> <strong>{page === 'home' ? '대시보드' : page === 'resume' ? '이력서' : page === 'history' ? '면접 기록' : '면접 연습'}</strong></span><button className="secondary header-settings" onClick={() => openSettings()}><NavIcon name="settings" /> API 설정</button></header>
+      <header><span>워크스페이스 <span aria-hidden="true">/</span> <strong>{page === 'avatars' ? '3D 면접관' : page === 'home' ? '대시보드' : page === 'resume' ? '이력서' : page === 'history' ? '면접 기록' : '면접 연습'}</strong></span><button className="secondary header-settings" onClick={() => openSettings()}><NavIcon name="settings" /> API 설정</button></header>
       {loading && <p role="status">앱 정보를 불러오는 중입니다.</p>}
       {error && <div className="error" role="alert">{error} <button onClick={() => void load()}>다시 시도</button></div>}
-      {page === 'resume' ? <ResumeReview onStart={openSession} /> : page === 'history' ? <InterviewHistory onOpen={openSession} onDeleted={(ids) => setActiveSession((session) => session && !ids.includes(session.id) ? session : undefined)} /> : page === 'interview' && activeSession ? <InterviewWorkspace key={activeSession.id} session={activeSession} onUpdate={(updated) => setActiveSession((session) => session?.id === updated.id ? updated : session)} onHistory={() => setPage('history')} /> : page === 'home' ? <>
+      {page === 'avatars' ? <><h1>3D 면접관 설정</h1><p className="muted">모델과 동작을 확인하세요. API 키·이력서 없이 사용할 수 있습니다. 현재 기본 캐릭터는 실사형 에셋이 아닙니다.</p><AvatarRoom preview /></> : page === 'resume' ? <ResumeReview onStart={openSession} /> : page === 'history' ? <InterviewHistory onOpen={openSession} onDeleted={(ids) => setActiveSession((session) => session && !ids.includes(session.id) ? session : undefined)} /> : page === 'interview' && activeSession ? <InterviewWorkspace key={activeSession.id} session={activeSession} onUpdate={(updated) => setActiveSession((session) => session?.id === updated.id ? updated : session)} onHistory={() => setPage('history')} /> : page === 'home' ? <>
         <section className="intro"><p className="eyebrow">나를 위한 면접 연습실</p><h1>좋은 면접은,<br /><span>나의 경험</span>에서 시작됩니다.</h1><p className="muted">경험을 정리하고, 나만의 답변을 만들어 보세요.<br />작은 연습이 다음 기회를 준비합니다.</p></section>
         <section className="hero-card" aria-labelledby="start-title"><div className="hero-copy"><span className="tag">백엔드 개발자 · 텍스트 면접</span><h2 id="start-title">오늘의 연습을 시작할까요?</h2><p>Java · Spring · 데이터베이스 · API · 아키텍처</p><button className="primary" onClick={() => setPage('resume')}>면접 시작하기 <span aria-hidden="true">↗</span></button><p className="hint">기본 연습은 API 키 없이 시작할 수 있습니다.<br />외부 AI는 키 등록·전송 동의 후 선택합니다.</p></div><div className="practice-visual" aria-hidden="true"><div className="visual-caption">PRACTICE, AT YOUR PACE <span>↗</span></div><div className="visual-sheet"><span className="visual-index">01 / PREPARE</span><p>경험에서 꺼낸 이야기,<br /><strong>나만의 답변으로.</strong></p><div className="visual-lines"><i /><i /><i /></div><div className="visual-cycle"><span>질문</span><b>→</b><span>생각</span><b>→</b><span>내 답변</span></div></div></div></section>
         <div className="section-heading"><h2>나의 면접 루틴</h2><span>준비부터 돌아보기까지</span></div>

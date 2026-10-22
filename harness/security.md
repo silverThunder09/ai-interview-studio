@@ -1,6 +1,6 @@
 # 보안·개인정보·라이선스
 
-현재 구현과 향후 설계를 구분한다. [방향 재정립](architecture.md)의 Gemini·실제 3D·로컬 음성/화상 전환은 이번에 문서안만 작성하며 아래 현재 API/장치 통제를 활성화하거나 완화하지 않는다. 미래 데이터·실행 경계는 이 문서 마지막의 목표 설계를 따른다.
+현재 구현과 향후 설계를 구분한다. [방향 재정립](architecture.md)의 Gemini·실제 3D·로컬 음성/화상 전환은 PR #72에서 문서안만 반영했고 이후 승인된 Phase 1에서는 3D 기반/로컬 모델만 구현한다. 아래 API/장치 통제를 완화하지 않는다. 미래 데이터·실행 경계는 이 문서 마지막의 목표 설계를 따른다.
 
 ## MVP 0 위협 모델과 현재 통제
 
@@ -123,7 +123,7 @@ renderer는 main bytes를 `audio/mpeg` Blob URL로만 재생한다. CSP는 `medi
 
 ## 실사형 3D 제품 전환의 목표 보안 설계 — 미활성
 
-2026-10-22 KST 최종 제품 첨부와 “코드 원복·문서만 수정” 정정을 반영한 설계안이다. GLB/glTF 2.0이 기본이며 VRM은 후속 선택 호환이다. 실제 코드·모델 설치/실행·권한/CI 변경은 하지 않는다. 다음은 Phase별 검토·구현 시 충족할 통제이며 현재 장치/API/전송 동의를 변경하지 않는다. 범위·AC·라이선스 후보는 [리팩터링 스펙](specs/gemini-local-interview.md)을 따른다.
+2026-10-22 KST 최종 제품 첨부와 “코드 원복·문서만 수정” 정정을 반영한 설계안이다. GLB/glTF 2.0이 기본이며 VRM은 후속 선택 호환이다. 해당 PR은 문서만 반영했다. 이후 승인된 Phase 1 기반은 Three.js·제한된 로컬 GLB/glTF 선택/저장/렌더링을 다루며 CI/장치/외부 전송 권한을 바꾸지 않는다. 다음은 Phase별 검토·구현 시 충족할 통제이며 현재 장치/API/전송 동의를 변경하지 않는다. 범위·AC·라이선스 후보는 [리팩터링 스펙](specs/gemini-local-interview.md)을 따른다.
 
 | 데이터/기능 | 목표 처리·보존 | 금지·실패 경계 |
 | --- | --- | --- |
@@ -161,7 +161,7 @@ renderer는 main bytes를 `audio/mpeg` Blob URL로만 재생한다. CSP는 `medi
 
 ## 3D 모델·에셋·UX 조사 경계
 
-최신 사용자 지시는 코드 원복·문서 수정만이다. 실제 WebGL 렌더러와 고품질 실사형 한국인 스타일 사람 모델 확보는 별도 완료 조건으로 둔다. geometry 인물이나 2D 목업을 최종 실사 에셋/실제 실행 증거로 보고하지 않는다. 무료라는 표시만으로 개인 사용·변경·변환·재배포가 허용된다고 추정하지 않는다.
+코드 원복·문서 수정만 수행한 PR #72 이후 사용자가 Phase 1 구현 진행을 승인했다. 실제 WebGL 렌더러와 고품질 실사형 한국인 스타일 사람 모델 확보는 별도 완료 조건으로 둔다. geometry 인물이나 2D 목업을 최종 실사 에셋/실제 실행 증거로 보고하지 않는다. 무료라는 표시만으로 개인 사용·변경·변환·재배포가 허용된다고 추정하지 않는다.
 
 기본 GLB/glTF 2.0을 사용자 선택·제한 읽기·구조/버전/자원/텍스처 상한·무결성 검사 후 로컬 로더에 전달한다. glTF의 별도 buffer/texture는 명시적으로 선택/허용된 리소스 묶음 내부의 상대 경로만 사용하고 traversal·symlink 탈출·외부 URL/임의 파일을 차단한다. 모델·이미지를 executable/plugin으로 취급하지 않는다. VRM은 선택 호환이며 기본 로더의 선행 조건이 아니다.
 
@@ -172,3 +172,11 @@ renderer는 main bytes를 `audio/mpeg` Blob URL로만 재생한다. CSP는 `medi
 한국어 Windows TTS·무료 엔진의 실제 오디오 출력/분석 가능성·지원 voice를 확인한 뒤 음량 립싱크를 연결한다. 음소 정확성을 과장하거나 분석할 실제 음성이 없는 상태를 립싱크 완료로 처리하지 않는다. 오디오 원본·WebGL/모델 자원·AudioContext·worker/child·모든 track은 교체/취소/이탈/종료 시 해제한다. 얼굴 관찰은 로컬의 측정 가능한 구도/대략적 head pose만 다루고 자신감·감정·합격/직무 적합성·거짓말/인성/지능을 판정하지 않는다.
 
 사람인·에듀스·무하유·뷰인터·JOBDA의 공개 UX는 독립 구현을 위한 조사 후보다. 이번 작업은 그 서비스 내부/비공개 화면이나 사용자 언급 MP4를 직접 분석하지 않았다. 사용자 제공 영상 특징과 독립 확인한 근거를 구분한다. 서비스 화면·캐릭터·사람 얼굴/목소리·보호 소스·모델/에셋을 복제하지 않는다. REA는 제품 dependency/Windows 실행 파일에 포함하지 않고 별도 허가된 조사 도구로만 검토한다. 이 문서가 REA 설치/접근·새 외부 전송·CI/보호 규칙 변경을 승인하지 않는다.
+
+### Phase 1 기반에서 구현한 경계
+
+선택/복원/commit/reset IPC는 정확한 창·메인 frame·URL 검사와 인수 개수·A/B slot 검증을 통과해야 한다. renderer는 파일 경로를 지정하지 못하며 native dialog로 고른 단일 자기 포함 GLB/glTF를 제한 읽기한다. 외부 URL/상대 파일 참조·확장 decoder·순환/중복 자식·과대 geometry/텍스처를 파싱 전에 거절한다. GLTFLoader는 검증한 메모리 buffer와 직접 Blob bitmap decode만 사용하며 URL 요청은 거절한다. CSP `connect-src none`과 이미지 whitelist·sandbox·contextIsolation은 유지한다.
+
+모델 선택은 pending token으로 준비하며 renderer parser 성공 후 같은 slot/token만 commit한다. 사용자 profile의 avatar-models 고정 슬롯에 이름/형식/해시와 bytes를 독점 임시 파일→rename으로 저장한다. 복원 시 제한 읽기·SHA-256·형식을 다시 확인하고 손상을 자동 덮어쓰지 않는다. reset은 앱 사본만 삭제하고 원본 경로/이력서/기록은 건드리지 않는다. 이는 개인정보 DB 암호화나 모델의 안전성/사용권 보증이 아니다.
+
+한 WebGL context, 제한 DPR/30FPS, 숨김 시 정지, 모델 교체/이탈 시 mixer·geometry/material/texture/bitmap·controls·RAF·observer·GPU context 정리를 적용한다. 실제 Windows GPU/CPU/RAM 실측과 실사 모델 품질은 테스트 결과와 구분한다.
