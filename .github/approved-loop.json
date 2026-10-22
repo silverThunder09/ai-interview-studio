@@ -20,6 +20,15 @@
       "allowed_paths": [
         "tests/unit/loop-coordinator.test.ts"
       ]
+    },
+    {
+      "id": "queue-recovery",
+      "pr": 75,
+      "goal": "tests/unit/loop-queue-recovery.test.ts 하나에 큐 확장 저장의 실패/복구 회귀 테스트를 추가하라. main의 appendApprovedTasks와 LoopStore를 직접 사용하고 합성 GitHub API fixture를 만든다. (1) ref PATCH가 원격에는 반영됐지만 응답이 유실돼 첫 호출이 reject한 뒤 다시 읽으면 이미 확장된 상태를 인식해 두 번째 호출은 false이고 추가 POST/PATCH가 0인지, 기존 completed receipt/cycles/bootstrap이 그대로인지 확인한다. (2) tree/commit 생성 후 ref 재확인 때 다른 SHA로 바뀌면 PATCH 없이 loop_cas_conflict로 거절하는지 확인한다. (3) 상태 branch/파일 GET 실패는 초기화 POST나 Cloud 발신 없이 전파되는지 확인한다. 기존 checkpoint 테스트를 유지하고 skip/todo/보안 완화 없이 npm run check를 실제 실행한다. 제품 기능/스펙/정책/권한/다른 파일을 변경하지 않는다. 실제 외부 API/키를 호출하지 말고 실제 테스트 결과와 제한된 UTF-8 v2 patch를 반환한다.",
+      "approval": "2026-10-23 KST 현재 채팅: 멈추지 말고 자동화 돌리라고 요청. 기존 승인 작업 후속 연결과 한정 응답 유실·경합 운영 검증; 새 MVP/전송/권한 확대 제외.",
+      "allowed_paths": [
+        "tests/unit/loop-queue-recovery.test.ts"
+      ]
     }
   ]
 }
