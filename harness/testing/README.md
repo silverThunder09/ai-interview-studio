@@ -2,9 +2,9 @@
 
 **지금 무엇이 통과했는지는 [최신 기록](latest.md)부터 읽는다.** 과거 결과는 아래 표와 [archive/](archive/)에서 찾는다. 자동 검증 성공과 실제 사용자 기기/API 검증은 구분한다.
 
-## 진행 중 검증
+## 최신 검증
 
-[Phase 1 3D 기반의 실제 실행·검증](phase-1-3d.md): 단위515·정책41·build/라이선스·로컬 실제3D smoke 성공, 실제 화면 포함. 최초 Windows 원본10/패키지10 성공 후 픽셀 검사를 강화했으며 최신 PR CI를 별도로 확인한다. 앱의 최신 성공 기준을 아직 교체하지 않는다.
+[Phase 1 실제 3D 기반](phase-1-3d.md): 단위515·정책41·로컬 실제3D smoke·Windows 원본10/패키지10 성공, 소프트웨어 조건30FPS·실제 화면 포함. 실사 에셋/사용자 장치는 미검증이다. [최신 기준](latest.md)의 SHA와 실행 링크를 확인한다.
 
 ## 기록 목록
 
@@ -22,7 +22,8 @@
 | 과거 | 2026-10-18 | [통합 음성 연습·전사 검토·직접 제출](archive/2026-10-18/tests-2026-10-18-pr24.md) | [#24](https://github.com/silverThunder09/ai-interview-studio/pull/24) | 201 / 40 | 6 / 6 |
 | 과거 | 2026-10-18 | [UI·API 설정 분리와 OS 보호 저장](archive/2026-10-19/tests-2026-10-18-pr31.md) | [#31](https://github.com/silverThunder09/ai-interview-studio/pull/31) | 220 / 40 | 8 / 8 |
 
-| 최신 | 2026-10-19 | [전체 시각 디자인·테마·최소 창 크기](latest.md) | [#34](https://github.com/silverThunder09/ai-interview-studio/pull/34) | 220 / 40 | 9 / 9 |
+| 과거 | 2026-10-19 | [전체 시각 디자인·테마·최소 창 크기](archive/2026-10-22/tests-2026-10-19-pr34.md) | [#34](https://github.com/silverThunder09/ai-interview-studio/pull/34) | 220 / 40 | 9 / 9 |
+| 최신 | 2026-10-22 | [실제 3D 기반·GLB/glTF·복원·픽셀·자원 해제](latest.md) | [#74](https://github.com/silverThunder09/ai-interview-studio/pull/74) | 515 / 41 | 10 / 10 |
 
 각 숫자는 해당 최종 SHA의 성공 실행에서 읽었다. Windows 숫자는 큰 사용자 흐름을 묶은 smoke 개수다. 각 테스트의 assertion 수·코드 커버리지 비율·실제 사용자 환경 성공률은 아니다. 모든 과거 개수를 합산해 현재 테스트 수로 제시하지 않는다.
 

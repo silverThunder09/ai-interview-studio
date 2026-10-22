@@ -6,7 +6,7 @@
 - 초기 코드: ea62bfa9c077ad9744b36b8dc4c02df5abcc6bc5 / tree ce540137b0f3a660dd1431146745e123a15734d6.
 - 프레임 보존·픽셀 검증 수정: 원격02dab4024b008c76c4429c8191c9e35f24379b9f, 로컬f938db3e9fa6eccf60587c1f2b6e45e9c488aaa5와 tree768b9905ac29116eab0e2b4b4492982863ad99ef 일치.
 - 프레임 일정 보정 코드: 원격54e4c193111bc1ddff8c5215bbfb9769563f4060 / tree fd9ad82bc9f85eb4f6fb7013e77b1214e842d32d. 로컬 a1eb771과 코드 tree가 같다.
-- 상태: 로컬 실제 3D 기반 검증 성공. 최초 Windows 원본/패키지10/10 성공 후 픽셀 검사를 강화했으며 최종 CI는 [PR #74](https://github.com/silverThunder09/ai-interview-studio/pull/74)의 정확한 head/실행을 확인한다. 실사 에셋 품질 완료 아님.
+- 상태: 실제 3D 기반 검증 성공. 최종 제품 코드의 PR head1e255efa550954b01a134ba3ae1ed2f1882ca3eb에서515/41·Windows 원본10/패키지10·두 실행30FPS를 확인했다. 이후 기록만 갱신하며 정확한 CI 신원은 [최신 기록](latest.md)에 연결한다. 실사 에셋 품질 완료 아님.
 - 차단 추적: [이슈 #73](https://github.com/silverThunder09/ai-interview-studio/issues/73).
 
 ## 성공한 검사
@@ -48,3 +48,7 @@
 ## 화면 갱신 주기의 추가 회귀 검증
 
 이전 head bc0f66ad의 [Windows39739341118](https://github.com/silverThunder09/ai-interview-studio/actions/runs/39739341118/job/119692503326)은 실제 양쪽 픽셀·일시정지 화면을 포함해 원본10/패키지10·단위513/정책41 성공, 소프트웨어21FPS였다. 매번 마지막 실행 시각에33ms를 더하는 방식은45Hz callback에서22.5FPS로 떨어지는 불필요한 누락을 만든다. 마감 시각을 누적하고 늦은 마감은 건너뛰는 방식으로 보정했다.45/60/90Hz에서4초간119~121frame, 장시간 정지 후 몰아서 실행하지 않음·재개를 단위 검사한다. 로컬 실제 smoke는 다시 성공했고30FPS였다. 이는 Windows/사용자 기기의 성능 보장이 아니며 최신 Windows CI·머지 검증은 PR의 정확한 head로 별도 확인한다. 두 번째 수정 사이클이다.
+
+## 최종 제품 코드 Windows 결과
+
+PR head1e255efa550954b01a134ba3ae1ed2f1882ca3eb의 [Windows39740545189](https://github.com/silverThunder09/ai-interview-studio/actions/runs/39740545189/job/119696435860)는 원본10/패키지10, 두 실행 모두30FPS였다. 단위515/정책41·픽셀/정지/복원/해제 성공과 실제 CI stdout 신원을 확인했다. 이전 같은 소프트웨어 조건21FPS와 구분하며 사용자 노트북 성능으로 일반화하지 않는다. 이 기록 갱신 후 제품 코드가 바뀌지 않았는지와 최신 문서 head의 CI 신원은 머지 직전 재확인한다.

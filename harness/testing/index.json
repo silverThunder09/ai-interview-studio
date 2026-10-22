@@ -2,33 +2,17 @@
   "schema_version": 1,
   "repository": "silverThunder09/ai-interview-studio",
   "recorded_at_kst": "2026-10-22",
-  "current_record_id": "tests-2026-10-19-pr34",
+  "current_record_id": "tests-2026-10-22-phase1-local",
   "notes": [
     "Counts refer to each recorded SHA, not cumulative coverage.",
     "CI uses synthetic documents, provider responses and devices; real paid APIs and user hardware are unverified.",
     "Paths are relative to harness/testing/; historical observations do not authorize future merges."
   ],
   "main_verification": {
-    "head_sha": "079e6b3ff1bd37c6fe51c0013988957cdc3e0569",
-    "result": "passed",
-    "validation": {
-      "run_id": 39142276420,
-      "job_id": 117718955099,
-      "attempt": 1,
-      "unit": 220,
-      "review_policy": 40,
-      "url": "https://github.com/silverThunder09/ai-interview-studio/actions/runs/39142276420/job/117718955099"
-    },
-    "windows": {
-      "run_id": 39142276466,
-      "job_id": 117718955183,
-      "attempt": 1,
-      "source_count": 9,
-      "packaged_count": 9,
-      "source_seconds": 51,
-      "packaged_seconds": 45.3,
-      "url": "https://github.com/silverThunder09/ai-interview-studio/actions/runs/39142276466/job/117718955183"
-    }
+    "result": "see_pr_and_issue",
+    "pr": 74,
+    "issue": 73,
+    "note": "Current record proves the stated PR source. Post-install main CI is recorded on PR74/issue73; the archived PR34 main result is preserved separately."
   },
   "records": [
     {
@@ -1000,11 +984,11 @@
     },
     {
       "id": "tests-2026-10-19-pr34",
-      "status": "current",
+      "status": "archived",
       "date_kst": "2026-10-19",
       "pr": 34,
       "title": "전체 시각 디자인·테마·최소 창 크기",
-      "path": "latest.md",
+      "path": "archive/2026-10-22/tests-2026-10-19-pr34.md",
       "tags": [
         "ui",
         "visual-design",
@@ -1188,10 +1172,10 @@
     },
     {
       "id": "tests-2026-10-22-phase1-local",
-      "status": "verification-pending",
+      "status": "current",
       "date_kst": "2026-10-22",
-      "title": "Phase 1 실제3D · 로컬515/41·실제 smoke 성공, 최신 Windows 재검증",
-      "path": "phase-1-3d.md",
+      "title": "Phase 1 실제3D · 515/41·Windows10/10·소프트웨어30FPS",
+      "path": "latest.md",
       "scope": "application",
       "source_sha": "54e4c193111bc1ddff8c5215bbfb9769563f4060",
       "source_tree_sha": "fd9ad82bc9f85eb4f6fb7013e77b1214e842d32d",
@@ -1203,12 +1187,106 @@
         "glb",
         "gltf",
         "three",
-        "actual-electron",
-        "verification-pending"
+        "actual-electron"
       ],
       "pr": 74,
       "local_smoke": 1,
-      "screenshot": "screenshots/phase1-3d.png"
+      "screenshot": "screenshots/phase1-3d.png",
+      "result": "passed-pr-baseline",
+      "detail_path": "phase-1-3d.md",
+      "tested_head_sha": "1e255efa550954b01a134ba3ae1ed2f1882ca3eb",
+      "tested_base_sha": "130fa63e9ba2a70ce42fd552958be577c8601ae2",
+      "tested_checkout_sha": "86c8c2b67ed72344172542440c9c417461d09c7e",
+      "counts": {
+        "unit": 515,
+        "review_policy": 41,
+        "windows_source": 10,
+        "windows_packaged": 10
+      },
+      "fps": {
+        "local_software": 30,
+        "windows_source_software": 30,
+        "windows_packaged_software": 30,
+        "not_hardware_guarantee": true
+      },
+      "evidence": [
+        {
+          "context": "checks",
+          "run_id": 39740545200,
+          "job_id": 119696435547,
+          "url": "https://github.com/silverThunder09/ai-interview-studio/actions/runs/39740545200/job/119696435547",
+          "attempt": 1,
+          "result": "success",
+          "evidence_step": "success",
+          "ci_evidence": {
+            "repository": "silverThunder09/ai-interview-studio",
+            "context": "checks",
+            "run_id": "39740545200",
+            "pr_number": 74,
+            "head_sha": "1e255efa550954b01a134ba3ae1ed2f1882ca3eb",
+            "base_sha": "130fa63e9ba2a70ce42fd552958be577c8601ae2",
+            "checkout_sha": "86c8c2b67ed72344172542440c9c417461d09c7e"
+          }
+        },
+        {
+          "context": "package",
+          "run_id": 39740545189,
+          "job_id": 119696435860,
+          "url": "https://github.com/silverThunder09/ai-interview-studio/actions/runs/39740545189/job/119696435860",
+          "attempt": 1,
+          "result": "success",
+          "evidence_step": "success",
+          "ci_evidence": {
+            "repository": "silverThunder09/ai-interview-studio",
+            "context": "package",
+            "run_id": "39740545189",
+            "pr_number": 74,
+            "head_sha": "1e255efa550954b01a134ba3ae1ed2f1882ca3eb",
+            "base_sha": "130fa63e9ba2a70ce42fd552958be577c8601ae2",
+            "checkout_sha": "86c8c2b67ed72344172542440c9c417461d09c7e"
+          }
+        },
+        {
+          "context": "pr-policy",
+          "run_id": 39741457551,
+          "job_id": 119699401189,
+          "url": "https://github.com/silverThunder09/ai-interview-studio/actions/runs/39741457551/job/119699401189",
+          "attempt": 1,
+          "result": "success",
+          "evidence_step": "success",
+          "ci_evidence": {
+            "repository": "silverThunder09/ai-interview-studio",
+            "context": "pr-policy",
+            "run_id": "39741457551",
+            "pr_number": 74,
+            "head_sha": "1e255efa550954b01a134ba3ae1ed2f1882ca3eb",
+            "base_sha": "130fa63e9ba2a70ce42fd552958be577c8601ae2",
+            "checkout_sha": "86c8c2b67ed72344172542440c9c417461d09c7e"
+          }
+        }
+      ]
     }
-  ]
+  ],
+  "historical_main_verification": {
+    "head_sha": "079e6b3ff1bd37c6fe51c0013988957cdc3e0569",
+    "result": "passed",
+    "validation": {
+      "run_id": 39142276420,
+      "job_id": 117718955099,
+      "attempt": 1,
+      "unit": 220,
+      "review_policy": 40,
+      "url": "https://github.com/silverThunder09/ai-interview-studio/actions/runs/39142276420/job/117718955099"
+    },
+    "windows": {
+      "run_id": 39142276466,
+      "job_id": 117718955183,
+      "attempt": 1,
+      "source_count": 9,
+      "packaged_count": 9,
+      "source_seconds": 51,
+      "packaged_seconds": 45.3,
+      "url": "https://github.com/silverThunder09/ai-interview-studio/actions/runs/39142276466/job/117718955183"
+    }
+  }
 }

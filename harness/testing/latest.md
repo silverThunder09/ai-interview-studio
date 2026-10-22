@@ -1,43 +1,20 @@
-# 최신 앱 테스트 기록 — 전체 시각 디자인 교체
+# 최신 앱 테스트 기록 — Phase 1 실제 3D 기반
 
-[전체 목록](README.md) · [검색용 JSON](index.json) · [PR #34](https://github.com/silverThunder09/ai-interview-studio/pull/34)
+[전체 목록](README.md) · [색인](index.json) · [PR #74](https://github.com/silverThunder09/ai-interview-studio/pull/74) · [상세 기록·실제 화면](phase-1-3d.md)
 
-2026-10-19 KST, main `079e6b3ff1bd37c6fe51c0013988957cdc3e0569`에서 **단위 220개·정책 40개·Windows 원본/패키지 각 9개**를 확인했다. 실제 개인 API·유료 호출·사용자 장치는 사용하지 않았다.
+2026-10-22 KST, PR head `1e255efa550954b01a134ba3ae1ed2f1882ca3eb` / base `130fa63e9ba2a70ce42fd552958be577c8601ae2` / 실제 merge checkout `86c8c2b67ed72344172542440c9c417461d09c7e`에서 **단위515개·정책41개·Windows 원본10/패키지10 성공**을 확인했다. 두 Windows 실행은 소프트웨어 그래픽 상태에서30FPS였다. 이후 이 기록/색인만 갱신하며 제품 코드는 같다. 머지 판정은 문서 갱신 후 최신 head의 CI 증거로 다시 수행한다.
 
-- 기록 ID: `tests-2026-10-19-pr34` · 자동 검증 통과.
-- 홈·메뉴·아이콘·색상·간격·입력·설정 dialog·면접/기록 카드 디자인을 교체했다. 기능·IPC·동의·보존·의존성을 변경하지 않았다.
-- 이전 [PR #31 설정·보호 저장 기준](archive/2026-10-19/tests-2026-10-18-pr31.md)은 원래 ID·SHA·결과·실행 링크로 보존했다. 개수를 합산하지 않는다.
-- 이 앱 기준은 개발 자동화 PR #26의 단위 테스트 수와 구분한다. 문서/실행기 CI를 앱의 새 기능 기준으로 반복 기록하지 않는다.
-
-## 실제 성공한 검사
-
-| 검사 | 결과·범위 |
+| 검사 | 실제 결과/실행 |
 | --- | --- |
-| 로컬 check | TypeScript·ESLint·단위 220개·정책 40개 성공 |
-| 로컬 build / diff | 번들 생성·git diff --check 성공 |
-| PR Windows 원본 / 패키지 | 각각 9개, 50.2초 / 43.5초 |
-| 머지 후 main 원본 / 패키지 | 각각 9개, 51.0초 / 45.3초 |
-| 새 visual smoke | 1280×850·최소 860×640에서 라이트/다크/시스템 설정, dialog/Escape/초점, 문서→면접→답변 저장→기록과 수평 넘침 확인 |
+| 타입·린트·단위·정책·build/라이선스 | [checks39740545200](https://github.com/silverThunder09/ai-interview-studio/actions/runs/39740545200/job/119696435547), attempt1 성공 |
+| Windows 원본/패키지 | [Windows39740545189](https://github.com/silverThunder09/ai-interview-studio/actions/runs/39740545189/job/119696435860), 원본10/패키지10 성공, 두 실행 모두30FPS |
+| 본문·정책/CI 신원 | [pr-policy39741457551](https://github.com/silverThunder09/ai-interview-studio/actions/runs/39741457551/job/119699401189), attempt1 성공. 세 성공 job의 실제 Record tested head and base stdout 신원 일치 |
+| 로컬 실제 Electron | WebGL2·Ozone headless·명시적 ANGLE SwiftShader·sandbox 유지, 새 3D smoke1개 성공·약30FPS |
+| 시각·모델·보존 | 실제 A/B 픽셀·일시정지 화면 보존·GLB/내장 PNG/glTF·시점/동작·잘못된 URL 거절·재시작 복원·GPU context 해제 확인 |
+| 의존성 | npm audit 알려진 취약점0, 원문 라이선스7개 수집. 공급망/모델 사용권 보증 아님 |
 
-기존 8개 흐름(보안·문서·로컬 면접·외부 AI·Gemini 회귀·설정 보존·음성 입력·통합 음성 연습)에 [visual.spec.ts](../../tests/smoke/visual.spec.ts) 1개를 더했다. 스크린샷을 생성하지만 픽셀 비교·사용자 디자인 만족도·모든 상태의 접근성 감사까지 통과했다고 표현하지 않는다.
+![실제 Electron 기본 3D 화면](screenshots/phase1-3d.png)
 
-## 실제 실행과 코드 기준
+기본 geometry이며 실사형 에셋/최종 디자인이 아니다. 사용자 Galaxy Book3 360·실제 장치/음성/AI·전용 VRAM·지속 부하/peak는 미검증이다. FPS는 해당 소프트웨어 조건의 짧은 측정이며 사용자 PC 보장값이 아니다. 기존 Gemini/이력서/키/SQLite 회귀는 합성 자료로 검사했다. 새 유료 호출·개인 자료 전송은 없다.
 
-| 구분 | SHA |
-| --- | --- |
-| 검사한 PR head | `ce3008969913d6e8c4bd9e45410a387450453721` |
-| 검사한 base | `c07b62d27ecf15326ff8ae5de2c588186724b619` |
-| 실제 merge checkout | `23cce3e5ad793cf4a86db8661b2bff2a91ed1059` |
-| 머지 후 main | `079e6b3ff1bd37c6fe51c0013988957cdc3e0569` |
-
-- PR [checks](https://github.com/silverThunder09/ai-interview-studio/actions/runs/39141519256/job/117716760755), [package](https://github.com/silverThunder09/ai-interview-studio/actions/runs/39141519738/job/117716762445), 최종 본문 갱신 후 [pr-policy](https://github.com/silverThunder09/ai-interview-studio/actions/runs/39142160086/job/117718622861): 모두 최신 attempt 1 성공.
-- 각 성공 Record tested head and base 단계의 실제 마지막 AIS_CI_EVIDENCE 출력에서 위 repository/PR/run/head/base/checkout을 대조했다. PR_BODY·댓글은 증거로 쓰지 않았다. 추출 값은 index.json에 있다.
-- 정확한 head의 AI 자체 COMMENT 리뷰 `5563724136`, 원본 REST reviews 전체 1개·라벨 0·미해결 스레드/관련 결함 이슈 0을 확인했다. 신뢰하는 main의 policy.mjs에 실제 API JSON을 넣어 allowed=true 후 expected-head squash merge와 실제 merged를 확인했다. 사람의 독립 승인으로 표현하지 않는다.
-- main [Validation](https://github.com/silverThunder09/ai-interview-studio/actions/runs/39142276420/job/117718955099), [Windows build](https://github.com/silverThunder09/ai-interview-studio/actions/runs/39142276466/job/117718955183): 모두 attempt 1 성공.
-
-## 성공으로 기록하지 않은 항목
-
-- Cloud Linux의 화면 실행은 OS sandbox 오류로 차단됐다. Chromium/Electron sandbox를 끄지 않고 Windows 실제 Electron 검증과 구분했다.
-- 사용자 PC의 실제 화면·시각 선호·마이크/스피커·실제 서비스 키/모델 접근/과금/전사·생성 품질은 미검증이다.
-- 스타일 변경 과정의 전역 글자/버튼 배치와 동의 체크박스 선택자를 검토했다. 재현 가능한 새 제품 결함은 발견하지 않았다.
-- Codex Cloud 연결·개발 이벤트 실행기 성공은 이 앱 테스트 결과가 아니다. [개발 루프의 실제 검증과 한계](../event-loop.md#실제-검증과-한계)를 별도로 확인한다.
+이전 [PR #34 기준](archive/2026-10-22/tests-2026-10-19-pr34.md)은 원래 ID·SHA·결과·실행 링크를 유지하고 경로 링크만 재배치했다. main 설치/머지 후 CI는 [PR #74](https://github.com/silverThunder09/ai-interview-studio/pull/74)·[#73 검증 기록](https://github.com/silverThunder09/ai-interview-studio/issues/73)의 실제 실행과 구분한다.
