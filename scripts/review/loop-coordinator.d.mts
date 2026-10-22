@@ -7,9 +7,10 @@ export interface LoopState { schema: number; repository: string; revision: numbe
 export function emptyLoopState(config: unknown): LoopState;
 export function parseLoopConfig(config: unknown): { enabled: boolean; tasks: unknown[] };
 export function parseLoopState(state: unknown, config: unknown): LoopState;
+export function appendApprovedTasks(state: unknown, config: unknown): LoopState;
 export function buildReviewRequest(request: unknown): string;
 export function parseReviewResult(comment: unknown, request: unknown): { findings: string[]; comment_id: number; task_url: string };
 export function renderLoopPRBody(original: string, task: unknown, review: unknown): string;
 export function gatherMergeEvidence(...args: unknown[]): Promise<unknown>;
 export function runLoop(options: Record<string, unknown>): Promise<{ state: string; changes: number }>;
-export class LoopStore { constructor(api: unknown, config: unknown); load(): Promise<{ head: string; tree: string; state: LoopState }>; save(old: unknown, next: unknown): Promise<unknown> }
+export class LoopStore { constructor(api: unknown, config: unknown); load(): Promise<{ head: string; tree: string; state: LoopState }>; appendApprovedTasks(): Promise<boolean>; save(old: unknown, next: unknown): Promise<unknown> }

@@ -76,16 +76,43 @@ export function parseLoopState(value, config) {
   return v;
 }
 
+/** Only a trusted-main suffix may extend a fully completed, unlocked queue. */
+export function appendApprovedTasks(value, config) {
+  const c = parseLoopConfig(config), v = obj(value);
+  if (v.config_hash === hash(JSON.stringify(c.tasks))) return parseLoopState(v, c);
+  ensure(Array.isArray(v.tasks) && v.tasks.length > 0 && v.tasks.length < c.tasks.length, 'invalid_queue_extension');
+  // The old hash binds goals, approvals and allowed paths as well as task IDs.
+  parseLoopState(v, { ...c, tasks: c.tasks.slice(0, v.tasks.length) });
+  ensure(v.lease === null && v.tasks.every(t => t.phase === 'completed'), 'queue_extension_not_idle');
+  const next = JSON.parse(JSON.stringify(v));
+  next.config_hash = hash(JSON.stringify(c.tasks));
+  next.tasks.push(...emptyLoopState(c).tasks.slice(v.tasks.length));
+  next.revision++;
+  return parseLoopState(next, c);
+}
+
 /** Exact-parent non-force commits. Existing state is never initialized/reset implicitly. */
 export class LoopStore {
   constructor(api, config) { this.api = api; this.config = config; }
-  async load() {
+  async readSnapshot() {
     const ref = await this.api.request('GET', `/git/ref/heads/${LOOP_BRANCH}`), head = identity(ref.object.sha);
     const commit = await this.api.request('GET', `/git/commits/${head}`), tree = identity(commit.tree.sha);
     const entries = await this.api.request('GET', `/git/trees/${tree}?recursive=1`); ensure(entries.truncated === false, 'incomplete_state_tree');
     const entry = entries.tree.find(e => e.path === STATE_PATH); ensure(entry?.mode === '100644' && entry.type === 'blob', 'missing_loop_state');
     const file = await this.api.request('GET', `/git/blobs/${identity(entry.sha)}`); ensure(file.encoding === 'base64' && file.size <= 512 * 1024, 'invalid_state_blob');
-    return { head, tree, state: parseLoopState(JSON.parse(Buffer.from(file.content, 'base64').toString('utf8')), this.config) };
+    return { head, tree, state: JSON.parse(Buffer.from(file.content, 'base64').toString('utf8')) };
+  }
+  async load() {
+    const snap = await this.readSnapshot();
+    return { ...snap, state: parseLoopState(snap.state, this.config) };
+  }
+  async appendApprovedTasks() {
+    const old = await this.readSnapshot(), next = appendApprovedTasks(old.state, this.config);
+    if (next === old.state) return false;
+    const current = await this.readSnapshot();
+    ensure(current.head === old.head && JSON.stringify(current.state) === JSON.stringify(old.state), 'loop_cas_conflict');
+    await this.writeSnapshot(old, next);
+    return true;
   }
   async save(old, next) {
     parseLoopState(next, this.config); ensure(next.revision === old.state.revision + 1, 'invalid_state_revision');
@@ -99,6 +126,9 @@ export class LoopStore {
       ensure(before.phase !== 'completed' || JSON.stringify(before) === JSON.stringify(after), 'completed_history_changed');
       ensure(after.cycles >= before.cycles, 'cycle_rollback');
     }
+    return this.writeSnapshot(old, next);
+  }
+  async writeSnapshot(old, next) {
     const tree = await this.api.request('POST', '/git/trees', { base_tree: old.tree, tree: [{ path: STATE_PATH, mode: '100644', type: 'blob', content: JSON.stringify(next) }] });
     const commit = await this.api.request('POST', '/git/commits', { message: 'chore(automation): checkpoint approved loop', tree: identity(tree.sha), parents: [old.head] });
     const fresh = await this.api.request('GET', `/git/ref/heads/${LOOP_BRANCH}`); ensure(fresh.object.sha === old.head, 'loop_cas_conflict');
@@ -460,7 +490,9 @@ async function main() {
   ensure(process.env.AIS_CHECKOUT_SHA === main, 'trusted_main_moved');
   ensure(process.env.AIS_CODEX_COMMENT_TOKEN, 'missing_comment_sender');
   const policy = JSON.parse(await readFile('.github/review-policy.json', 'utf8'));
-  const result = await runLoop({ api, sender: new GitHub(process.env.AIS_CODEX_COMMENT_TOKEN), store: new LoopStore(api, config), config, policy });
+  const store = new LoopStore(api, config);
+  await store.appendApprovedTasks();
+  const result = await runLoop({ api, sender: new GitHub(process.env.AIS_CODEX_COMMENT_TOKEN), store, config, policy });
   console.log(JSON.stringify({ repository: REPO, ...result }));
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main().catch(error => {
