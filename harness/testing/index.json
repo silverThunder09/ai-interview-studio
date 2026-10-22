@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "repository": "silverThunder09/ai-interview-studio",
-  "recorded_at_kst": "2026-10-21",
+  "recorded_at_kst": "2026-10-22",
   "current_record_id": "tests-2026-10-19-pr34",
   "notes": [
     "Counts refer to each recorded SHA, not cumulative coverage.",
@@ -1184,6 +1184,27 @@
       "limits": [
         "PR68의 코드/CI 검증 성공 기록이며 전체 A→B 완료는 미검증",
         "#69 native 리뷰 종료 연결은 미설치 후보, 실제 callback 미검증"
+      ]
+    },
+    {
+      "id": "tests-2026-10-22-phase1-local",
+      "status": "verification-pending",
+      "date_kst": "2026-10-22",
+      "title": "Phase 1 3D 기반 · 로컬513/41 성공, 실제 Windows 실행 검증 대기",
+      "path": "phase-1-3d.md",
+      "scope": "application",
+      "source_sha": "ea62bfa9c077ad9744b36b8dc4c02df5abcc6bc5",
+      "source_tree_sha": "ce540137b0f3a660dd1431146745e123a15734d6",
+      "unit": 513,
+      "review_policy": 41,
+      "issue": 73,
+      "tags": [
+        "3d",
+        "glb",
+        "gltf",
+        "three",
+        "local-only",
+        "verification-pending"
       ]
     }
   ]
