@@ -1,6 +1,7 @@
 import * as T from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { defaultActor, loadActor, type Actor } from './model';
+import { FramePacer } from './clock';
 import type { AvatarAsset, AvatarSlot } from '../../../shared/avatar';
 
 export interface StageState { active: AvatarSlot | null; speaking: AvatarSlot | null; quality: 'low' | 'standard'; paused: boolean }
@@ -20,6 +21,7 @@ export class AvatarStage {
   private frames = 0;
   private sample = 0;
   private elapsed = 0;
+  private readonly pacer = new FramePacer();
   private readonly motion = matchMedia('(prefers-reduced-motion: reduce)');
   state: StageState = { active: 'a', speaking: null, quality: 'low', paused: false };
   constructor(private readonly canvas: HTMLCanvasElement, private readonly metrics: (m: StageMetrics) => void, private readonly failure: (message: string) => void) {
@@ -63,8 +65,8 @@ export class AvatarStage {
   private contextRestored = () => { this.lost = false; this.failure(''); this.resize(); };
   private frame = (stamp: number) => {
     if (this.disposed || this.lost) return;
-    if (document.hidden || this.state.paused) { this.last = 0; this.sample = 0; this.frames = 0; return; }
-    if (this.last && stamp - this.last < 1000 / 30 - 0.5) return;
+    if (document.hidden || this.state.paused) { this.last = 0; this.sample = 0; this.frames = 0; this.pacer.reset(); return; }
+    if (!this.pacer.due(stamp)) return;
     const delta = this.last ? Math.min((stamp - this.last) / 1000, 0.1) : 0; this.last = stamp; this.elapsed += delta;
     for (const slot of ['a', 'b'] as const) {
       this.actors[slot].update(this.elapsed + (slot === 'b' ? 1.7 : 0), delta, this.state.speaking === slot, this.motion.matches);

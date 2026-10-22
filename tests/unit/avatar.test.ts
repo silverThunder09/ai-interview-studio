@@ -7,10 +7,23 @@ import { AVATAR_LIMITS, prepareAvatar } from '../../src/shared/avatar';
 import { AvatarModels } from '../../src/main/avatar';
 import { defaultActor, loadActor } from '../../src/renderer/src/avatar/model';
 import { avatarFixture, texturedAvatarFixture } from '../fixtures/avatar';
+import { FramePacer } from '../../src/renderer/src/avatar/clock';
 
 const dirs: string[] = [];
 afterEach(async () => { await Promise.all(dirs.splice(0).map(d => rm(d, { recursive: true, force: true }))); });
 describe('bounded, offline avatar import', () => {
+  it('maintains the 30FPS budget across 45/60/90Hz callbacks without halving a 45Hz display', () => {
+    for (const hz of [45, 60, 90]) {
+      const pacer = new FramePacer(); let rendered = 0;
+      for (let i = 0; i < hz * 4; i++) if (pacer.due(i * 1000 / hz)) rendered++;
+      expect(rendered).toBeGreaterThanOrEqual(119); expect(rendered).toBeLessThanOrEqual(121);
+    }
+  });
+  it('skips missed deadlines after a stall and resets cleanly after pause', () => {
+    const pacer = new FramePacer(); expect(pacer.due(0)).toBe(true);
+    expect(pacer.due(10)).toBe(false); expect(pacer.due(5000)).toBe(true); expect(pacer.due(5001)).toBe(false);
+    pacer.reset(); expect(pacer.due(5010)).toBe(true); expect(pacer.due(5020)).toBe(false);
+  });
   it('decodes embedded texture bytes directly without fetching a Blob URL', async () => {
     const close = vi.fn(), decode = vi.fn().mockResolvedValue({ width: 1, height: 1, close });
     const fetcher = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('No requests'));
