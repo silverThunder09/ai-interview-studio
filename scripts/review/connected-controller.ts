@@ -65,7 +65,7 @@ export function validateRequest(value: unknown): DevelopmentRequest {
 
 export function buildDevelopmentRequest(value: unknown): string {
   const r = validateRequest(value);
-  const example = { schema: 2, kind: 'development-result', repository: REPOSITORY, pr_number: r.pr_number, request_key: r.request_key,
+  const example: DevelopmentReport = { schema: 2, kind: 'development-result', repository: REPOSITORY, pr_number: r.pr_number, request_key: r.request_key,
     checkout_sha: r.head_sha, requested_base_sha: r.base_sha, outcome: 'blocked', tests: [], change: { kind: 'none' },
     blocker: { code: 'not_run', summary: '실제 미검증 사유를 적으세요' } };
   return `<!-- ais-development-request-v2:${r.request_key} -->\n@codex 지정된 개발 작업을 한 번 실행하라. 대상은 ${REPOSITORY} PR #${r.pr_number} 하나뿐이다.\n` +
@@ -76,8 +76,9 @@ export function buildDevelopmentRequest(value: unknown): string {
     `tests.command는 ${JSON.stringify(COMMANDS)} 중 실제 실행한 명령만 기록한다. 미실행 검사는 성공으로 넣지 말라. 이 로컬 보고는 별도의 Windows CI나 실제 장치 검증을 대신하지 않는다.\n` +
     '반환하는 tests에 종료 코드가 0이 아닌 검사가 하나라도 있으면 outcome=failed와 blocker를 작성하라. npm run check만 성공했다는 이유로 전체를 succeeded로 보고하지 말라. 도구/환경 때문에 실행하지 못하면 blocked와 비민감 이유를 적는다. 실패 검사를 보고에서 지우지 않는다.\n' +
     '3D/Electron 변경을 Linux 표시 서버 없이 검증할 때는 기존 STUDIO_SMOKE_HEADLESS=1 환경에서 허용 목록의 avatar/desktop 관련 smoke 명령을 사용할 수 있다. Chromium sandbox를 유지하고 전체 Windows 검증 성공으로 표현하지 않는다.\n' +
-    '최종 응답은 아래 marker 한 줄과 JSON 코드 블록 하나만 남겨라. 플랫폼의 View task 링크는 직접 만들지 않는다. JSON은 예시를 실제 결과로 바꾸고 알 수 없는 필드를 추가하지 말라. outcome은 succeeded/failed/blocked 중 하나다. succeeded는 실제 npm run check 종료0을 포함하고 blocker=null이어야 한다. failed/blocked는 비민감 code·summary 이유를 반드시 넣는다. tests 항목의 허용 키는 command와 exit_code, 선택 필드 unit_passed와 policy_passed뿐이다. 실제 명령·exit_code와 분리해서 확인한 단위/정책 통과 수만 적는다. passed/total 같은 합산·새 필드는 금지한다. 개수를 모르면 선택 필드를 생략하고 미실행은 tests=[]로 둔다. read-only는 change.kind=none, repair는 none 또는 patch/patch 문자열을 쓴다. GitHub API 인증이 없는 것은 이 로컬 검사의 실패 사유가 아니다.\n' +
-    `<!-- ais-development-result-v2:${r.request_key} -->\n\`\`\`json\n${JSON.stringify(example)}\n\`\`\``;
+    '최종 응답은 아래 양식 하나만 남겨라. 완료한 작업·테스트 결과·실패/남은 작업·다음 단계를 쉬운 한국어로 먼저 보여주고 JSON/patch는 접힌 상세 결과에 둔다. 플랫폼의 View task 링크는 직접 만들지 않는다. JSON은 예시를 실제 결과로 바꾸고 알 수 없는 필드를 추가하지 말라. outcome은 succeeded/failed/blocked 중 하나다. succeeded는 실제 npm run check 종료0을 포함하고 blocker=null이어야 한다. failed/blocked는 비민감 code·summary 이유를 반드시 넣는다. tests 항목의 허용 키는 command와 exit_code, 선택 필드 unit_passed와 policy_passed뿐이다. 실제 명령·exit_code와 분리해서 확인한 단위/정책 통과 수만 적는다. passed/total 같은 합산·새 필드는 금지한다. 개수를 모르면 선택 필드를 생략하고 미실행은 tests=[]로 둔다. read-only는 change.kind=none, repair는 none 또는 patch/patch 문자열을 쓴다. GitHub API 인증이 없는 것은 이 로컬 검사의 실패 사유가 아니다.\n' +
+    '양식 오류를 막으려면 scripts/review/connected-controller.ts의 renderDevelopmentResult(실제 보고서 객체, 작업 요약 한 문장)를 Node로 호출해 그 반환 문자열만 최종 응답으로 사용하라. 저장소에 보고서 파일을 추가할 필요는 없다. 요약은 실제 한 일만 500자 이내 한 줄로 적고 HTML·Markdown 코드·링크는 넣지 않는다. 테스트 결과/실패 상태/다음 단계는 함수가 보고서에서 생성하므로 임의로 고치지 않는다.\n' +
+    renderDevelopmentResult(example, '아직 실행하지 않았습니다. 실제로 완료한 작업으로 바꾸세요.');
 }
 
 export interface TestReport { command: string; exit_code: number; unit_passed?: number; policy_passed?: number }
@@ -88,6 +89,16 @@ export interface DevelopmentReport {
   blocker: null | { code: string; summary: string };
 }
 export interface DevelopmentReceipt { comment_id: number; task_url: string; report: DevelopmentReport }
+
+/** Presentation only: the strict report and independent GitHub evidence still decide progress. */
+export function renderDevelopmentResult(report: DevelopmentReport, summary: string): string {
+  requireValue(text(summary, 500) && summary === summary.trim() && !/[\r\n<>`[\]]/.test(summary) && ![...summary].some(c => c.codePointAt(0)! < 32), 'invalid_result_summary');
+  const tests = report.tests.length ? report.tests.map(t => `- ${t.command}: ${t.exit_code === 0 ? '통과' : `실패 (종료 코드 ${t.exit_code})`}${t.unit_passed === undefined ? '' : ` · 단위 ${t.unit_passed}개`}${t.policy_passed === undefined ? '' : ` · 정책 ${t.policy_passed}개`}`).join('\n') : '미실행 — 통과로 기록한 검사가 없습니다.';
+  const reason = (report.blocker?.summary ?? '사유를 확인해야 합니다.').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replace(/[\\`*_~[\]]/g, '\\$&');
+  const state = report.outcome === 'succeeded' ? '로컬 작업 완료 — 원격 CI·코드 리뷰·머지는 별도 검증 대상입니다.' : `${report.outcome === 'failed' ? '작업 실패' : '작업 보류'} — ${reason}`;
+  const next = report.outcome === 'succeeded' ? 'GitHub 담당이 변경 내용과 최신 CI·리뷰를 확인한 뒤 머지 여부를 판단합니다.' : '실패·보류 원인을 확인하고 재검증합니다. 이 결과만으로 머지하거나 다음 작업을 완료 처리하지 않습니다.';
+  return `<!-- ais-development-result-v2:${report.request_key} -->\n### 완료한 작업\n${summary}\n\n### 테스트 결과\n${tests}\n\n### 실패·남은 작업\n${state}\n\n### 다음 단계\n${next}\n\nCodex AI의 작업 보고입니다. 독립적인 사람의 승인이나 원격 CI 성공을 뜻하지 않습니다.\n\n<details>\n<summary>자동화용 상세 결과</summary>\n\n\`\`\`json\n${JSON.stringify(report)}\n\`\`\`\n\n</details>`;
+}
 
 // Comparing JSON's compact spelling with JSON.stringify rejects duplicate/escaped keys too.
 function compactJSON(value: string): string {
@@ -107,12 +118,14 @@ export function parseDevelopmentResult(commentValue: unknown, requestValue: unkn
   requireValue(typeof comment.body === 'string' && Buffer.byteLength(comment.body, 'utf8') <= MAX_REPORT_BYTES, 'result_size');
   const marker = `<!-- ais-development-result-v2:${r.request_key} -->`;
   const body = comment.body.replace(/\r\n/g, '\n');
-  requireValue(body.startsWith(`${marker}\n\`\`\`json\n`), 'invalid_result_envelope');
-  const match = body.match(/^<!-- ais-development-result-v2:[a-f0-9]{64} -->\n```json\n([\s\S]+)\n```\n\n \[View task →\]\((https:\/\/chatgpt\.com\/s\/cd_[a-f0-9]{32})\)\s*$/);
-  requireValue(match?.[1] && match[2], 'invalid_result_envelope');
+  requireValue(body.startsWith(`${marker}\n`), 'invalid_result_envelope');
+  const legacy = body.match(/^<!-- ais-development-result-v2:[a-f0-9]{64} -->\n```json\n([\s\S]+)\n```\n\n \[View task →\]\((https:\/\/chatgpt\.com\/s\/cd_[a-f0-9]{32})\)\s*$/);
+  const readable = legacy ? null : body.match(/^<!-- ais-development-result-v2:[a-f0-9]{64} -->\n### 완료한 작업\n([^\n]{1,500})\n\n[\s\S]{1,8000}\n\n<details>\n<summary>자동화용 상세 결과<\/summary>\n\n```json\n([\s\S]+)\n```\n\n<\/details>\n\n \[View task →\]\((https:\/\/chatgpt\.com\/s\/cd_[a-f0-9]{32})\)\s*$/);
+  const json = legacy?.[1] ?? readable?.[2], taskURL = legacy?.[2] ?? readable?.[3];
+  requireValue(json && taskURL, 'invalid_result_envelope');
   let parsed: unknown;
-  try { parsed = JSON.parse(match[1]); } catch { throw new ControllerError('invalid_result_json'); }
-  requireValue(JSON.stringify(parsed) === compactJSON(match[1]), 'noncanonical_result_json');
+  try { parsed = JSON.parse(json); } catch { throw new ControllerError('invalid_result_json'); }
+  requireValue(JSON.stringify(parsed) === compactJSON(json), 'noncanonical_result_json');
   const v = object(parsed);
   fields(v, ['schema', 'kind', 'repository', 'pr_number', 'request_key', 'checkout_sha', 'requested_base_sha', 'outcome', 'tests', 'change', 'blocker']);
   requireValue(v.schema === 2 && v.kind === 'development-result' && v.repository === REPOSITORY && v.pr_number === r.pr_number && v.request_key === r.request_key, 'wrong_result_identity');
@@ -140,7 +153,12 @@ export function parseDevelopmentResult(commentValue: unknown, requestValue: unkn
     requireValue(change.kind === 'patch' && r.mode === 'repair' && v.outcome === 'succeeded' && typeof change.patch === 'string', 'unexpected_patch');
     parseDevelopmentPatch(change.patch, r.allowed_paths);
   }
-  return { comment_id: comment.id, task_url: match[2], report: v as unknown as DevelopmentReport };
+  if (readable) {
+    const start = body.lastIndexOf('\n```json\n') + '\n```json\n'.length, end = body.lastIndexOf('\n```\n\n</details>');
+    const normalized = body.slice(0, start) + JSON.stringify(v) + body.slice(end);
+    requireValue(normalized.trimEnd() === renderDevelopmentResult(v as unknown as DevelopmentReport, readable[1]!) + `\n\n [View task →](${taskURL})`, 'inconsistent_result_summary');
+  }
+  return { comment_id: comment.id, task_url: taskURL, report: v as unknown as DevelopmentReport };
 }
 
 export interface PatchHunk { oldStart: number; newStart: number; oldCount: number; newCount: number; lines: string[] }

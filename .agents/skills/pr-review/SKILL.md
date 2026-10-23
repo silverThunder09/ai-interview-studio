@@ -11,6 +11,7 @@ description: Review a PR using the repository template, create deduplicated revi
 2. PR 본문을 `.github/PULL_REQUEST_TEMPLATE.md`에 맞춘다. 작은 작업의 불필요한 절은 `해당 없음: 이유`로 간결히 채운다. 실제 실행한 검사와 제한을 분리한다.
 3. `code-review`로 검토하고 GitHub에 정확한 head SHA의 COMMENT 리뷰를 남긴다. 자기 PR을 APPROVE하거나 사람의 승인을 가장하지 않는다. 동일 head/동일 finding의 댓글·이슈를 중복 작성하지 않는다.
    사람이 읽는 리뷰는 `.github/AI_REVIEW_TEMPLATE.md`를 따른다. 변경 내용·확인 결과·남은 작업·머지 가능 여부를 쉬운 한국어로 먼저 쓰고 SHA·실행 링크는 접힌 상세 근거에 둔다. 구체적인 결함·실패·미검증 항목은 접어서 숨기지 않는다.
+   직접 `@codex` 개발·검사 요청의 작업 결과는 `.github/CODEX_RESULT_TEMPLATE.md`를 따른다. 보이는 검사/실패 요약과 접힌 원본 JSON을 함께 검증하고 기존 공식 댓글을 임의로 편집하지 않는다.
 4. actionable finding은 먼저 기존 open/closed 이슈를 확인한다. PR·파일·근본 원인이 같으면 재사용하고, 새 결함만 review finding 양식으로 생성한다. PR 본문과 이슈에 서로 연결한다. 검증 없이 완료 처리하지 않는다.
 5. 승인된 결함은 기존 PR 브랜치에 작은 커밋으로 고친다. 이미 머지됐거나 독립 수정이면 `fix/issue-N` 브랜치와 새 Draft PR을 만든다. 새 PR에는 `Closes #N`을 넣는다. 원격 쓰기는 Git/연결 도구의 예상 SHA 검사를 사용하고 force-push하지 않는다.
 6. cloud shell이 있으면 영향 검사를 실행한다. 없으면 GitHub API로 소스·커밋을 수정하고 GitHub Actions 검증을 기다린다. 실행 도구가 없다고 검사 성공을 추정하지 않는다. 실패를 분석해 최대 3회 수정하고 반복 실패·권한/비용·외부 전송·범위 문제는 한 이슈에 차단 사유를 기록한다.

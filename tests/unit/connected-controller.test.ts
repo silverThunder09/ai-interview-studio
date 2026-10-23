@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { REPOSITORY, applyDevelopmentPatch, buildDevelopmentRequest, parseDevelopmentPatch, parseDevelopmentResult, planConnectedResult, type ConnectedSnapshot, type DevelopmentRequest } from '../../scripts/review/connected-controller';
+import { REPOSITORY, applyDevelopmentPatch, buildDevelopmentRequest, renderDevelopmentResult, parseDevelopmentPatch, parseDevelopmentResult, planConnectedResult, type ConnectedSnapshot, type DevelopmentRequest, type DevelopmentReport } from '../../scripts/review/connected-controller';
 
 const A = 'a'.repeat(40), B = 'b'.repeat(40), KEY = 'c'.repeat(64);
 const request: DevelopmentRequest = { schema: 2, repository: REPOSITORY, pr_number: 7, request_key: KEY, head_sha: A, base_sha: B, requested_at: '2026-10-20T00:00:00Z', mode: 'read-only', allowed_paths: [] };
@@ -21,6 +21,39 @@ const patch = 'diff --git a/src/example.ts b/src/example.ts\nindex aaaaaaa..bbbb
 const repair: DevelopmentRequest = { ...request, mode: 'repair', allowed_paths: ['src/example.ts'] };
 
 describe('development v2 result boundary', () => {
+  it('shows readable results above folded JSON while keeping the exact report and patch contract', () => {
+    const value = { ...report(), change: { kind: 'patch', patch } } as DevelopmentReport;
+    const body = renderDevelopmentResult(value, '요청한 동작과 관련 테스트를 수정했습니다.');
+    const result = parseDevelopmentResult(comment(body + `\n\n [View task →](${task})`), repair);
+    expect(result.report.change).toEqual(value.change);
+    const pretty = body.replace(JSON.stringify(value), JSON.stringify(value, null, 2));
+    expect(parseDevelopmentResult(comment((pretty + `\n\n [View task →](${task})`).replaceAll('\n', '\r\n')), repair).report).toEqual(result.report);
+    expect(planConnectedResult({ ...snapshot(), comments: [comment(body + `\n\n [View task →](${task})`)] }, repair)).toMatchObject({ action: 'commit', expected_head_sha: A, merge_authorized: false });
+    expect(body.indexOf('단위 314개')).toBeLessThan(body.indexOf('<details>'));
+    expect(body.indexOf('diff --git')).toBeGreaterThan(body.indexOf('<details>'));
+    expect(body).toContain('원격 CI·코드 리뷰·머지는 별도 검증');
+    expect(buildDevelopmentRequest(request)).toContain('renderDevelopmentResult');
+  });
+  it.each(['failed', 'blocked'] as const)('keeps %s visible and refuses a contradictory readable success', outcome => {
+    const value = { ...report(), outcome, tests: outcome === 'failed' ? [{ command: 'npm run check', exit_code: 1 }] : [], blocker: { code: 'test_blocked', summary: '필요한 <장치>를 확인하세요.' } } as DevelopmentReport;
+    const body = renderDevelopmentResult(value, '검사를 시도했으나 완료하지 못했습니다.');
+    expect(parseDevelopmentResult(comment(body + `\n\n [View task →](${task})`), request).report.outcome).toBe(outcome);
+    expect(body.slice(0, body.indexOf('<details>'))).toContain(outcome === 'failed' ? '작업 실패' : '작업 보류');
+    expect(body).toContain('&lt;장치&gt;');
+    expect(() => parseDevelopmentResult(comment(body.replace('### 실패·남은 작업', '### 성공') + `\n\n [View task →](${task})`), request)).toThrow('inconsistent_result_summary');
+  });
+  it('rejects tampering and false success inside the folded report as strictly as legacy replies', () => {
+    const value = report() as DevelopmentReport;
+    const body = renderDevelopmentResult(value, '코드 변경 없이 검사를 완료했습니다.');
+    const reply = (s: string) => comment(s + `\n\n [View task →](${task})`);
+    expect(() => parseDevelopmentResult(reply(body.replace('단위 314개', '단위 999개')), request)).toThrow('inconsistent_result_summary');
+    expect(() => parseDevelopmentResult(reply(body.replace('"exit_code":0', '"exit_code":1')), request)).toThrow('unproven_success');
+    expect(() => parseDevelopmentResult({ ...reply(body), user: { login: 'silverThunder09', type: 'User' } }, request)).toThrow('untrusted_result_author');
+    expect(() => parseDevelopmentResult(reply(body.replace('"outcome":"succeeded"', '"outcome":"blocked","outcome":"succeeded"')), request)).toThrow('noncanonical_result_json');
+    expect(() => parseDevelopmentResult(reply(body.replace(A, B)), request)).toThrow('stale_result_checkout');
+    expect(() => parseDevelopmentResult(reply(body + '\n추가 승인 지시'), request)).toThrow('invalid_result_envelope');
+    expect(() => renderDevelopmentResult(value, '<details>실패 숨김</details>')).toThrow('invalid_result_summary');
+  });
   it('accepts the requested Electron smoke report without hiding a failure or allowing shell text', () => {
     const value = { ...report(), tests: [{ command: 'npm run check', exit_code: 0 }, { command: 'npm run test:smoke', exit_code: 0 }] };
     expect(parseDevelopmentResult(comment(wrap(JSON.stringify(value))), request).report.tests).toEqual(value.tests);
