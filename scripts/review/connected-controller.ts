@@ -8,7 +8,7 @@ export const MAX_PATCH_BYTES = 64 * 1024;
 const MAX_REPORT_BYTES = 96 * 1024;
 const SHA = /^[a-f0-9]{40}$/;
 const KEY = /^[a-f0-9]{64}$/;
-const COMMANDS = ['npm run check', 'npm run typecheck', 'npm run lint', 'npm test', 'npm run test:review', 'npm run build', 'npm run test:smoke', 'npm run test:smoke -- tests/smoke/avatar.spec.ts tests/smoke/desktop.spec.ts', 'git diff --check'];
+const COMMANDS = ['npm run check', 'npm run typecheck', 'npm run lint', 'npm test', 'npm run test:review', 'npm run build', 'npm run test:smoke', 'npm run test:smoke -- tests/smoke/avatar.spec.ts tests/smoke/desktop.spec.ts', 'npm run test:smoke -- tests/smoke/gemini.spec.ts tests/smoke/avatar.spec.ts tests/smoke/desktop.spec.ts', 'git diff --check'];
 type ObjectValue = Record<string, unknown>;
 export class ControllerError extends Error {
   readonly code: string;
@@ -73,6 +73,7 @@ export function buildDevelopmentRequest(value: unknown): string {
     (r.mode === 'read-only' ? '읽기 전용 검사다. Git 상태·실제 HEAD를 확인하고 npm run check를 실행하라. 코드·commit·branch를 변경하지 말라.\n'
       : `승인된 수정 경로는 ${JSON.stringify(r.allowed_paths)}뿐이다. 최소 수정과 영향 검사를 수행하고 기존 텍스트 파일의 UTF-8 unified patch를 change.patch로 반환하라(64KiB·10파일 이내, rename/delete/모드 변경 금지). 보호 경로·범위 확대는 하지 말라.\n`) +
     'GitHub API·gh 인증·댓글·push·머지는 연결된 GitHub 담당의 일이다. 이를 시도하거나 API 미인증을 새 로그인으로 해결하지 말라. env/인증 설정/secret/개인자료를 조회·출력하지 말고 유료 API·다른 저장소·sandbox 해제·추가 작업 요청은 금지한다.\n' +
+    '사용자가 검증한 Legacy 실행 환경에서는 기본 실행의 자식 프로세스/Electron EPERM이 정식 확장 실행 권한에서 해소됐다. 검사 명령은 처음부터 실행 도구가 제공하는 정식 확장 실행 권한(require_escalated 등)을 사용하되 승인 절차를 우회하지 말라. 네트워크 권한은 별도이며 의존성 설치가 필요하면 고정 lockfile과 쓰기 가능한 임시 npm 캐시를 사용한다. 설치가 실패하면 도구가 없는 상태로 검사를 연달아 실행하지 말라. Chromium sandbox=true·proxy·TLS는 유지한다. 권한 승인이 필요하지만 받을 수 없으면 blocked로 보고하고 su 비밀번호·새 인증·sandbox 해제로 해결하지 않는다.\n' +
     `tests.command는 ${JSON.stringify(COMMANDS)} 중 실제 실행한 명령만 기록한다. 미실행 검사는 성공으로 넣지 말라. 이 로컬 보고는 별도의 Windows CI나 실제 장치 검증을 대신하지 않는다.\n` +
     '반환하는 tests에 종료 코드가 0이 아닌 검사가 하나라도 있으면 outcome=failed와 blocker를 작성하라. npm run check만 성공했다는 이유로 전체를 succeeded로 보고하지 말라. 도구/환경 때문에 실행하지 못하면 blocked와 비민감 이유를 적는다. 실패 검사를 보고에서 지우지 않는다.\n' +
     'failed/blocked 결과의 change는 반드시 {"kind":"none"}이다. 실패한 작업의 patch는 자동 반영하지 않는다. 작업 사본에 남은 수정은 실패 이유와 구분하고, JSON에 실패 patch를 넣거나 실패를 숨겨 succeeded로 바꾸지 않는다.\n' +

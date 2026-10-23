@@ -70,7 +70,55 @@
         "src/renderer/src/avatar/AvatarPanel.tsx",
         "tests/smoke/avatar.spec.ts"
       ]
+    },
+    {
+      "id": "gemini-interviewer-speaker",
+      "pr": null,
+      "title": "Gemini 기술·경험 면접관 역할과 발언자 검증",
+      "spec": {
+        "path": "harness/specs/gemini-local-interview.md",
+        "sha256": "0f4467e79fb23e45e721256f93d7c88f40b78e4299f2cf818b44eb5cc265f1e7"
+      },
+      "approval": "2026-10-24 KST 현재 채팅: #35의 Gemini 역할·검증 발언자 ID 작업 A와 3D/UI 표시 연결 작업 B 두 작업을 승인 큐에 등록해 구현·테스트·PR·CI·조건부 머지 및 A 뒤 B 자동 재개를 검증하는 제안에 사용자 “승인할게”. 기존 전송 데이터/키/요청·시간·토큰 한도 유지, 합성 검증만 사용, 공유 문맥·음성·웹캠·리포트·실제 유료 호출·새 인증/권한/정책 완화 제외.",
+      "goal": "main 제품 스펙 3.1의 작업 A를 기존 경로에 구현한다. src/main/ai-question-provider.ts와 external-ai.ts의 Gemini 경로에만 A 기술(엄격·논리) / B 경험·협업(차분·근거 중심) 역할을 연결한다. 현재 질문 순서(최초 experience B, technical A, follow-up은 직전 역할)를 유지하고 실제 요청한 speakerId(a/b)를 Gemini 응답 JSON schema/근거 snapshot과 함께 엄격히 검증해 QuestionDraft/InterviewQuestion에 보존한다. 누락·다른 역할·알 수 없는 값·허용 밖 필드는 INVALID_RESPONSE이며 실패/취소 시 기존 답변·한도·중복 제어를 보존한다. isInterviewQuestion은 선택적 speakerId를 검증하되 ID 없는 과거 기록·OpenAI/Claude/로컬 질문을 유지한다. 질문 JSON 저장 구조를 재사용하고 DB migration·공유 문맥·전체 이력서/이전 대화·API 추가 호출·UI·보호 파일은 변경하지 않는다. 기존 단일 Gemini 키·선택 구절/직전 답변만 전송·12문항/36요청/600출력토큰/30초를 유지한다. tests/unit의 provider/adapter/SQLite 기록 복원·잘못된 ID/취소/중복·다른 공급자 회귀와 tests/smoke/gemini.spec.ts의 합성 응답을 새 schema에 맞춰 실제 검증한다. 기존 검사를 삭제/skip하지 않고 필요하면 해당 smoke에 기존 avatar/desktop과 같은 Linux headless launch 설정을 재사용하되 chromiumSandbox:true를 유지한다. npm run check, npm run build 및 허용된 Gemini/avatar/desktop 관련 smoke를 실제 실행한다. 명령은 제공된 정식 확장 실행 권한으로 수행하고 도구 승인을 우회하지 않는다. 실제 개인 자료·유료 API는 호출하지 않는다. 결과는 한국어 양식·원본 v2 JSON과 64KiB/10파일 이내 UTF-8 patch로 반환하며 실패/blocked에는 patch를 넣지 않는다.",
+      "acceptance": [
+        "Gemini 최초 경험 B와 기술 A·각 후속 질문의 요청 역할이 응답/저장 JSON의 speakerId와 일치하며 잘못된 ID는 답변 저장 전에 거절한다.",
+        "같은 Gemini 키·기존 전송 범위·한도를 유지하고 OpenAI/Claude/로컬·ID 없는 SQLite 과거 기록을 복원한다.",
+        "합성 provider/adapter·저장·실패/취소/중복 검사와 실제 Gemini Electron 회귀를 통과하고 원격 Windows source/packaged는 별도 CI로 확인한다."
+      ],
+      "allowed_paths": [
+        "src/shared/interview.ts",
+        "src/main/ai-question-provider.ts",
+        "src/main/external-ai.ts",
+        "tests/unit/ai-question-provider.test.ts",
+        "tests/unit/external-ai.test.ts",
+        "tests/unit/interview.test.ts",
+        "tests/unit/interview-service.test.ts",
+        "tests/smoke/gemini.spec.ts"
+      ]
+    },
+    {
+      "id": "gemini-speaker-avatar",
+      "pr": null,
+      "title": "Gemini 발언자와 3D 면접관·질문 표시 연결",
+      "spec": {
+        "path": "harness/specs/gemini-local-interview.md",
+        "sha256": "0f4467e79fb23e45e721256f93d7c88f40b78e4299f2cf818b44eb5cc265f1e7"
+      },
+      "approval": "2026-10-24 KST 현재 채팅: #35의 Gemini 역할·검증 발언자 ID 작업 A와 3D/UI 표시 연결 작업 B 두 작업을 승인 큐에 등록해 구현·테스트·PR·CI·조건부 머지 및 A 뒤 B 자동 재개를 검증하는 제안에 사용자 “승인할게”. 기존 전송 데이터/키/요청·시간·토큰 한도 유지, 합성 검증만 사용, 공유 문맥·음성·웹캠·리포트·실제 유료 호출·새 인증/권한/정책 완화 제외.",
+      "goal": "앞선 Gemini 역할·발언자 작업이 머지되고 main CI가 검증된 뒤 제품 스펙 3.1의 작업 B를 구현한다. InterviewWorkspace의 새 Gemini 질문은 검증된 question.speakerId를 AvatarRoom/AvatarPanel의 실제 활성 슬롯과 한국어 현재 면접관 역할 표시에 우선 연결한다. B 경험→B 후속→A 기술→A 후속이 같은 질문/3D 강조에 표시돼야 한다. 새 값은 기존 공유 계약을 사용하며 추정 ID로 잘못된 API 결과를 성공 처리하지 않는다. ID 없는 과거/다른 공급자/로컬 질문은 기존 kind 기반 표시, 면접 완료는 active=null을 유지한다. 역할 표시는 질문/저장 기록 재열기에서도 실제 질문과 맞고 비동기 실패/취소 시 기존 질문/입력/강조를 유지한다. 필요하면 canvas에 실제 stage 활성 상태를 반영하는 작은 관측 속성을 제공하되 테스트가 그 속성만 자가 검증하지 않도록 질문·역할/UI와 실제 WebGL 준비를 함께 확인한다. tests/smoke/gemini.spec.ts에서 main fetch를 합성 Gemini로 바꾸고 B/B/A/A 응답·잘못된 발언자 뒤 입력/질문 보존·기록 재열기를 검사하며 실제 Google 호출·제품 테스트 플래그를 추가하지 않는다. 기존 avatar의 모델/품질/시점/GPU·키/동의·실패 회귀를 삭제/skip하지 않는다. 같은 허용 경로 안에서 headless launch가 필요하면 기존 avatar/desktop 방식을 재사용하고 Chromium sandbox를 유지한다. npm run check, npm run build 및 허용된 Gemini/avatar/desktop 관련 smoke를 정식 확장 실행 권한으로 실제 실행하고 한국어 양식과 원본 v2 결과/제한된 UTF-8 patch를 반환한다. TTS/립싱크/웹캠·새 키/의존성/전송 범위/요청/권한/보호 파일은 변경하지 않는다.",
+      "acceptance": [
+        "검증된 Gemini speakerId가 질문·한국어 면접관 역할·3D 활성 슬롯에 일치하고 후속 질문도 같은 발언자로 표시된다.",
+        "ID 없는 과거/다른 공급자/로컬 질문과 완료 화면·실패/취소·기록 복원을 보존하며 새로운 전송·호출을 만들지 않는다.",
+        "실제 sandbox Electron 합성 Gemini에서 B/B/A/A 진행·잘못된 ID 뒤 보존·기록 재열기와 기존 avatar 회귀를 확인한다."
+      ],
+      "allowed_paths": [
+        "src/renderer/src/InterviewWorkspace.tsx",
+        "src/renderer/src/avatar/AvatarPanel.tsx",
+        "tests/smoke/gemini.spec.ts",
+        "tests/smoke/avatar.spec.ts"
+      ]
     }
   ],
-  "next_decision": "Phase 1의 등록된 3D 보완 작업을 완료했습니다. 실사형 에셋은 라이선스/파일 확보 및 사용자 기기 검증이 필요합니다. 다음 Phase 2의 Gemini 공유 문맥 전송 범위·토큰/호출 상한은 구현 스펙과 함께 사용자 승인을 받아야 합니다. 스펙 초안을 자동 승인하거나 새 비용·권한을 추가하지 않습니다."
+  "next_decision": "승인된 Gemini 역할·발언자 계약과 3D 표시 연결 작업을 완료했습니다. A→B 실제 자동 실행/머지/main CI 증거와 권한 승인 개입 여부를 #35에 정리해 인수 검토합니다. Phase 2의 공유 문맥·사용량·사용자 지정 personality와 후속 음성/웹캠/리포트·실사 에셋은 별도 승인·검증 대상이며 자동으로 확대하지 않습니다."
 }
