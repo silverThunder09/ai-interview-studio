@@ -1292,6 +1292,85 @@
         "이 기록은 로컬 코드 검사이며 원격 Cloud/머지 성공 증거가 아니다",
         "최종 CI 및 실제 후속 실행은 PR76/PR75/이슈35에서 확인"
       ]
+    },
+    {
+      "id": "tests-2026-10-23-goal-planner-local",
+      "status": "archived",
+      "date_kst": "2026-10-23",
+      "title": "승인 스펙에서 다음 PR 준비 · 로컬 검사",
+      "path": "archive/2026-10-23/goal-planner-local.md",
+      "tags": [
+        "automation",
+        "goal-plan",
+        "draft-pr",
+        "idempotency",
+        "stop",
+        "local-only"
+      ],
+      "result": "local-check-build-passed",
+      "tested_head_sha": "3787c580929b5f6b17755ace66136a820e359805",
+      "tested_base_sha": "0d778b601112217a52b67a5c2e09bd71109dc3c8",
+      "counts": {
+        "unit": 540,
+        "review_policy": 41
+      },
+      "evidence": [],
+      "limitations": [
+        "합성 API·로컬 검사이며 실제 Cloud·PR·머지 완료 증거가 아니다",
+        "최종 Windows CI 및 실제 후속 제품 작업은 연결 PR/이슈35에서 확인"
+      ]
+    },
+    {
+      "id": "tests-2026-10-23-goal-planner-smoke-report",
+      "status": "archived",
+      "date_kst": "2026-10-23",
+      "pr": 77,
+      "title": "제품 작업 smoke 결과 전달 수정 · 로컬 검사",
+      "path": "archive/2026-10-23/goal-planner-local.md",
+      "tags": [
+        "automation",
+        "smoke-report",
+        "result-contract",
+        "issue-78",
+        "local-only"
+      ],
+      "result": "local-check-passed",
+      "tested_head_sha": "83a2caaccac0ea1ba3bb274cc0b2c365f3d39276",
+      "tested_base_sha": "0d778b601112217a52b67a5c2e09bd71109dc3c8",
+      "counts": {
+        "unit": 541,
+        "review_policy": 41
+      },
+      "evidence": [],
+      "limitations": [
+        "로컬 검사로 최종 Windows CI·실제 Cloud/머지를 대신하지 않는다"
+      ]
+    },
+    {
+      "id": "tests-2026-10-23-goal-planner-policy-wakeup",
+      "status": "archived",
+      "date_kst": "2026-10-23",
+      "pr": 77,
+      "title": "리뷰 본문 편집 후 정책 검사 재개 · 로컬 검사",
+      "path": "archive/2026-10-23/goal-planner-local.md",
+      "tags": [
+        "automation",
+        "ci-pending",
+        "workflow-wakeup",
+        "issue-79",
+        "local-only"
+      ],
+      "result": "local-check-passed",
+      "tested_head_sha": "e6400a5ab832fc8d4bf745da47e331064cbd1b57",
+      "tested_base_sha": "0d778b601112217a52b67a5c2e09bd71109dc3c8",
+      "counts": {
+        "unit": 542,
+        "review_policy": 41
+      },
+      "evidence": [],
+      "limitations": [
+        "합성 API로 pending→재개를 검증했으며 최종 원격 CI와 실제 후속 실행은 PR77/이슈35에서 확인"
+      ]
     }
   ],
   "historical_main_verification": {

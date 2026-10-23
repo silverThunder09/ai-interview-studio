@@ -21,6 +21,14 @@ const patch = 'diff --git a/src/example.ts b/src/example.ts\nindex aaaaaaa..bbbb
 const repair: DevelopmentRequest = { ...request, mode: 'repair', allowed_paths: ['src/example.ts'] };
 
 describe('development v2 result boundary', () => {
+  it('accepts the requested Electron smoke report without hiding a failure or allowing shell text', () => {
+    const value = { ...report(), tests: [{ command: 'npm run check', exit_code: 0 }, { command: 'npm run test:smoke', exit_code: 0 }] };
+    expect(parseDevelopmentResult(comment(wrap(JSON.stringify(value))), request).report.tests).toEqual(value.tests);
+    expect(buildDevelopmentRequest(request)).toContain('npm run test:smoke');
+    for (const test of [{ command: 'npm run test:smoke', exit_code: 1 }, { command: 'npm run test:smoke; echo secret', exit_code: 0 }]) {
+      expect(() => parseDevelopmentResult(comment(wrap(JSON.stringify({ ...value, tests: [value.tests[0], test] }))), request)).toThrow();
+    }
+  });
   it('reads the complete official final-response envelope with pretty JSON and binds it to the request', () => {
     const result = parseDevelopmentResult(comment(wrap(JSON.stringify(report(), null, 2))), request);
     expect(result).toMatchObject({ comment_id: 101, task_url: task, report: { checkout_sha: A, outcome: 'succeeded' } });
