@@ -46,16 +46,41 @@ test('two WebGL interviewers, offline GLB/glTF import, motion, restoration and c
         const gl = (c as HTMLCanvasElement).getContext('webgl2'); if (!gl || gl.isContextLost()) throw new Error('Expected a live WebGL scene');
         const width = gl.drawingBufferWidth, height = gl.drawingBufferHeight, pixels = new Uint8Array(width * height * 4);
         gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
-        const left = new Set<string>(), right = new Set<string>();
+        const left = new Set<string>(), right = new Set<string>(); let signature = 2166136261;
         for (let y = 0; y < height; y += 4) for (let x = 0; x < width; x += 4) {
           const offset = (y * width + x) * 4;
           (x < width / 2 ? left : right).add(`${pixels[offset]},${pixels[offset + 1]},${pixels[offset + 2]}`);
+          for (let channel = 0; channel < 3; channel++) signature = Math.imul(signature ^ pixels[offset + channel]!, 16777619) >>> 0;
         }
-        return { left: left.size, right: right.size };
+        return { left: left.size, right: right.size, signature };
       });
     }
     const rendered = await visibleCharacters();
     expect(rendered.left).toBeGreaterThan(20); expect(rendered.right).toBeGreaterThan(20);
+    const distance = async () => Number(await canvas.getAttribute('data-camera-distance'));
+    const initialView = await distance();
+    await page.getByLabel('움직임 일시정지').check(); await expect(canvas).toHaveAttribute('data-paused', 'true');
+    const frozen = (await visibleCharacters()).signature;
+    await page.getByRole('button', { name: '확대', exact: true }).click();
+    expect(await distance()).toBeLessThan(initialView);
+    await expect.poll(async () => (await visibleCharacters()).signature).not.toBe(frozen);
+    for (let i = 0; i < 20; i++) await page.getByRole('button', { name: '확대', exact: true }).click();
+    expect(await distance()).toBe(3.2); await page.getByRole('button', { name: '확대', exact: true }).click();
+    expect(await distance()).toBe(3.2);
+    await page.getByRole('button', { name: '시점 초기화', exact: true }).click(); expect(await distance()).toBe(initialView);
+    await expect.poll(async () => (await visibleCharacters()).signature).toBe(frozen);
+    await page.getByRole('button', { name: '축소', exact: true }).focus(); await page.keyboard.press('-');
+    expect(await distance()).toBe(initialView);
+    await canvas.focus(); await page.keyboard.press('-'); expect(await distance()).toBeGreaterThan(initialView);
+    for (let i = 0; i < 20; i++) await page.keyboard.press('-');
+    expect(await distance()).toBe(9); await page.keyboard.press('-'); expect(await distance()).toBe(9);
+    await page.keyboard.press('Home'); expect(await distance()).toBe(initialView);
+    await page.keyboard.press('='); expect(await distance()).toBeLessThan(initialView);
+    await page.keyboard.press('Home'); expect(await distance()).toBe(initialView);
+    await page.keyboard.press('+'); expect(await distance()).toBeLessThan(initialView);
+    await page.keyboard.press('Home'); expect(await distance()).toBe(initialView);
+    await page.keyboard.press('Control+-'); expect(await distance()).toBe(initialView);
+    await page.getByLabel('움직임 일시정지').uncheck();
     await page.getByRole('button', { name: '오른쪽 시점', exact: true }).click();
     await canvas.focus(); await page.keyboard.press('ArrowLeft');
     await page.getByRole('button', { name: '시점 초기화', exact: true }).click();

@@ -35,6 +35,7 @@ export class AvatarStage {
     this.controls.minDistance = 3.2; this.controls.maxDistance = 9; this.controls.maxPolarAngle = Math.PI * 0.67; this.controls.minPolarAngle = Math.PI * 0.2;
     this.controls.minAzimuthAngle = -Math.PI * 0.45; this.controls.maxAzimuthAngle = Math.PI * 0.45;
     this.controls.update(); this.controls.saveState();
+    this.controls.addEventListener('change', this.viewChanged); this.viewChanged();
     this.scene.add(new T.HemisphereLight(0xe5ffff, 0x44504b, 2.6));
     const key = new T.DirectionalLight(0xffffff, 2.1); key.position.set(-2, 5, 4); this.scene.add(key);
     const rim = new T.DirectionalLight(0x44d8cb, 1.4); rim.position.set(3, 3, -2); this.scene.add(rim);
@@ -60,6 +61,18 @@ export class AvatarStage {
   }
   setQuality(quality: 'low' | 'standard') { this.state.quality = quality; this.resize(); }
   resetView() { this.controls.reset(); }
+  zoomIn() { this.zoom(0.8); }
+  zoomOut() { this.zoom(1.25); }
+  private zoom(scale: number) {
+    const offset = this.camera.position.clone().sub(this.controls.target);
+    offset.setLength(T.MathUtils.clamp(offset.length() * scale, this.controls.minDistance, this.controls.maxDistance));
+    this.camera.position.copy(this.controls.target).add(offset); this.controls.update();
+  }
+  private viewChanged = () => {
+    this.canvas.dataset.cameraDistance = this.camera.position.distanceTo(this.controls.target).toFixed(3);
+    // Pausing motion should still allow an actual camera change to be rendered.
+    if (this.state.paused && !this.disposed && !this.lost && !document.hidden) this.renderer.render(this.scene, this.camera);
+  };
   rotate(direction: number) { const offset = this.camera.position.clone().sub(this.controls.target); offset.applyAxisAngle(new T.Vector3(0, 1, 0), direction * 0.15); this.camera.position.copy(this.controls.target).add(offset); this.controls.update(); }
   private contextLost = (event: Event) => { event.preventDefault(); this.lost = true; this.last = 0; this.failure('3D 그래픽 연결을 잃었습니다. 복구를 기다리거나 화면을 다시 여세요. 텍스트 면접은 계속할 수 있습니다.'); };
   private contextRestored = () => { this.lost = false; this.failure(''); this.resize(); };
@@ -94,7 +107,7 @@ export class AvatarStage {
   dispose() {
     if (this.disposed) return;
     this.disposed = true; ++this.epochs.a; ++this.epochs.b;
-    this.renderer.setAnimationLoop(null); this.observer.disconnect(); this.controls.dispose();
+    this.renderer.setAnimationLoop(null); this.observer.disconnect(); this.controls.removeEventListener('change', this.viewChanged); this.controls.dispose();
     this.canvas.removeEventListener('webglcontextlost', this.contextLost); this.canvas.removeEventListener('webglcontextrestored', this.contextRestored);
     Object.values(this.actors).forEach(a => a.dispose()); disposeObjectScene(this.scene);
     this.renderer.dispose(); this.renderer.forceContextLoss(); this.scene.clear();
