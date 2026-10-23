@@ -10,7 +10,8 @@ export function parseLoopState(state: unknown, config: unknown): LoopState;
 export function appendApprovedTasks(state: unknown, config: unknown): LoopState;
 export function buildReviewRequest(request: unknown): string;
 export function parseReviewResult(comment: unknown, request: unknown): { findings: string[]; comment_id: number; task_url: string };
-export function renderLoopPRBody(original: string, task: unknown, review: unknown): string;
+export function renderLoopReview(task: unknown, review: unknown, title?: string): string;
+export function renderLoopPRBody(original: string, task: unknown, review: unknown, title?: string): string;
 export function gatherMergeEvidence(...args: unknown[]): Promise<unknown>;
 export function runLoop(options: Record<string, unknown>): Promise<{ state: string; changes: number }>;
 export class LoopStore { constructor(api: unknown, config: unknown); load(): Promise<{ head: string; tree: string; state: LoopState }>; appendApprovedTasks(): Promise<boolean>; save(old: unknown, next: unknown): Promise<unknown> }

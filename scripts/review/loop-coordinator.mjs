@@ -170,14 +170,34 @@ export function parseReviewResult(comment, request) {
   return { ...r, comment_id: comment.id, task_url: m[2] };
 }
 
-/** Authenticated CI proofs and the exact-head AI review are rendered as data, never authority. */
-export function renderLoopPRBody(original, task, review) {
-  ensure(validatePRBody(original).length === 0 && Array.isArray(task.validated_ci) && task.validated_ci.length === 3, 'missing_pr_record_evidence');
+function reviewRecordProofs(task, review) {
+  ensure(Array.isArray(task.validated_ci) && task.validated_ci.length === 3, 'missing_pr_record_evidence');
   const proofs = task.validated_ci;
   ensure(new Set(proofs.map(p => p.context)).size === 3 && ['checks', 'package', 'pr-policy'].every(n => proofs.some(p => p.context === n)), 'missing_pr_record_evidence');
   ensure(proofs.every(p => p.repository === REPO && p.pr_number === task.pr && p.head_sha === task.head && p.base_sha === task.base && p.checkout_sha === task.checkout && /^[0-9]+$/.test(p.run_id)) && review.head_sha === task.head && review.base_sha === task.base, 'stale_pr_record_evidence');
+  return proofs;
+}
+
+/** Human-readable summary; evidence stays visible on expansion and never grants approval. */
+export function renderLoopReview(task, review, title = '이번 PR의 변경 내용은 PR 본문의 변경 목적을 참고하세요.') {
+  const proofs = reviewRecordProofs(task, review), blocked = review.findings.length > 0;
+  return `### 변경 내용\n${title}\n\n### 확인 결과\n` +
+    (blocked ? `수정이 필요한 문제 ${review.findings.length}건입니다.\n\n${review.findings.join('\n\n')}` : '코드와 관련 테스트를 검토했으며, 구체적으로 확인된 결함은 없습니다.') +
+    '\n\n필수 자동 검사 3개가 검토한 코드에서 통과했습니다. 실제 사용자 PC·장치와 유료 AI 호출은 별도 검증 대상입니다.\n\n' +
+    '### 남은 작업\n머지 직전에 최신 코드·검사 결과·미해결 이슈와 리뷰를 다시 확인합니다. 머지 후에는 main 검사와 다음 작업 연결을 확인합니다.\n\n' +
+    `### 머지 가능 여부\n${blocked ? '보류 — 위 문제를 수정하고 다시 검증해야 합니다.' : '최종 확인 대기 — 이 코드 검토만으로 머지를 확정하지 않습니다.'}\n\n` +
+    'AI가 작성한 코드를 AI가 검토한 결과입니다. 독립적인 사람의 승인이 아닙니다.\n\n' +
+    `<details>\n<summary>상세 근거</summary>\n\n검토한 코드: \`${task.head}\`\n기준 main: \`${task.base}\`\n검사한 병합 코드: \`${task.checkout}\`\n\n` +
+    proofs.map(p => `- [${p.context}: 통과](https://github.com/${REPO}/actions/runs/${p.run_id})`).join('\n') +
+    `\n\n검토 결과 원본: ${review.task_url}\n\n</details>`;
+}
+
+/** Authenticated CI proofs and the exact-head AI review are rendered as data, never authority. */
+export function renderLoopPRBody(original, task, review, title) {
+  ensure(validatePRBody(original).length === 0, 'missing_pr_record_evidence');
+  const proofs = reviewRecordProofs(task, review);
   const validation = `head=${task.head}; base=${task.base}; 실제 merge checkout=${task.checkout}.\n` + proofs.map(p => `- [${p.context}](https://github.com/${REPO}/actions/runs/${p.run_id}): 성공한 Record 단계의 실제 stdout과 최신 run/attempt/job/SHA를 확인했습니다.`).join('\n') + '\n개발 작업의 로컬 검사 보고와 GitHub Actions의 실제 CI 증거를 별도로 확인했습니다. 제품 CI는 원본/패키지 smoke·notices 검사를 포함하며 실제 사용자 하드웨어·유료 모델 호출은 검증하지 않았습니다.';
-  const reviewed = `AI 코드 검토입니다. 독립적인 사람의 승인이 아닙니다.\nhead=${task.head}; base=${task.base}\n${review.findings.length ? review.findings.join('\n\n') : '발견한 구체적 결함 없음.'}\n검토 결과 원본: ${review.task_url}`;
+  const reviewed = renderLoopReview(task, review, title);
   let body = original;
   for (const [name, text] of [['검증', validation], ['리뷰 결과', reviewed]]) body = body.replace(new RegExp(`^## ${name}\\s*\\n[\\s\\S]*?(?=^## |$(?![\\s\\S]))`, 'm'), `## ${name}\n${text}\n\n`);
   ensure(validatePRBody(body).length === 0, 'invalid_generated_pr_body'); return body;
@@ -424,11 +444,13 @@ export async function runLoop({ api, sender, store, config, policy, now = Date.n
           const nativeEvidence = candidates.length ? null : { head_sha: pr.head.sha, base_sha: main, reviews: await readAllReviews(api, task.pr), review_comments: await allPages(api, `/pulls/${task.pr}/comments`) };
           const review = candidates.length ? parseReviewResult(candidates[0], task.request) : parseNativeReviewResult(responses, task.request, nativeEvidence);
           if (!review) return { state: 'waiting-cloud', changes };
-          const body = `AI 코드 검토입니다. 독립된 사람의 승인이 아닙니다.\nhead=${task.head}; base=${task.base}\n${review.findings.length ? review.findings.join('\n\n') : '발견한 구체적 결함 없음.'}\n${review.task_url}\n<!-- ais-loop-review:${task.request.request_key} -->`;
-          const existing = (await readAllReviews(api, task.pr)).filter(r => r.body === body && r.commit_id === task.head && r.state === 'COMMENTED' && r.user?.login === 'github-actions[bot]');
+          const marker = `<!-- ais-loop-review:${task.request.request_key} -->`;
+          const body = renderLoopReview(task, review, definition.title ?? definition.goal) + '\n' + marker;
+          const existing = (await readAllReviews(api, task.pr)).filter(r => r.body?.endsWith(marker) && r.commit_id === task.head && r.state === 'COMMENTED' && r.user?.login === 'github-actions[bot]');
           ensure(existing.length <= 1, 'ambiguous_ai_comment');
           if (!existing.length) await api.request('POST', `/pulls/${task.pr}/reviews`, { commit_id: task.head, event: 'COMMENT', body });
-          const updatedBody = renderLoopPRBody(pr.body, task, review);
+          else if (existing[0].body !== body) await api.request('PUT', `/pulls/${task.pr}/reviews/${existing[0].id}`, { body });
+          const updatedBody = renderLoopPRBody(pr.body, task, review, definition.title ?? definition.goal);
           if (updatedBody !== pr.body) await api.request('PATCH', `/pulls/${task.pr}`, { body: updatedBody });
           ensure(review.findings.length === 0, 'ai_findings_require_repair');
           await update(t => { t.phase = 'merge'; t.review = { ...review, request: task.request }; }); continue;

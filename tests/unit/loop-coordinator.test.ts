@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createHash } from 'node:crypto';
-import { gatherMergeEvidence, acceptsLoopWakeup, isCurrentMergeCheckout, emptyLoopState, parseLoopConfig, parseLoopState, parseReviewResult, buildReviewRequest, renderLoopPRBody, runLoop, LoopStore, type LoopState } from '../../scripts/review/loop-coordinator.mjs';
+import { gatherMergeEvidence, acceptsLoopWakeup, isCurrentMergeCheckout, emptyLoopState, parseLoopConfig, parseLoopState, parseReviewResult, buildReviewRequest, renderLoopReview, renderLoopPRBody, runLoop, LoopStore, type LoopState } from '../../scripts/review/loop-coordinator.mjs';
 import { readFileSync } from 'node:fs';
 import { GitHub } from '../../scripts/review/event-worker';
 
@@ -113,6 +113,17 @@ describe('AI review identity and actual review envelope', () => {
   });
 });
 describe('automatic PR validation records', () => {
+  it('keeps findings visible, hides only evidence and never presents review as merge approval', () => {
+    const task = { pr: 56, head, base, checkout, validated_ci: ['checks', 'package', 'pr-policy'].map((context, i) => ({ repository, pr_number: 56, context, head_sha: head, base_sha: base, checkout_sha: checkout, run_id: String(100 + i) })) };
+    const review = { head_sha: head, base_sha: base, findings: ['재시작하면 품질 선택이 초기화됩니다. 앱 종료 후 다시 켜서 재현하며 선택 값을 보존해야 합니다.'], task_url: 'https://github.com/example' };
+    const body = renderLoopReview(task, review, '앱을 다시 켜도 3D 품질 선택을 유지합니다.');
+    expect(body.indexOf(review.findings[0]!)).toBeLessThan(body.indexOf('<details>'));
+    expect(body).toContain('보류 — 위 문제를 수정');
+    expect(body.indexOf(head)).toBeGreaterThan(body.indexOf('<details>'));
+    expect(renderLoopReview(task, { ...review, findings: [] })).toContain('최종 확인 대기');
+    expect(() => renderLoopReview({ ...task, validated_ci: [] }, review)).toThrow('missing_pr_record_evidence');
+    expect(() => renderLoopReview(task, { ...review, head_sha: merged })).toThrow('stale_pr_record_evidence');
+  });
   it('preserves scope and security sections and refuses missing/stale evidence', () => {
     const f = new FixtureAPI(), original = f.pr(56).body;
     const task = { pr: 56, head, base, checkout, validated_ci: ['checks', 'package', 'pr-policy'].map((context, i) => ({ repository, pr_number: 56, context, head_sha: head, base_sha: base, checkout_sha: checkout, run_id: String(100 + i) })) };
@@ -244,6 +255,27 @@ describe('event-driven A → merge/main CI → B', () => {
     expect(f.updatedBodies.get(56)).toContain('검토 결과 원본: https://github.com/');
     await runLoop(f.options()); expect(posted).toHaveLength(1); expect(f.merges).toEqual([56]); expect(f.sends.map(x => x.pr)).toEqual([56, 56]);
     f.mainDone = true; await runLoop(f.options()); expect(f.store.state.tasks[0]!.phase).toBe('completed'); expect(f.sends.map(x => x.pr)).toEqual([56, 56, 57]);
+  });
+  it('updates its old review wording instead of reposting or editing another reviewer', async () => {
+    const f = new FixtureAPI(); await runLoop(f.options()); f.respond(false); await runLoop(f.options()); f.ciDone = true; await runLoop(f.options()); f.respond(true);
+    const task = f.store.state.tasks[0]!, request = task.request as ReturnType<typeof reviewRequest>;
+    const marker = `<!-- ais-loop-review:${request.request_key} -->`;
+    const original = f.request.bind(f), writes: { method: string; path: string }[] = [];
+    let ownBody = '예전 설명\n' + marker;
+    f.request = async (method, path, value) => {
+      if (method === 'GET' && path.startsWith('/pulls/56/reviews?')) return [
+        { id: 900, body: ownBody, commit_id: head, state: 'COMMENTED', user: { login: 'github-actions[bot]' } },
+        { id: 901, body: '사람 리뷰\n' + marker, commit_id: head, state: 'CHANGES_REQUESTED', user: { login: 'person' } },
+      ];
+      if (method === 'PUT' && path === '/pulls/56/reviews/900') { writes.push({ method, path }); ownBody = (value as { body: string }).body; return { id: 900 }; }
+      if (method === 'POST' && path === '/pulls/56/reviews') writes.push({ method, path });
+      return original(method, path, value);
+    };
+    await expect(runLoop({ ...f.options(), verifyMerge: gatherMergeEvidence })).rejects.toThrow('merge_policy_denied');
+    expect(writes).toEqual([{ method: 'PUT', path: '/pulls/56/reviews/900' }]);
+    expect(ownBody).toContain('### 변경 내용');
+    expect(ownBody).toContain('독립적인 사람의 승인이 아닙니다');
+    expect(f.merges).toHaveLength(0);
   });
   it.each(['custom', 'native-false', 'native-null'])('uses the real merge evidence collector for %s and starts B only after main CI', async kind => {
     const f = new FixtureAPI(), options = { ...f.options(), verifyMerge: gatherMergeEvidence };

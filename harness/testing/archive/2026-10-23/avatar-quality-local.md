@@ -15,4 +15,10 @@
 
 Cloud 요청 안내에는 실제 tests 중 하나라도 nonzero이면 failed로 보고하도록 명시하고, 기존 관련 headless smoke 명령의 정확한 보고 이름을 추가했다. 특권 담당이 보고 문자열을 실행하지 않으며 파서의 실패/최신 CI/머지 조건은 그대로다.
 
+## 읽기 쉬운 리뷰 양식 추가
+
+사용자의 추가 요청으로 변경 내용·확인 결과·남은 작업·머지 가능 여부를 먼저 쓰는 `.github/AI_REVIEW_TEMPLATE.md`와 자동 작성 함수를 추가했다. 결함은 본문에 표시하고 SHA·CI 링크만 상세 근거로 접는다. 기존 자동 리뷰는 같은 식별자·head·작성자를 확인해 본문을 갱신하며 중복 게시하지 않는다. 사람의 변경 요청은 그대로 머지를 차단한다.
+
+이 변경의 `npm run check`는 타입·lint·단위 **549개/29파일·정책41개**로 성공했다. 추가 검증은 결함 가시성·오래된/누락된 증거 거절·기존 자동 댓글 갱신·사람의 변경 요청 유지다. 첫 추가 테스트는 단순 fixture 대신 실제 증거 수집기를 사용하도록 바로잡은 뒤 통과했다. 위 제품 build·Electron 검증과 구분하며, 최종 원격 CI는 새 head에서 다시 확인한다.
+
 이번 제품 복구는 **연결된 검토 담당의 수동 수정**이다. 자동화의 파일 allowlist나 과거 정의를 바꾸지 않았고 전체 무인 성공이라고 표시하지 않는다. 최종 head의 Windows 원본/패키지·원격 CI·merged main·다음 자동 작업 재개는 아직 대기이며 [PR #80](https://github.com/silverThunder09/ai-interview-studio/pull/80)과 [운영 이슈 #35](https://github.com/silverThunder09/ai-interview-studio/issues/35)에 이어 기록한다. 기존 최신 앱 기준·과거 숫자를 이 로컬 결과로 덮어쓰지 않는다.
