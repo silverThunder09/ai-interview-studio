@@ -1373,6 +1373,21 @@
       ]
     },
     {
+      "id": "tests-2026-10-23-codex-result-template-local",
+      "status": "archived",
+      "date_kst": "2026-10-23",
+      "pr": null,
+      "title": "Codex 작업 결과 한국어 요약·접힌 JSON 검증",
+      "path": "archive/2026-10-23/codex-result-template-local.md",
+      "tags": ["codex", "result-template", "strict-parser", "local-only"],
+      "result": "local-check-passed",
+      "tested_head_sha": "3cbd058e334ee8d0ea196f3c19f350b346991fe8",
+      "tested_base_sha": "3654185ceca59d7d0d27e29158f3a1759137f387",
+      "counts": {"unit": 553, "review_policy": 41},
+      "evidence": [],
+      "limitations": ["합성 공식 댓글 fixture이며 실제 Codex의 새 양식 반환은 아직 미검증", "최종 Windows CI·원격 상태는 해당 PR에서 별도 확인"]
+    },
+    {
       "id": "tests-2026-10-23-avatar-keyboard-local",
       "status": "archived",
       "date_kst": "2026-10-23",
