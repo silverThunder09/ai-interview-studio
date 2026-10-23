@@ -44,7 +44,9 @@ describe('approved queue extension', () => {
       { id: 'gemini-interviewer-speaker', phase: 'queued', pr: null, request: null },
       { id: 'gemini-speaker-avatar', phase: 'queued', pr: null, request: null },
     ]);
-    const specHash = createHash('sha256').update(readFileSync(new URL('../../harness/specs/gemini-local-interview.md', import.meta.url))).digest('hex');
+    // GitHub hashes the Git blob; Windows autocrlf may change only the working copy.
+    const spec = readFileSync(new URL('../../harness/specs/gemini-local-interview.md', import.meta.url), 'utf8');
+    const specHash = createHash('sha256').update(spec.replace(/\r\n/g, '\n')).digest('hex');
     expect(config.tasks.slice(5).every((task: { spec: { sha256: string } }) => task.spec.sha256 === specHash)).toBe(true);
     expect(appendApprovedTasks(extended, config)).toBe(extended);
   });
