@@ -72,7 +72,7 @@ async function start(): Promise<void> {
   });
   for (const [channel, handle] of [
     [CHANNELS.avatarSelect, avatars.select], [CHANNELS.avatarGet, avatars.get], [CHANNELS.avatarCommit, avatars.commit], [CHANNELS.avatarReset, avatars.reset],
-    [CHANNELS.snapshot, handlers.snapshot], [CHANNELS.settings, handlers.update],
+    [CHANNELS.snapshot, handlers.snapshot], [CHANNELS.settings, handlers.update], [CHANNELS.avatarQuality, handlers.avatarQuality],
     [CHANNELS.resume, selectResume],
     [CHANNELS.interviewHistory, interview.history], [CHANNELS.interviewGet, interview.get],
     [CHANNELS.interviewStart, interview.start], [CHANNELS.interviewAnswer, interview.answer],

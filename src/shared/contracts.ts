@@ -8,6 +8,7 @@ import type { DeleteAllInterviewsRequest, DeleteInterviewRequest, InterviewHisto
 export const CHANNELS = {
   avatarSelect: 'studio:avatar-select', avatarGet: 'studio:avatar-get', avatarCommit: 'studio:avatar-commit', avatarReset: 'studio:avatar-reset',
   snapshot: 'studio:snapshot', settings: 'studio:settings', resume: 'studio:select-resume',
+  avatarQuality: 'studio:avatar-quality',
   interviewHistory: 'studio:interview-history', interviewGet: 'studio:interview-get',
   interviewStart: 'studio:interview-start', interviewAnswer: 'studio:interview-answer',
   interviewDelete: 'studio:interview-delete', interviewDeleteAll: 'studio:interview-delete-all',
@@ -20,7 +21,8 @@ export const CHANNELS = {
 } as const;
 export const THEMES = ['system', 'light', 'dark'] as const;
 export type Theme = (typeof THEMES)[number];
-export interface Settings { locale: 'ko-KR'; theme: Theme; interviewRole: 'backend' }
+export type AvatarQuality = 'low' | 'standard';
+export interface Settings { locale: 'ko-KR'; theme: Theme; interviewRole: 'backend'; avatarQuality?: AvatarQuality }
 export const DEFAULT_SETTINGS: Readonly<Settings> = Object.freeze({
   locale: 'ko-KR', theme: 'system', interviewRole: 'backend',
 });
@@ -35,6 +37,7 @@ export interface DesktopAPI {
   resetAvatar(slot: AvatarSlot): Promise<Result<null>>;
   getSnapshot(): Promise<Result<Snapshot>>;
   updateSettings(settings: Settings): Promise<Result<Settings>>;
+  updateAvatarQuality(quality: AvatarQuality): Promise<Result<AvatarQuality>>;
   selectResume(): Promise<Result<SelectedResume | null>>;
   getInterviewHistory(): Promise<Result<InterviewHistory>>;
   getInterview(sessionId: string): Promise<Result<InterviewSession>>;
@@ -61,6 +64,7 @@ export function isSettings(value: unknown): value is Settings {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
   const obj = value as Record<string, unknown>;
   const keys = Object.keys(obj);
-  return keys.length === 3 && keys.every((key) => ['locale', 'theme', 'interviewRole'].includes(key)) && obj.locale === 'ko-KR' &&
+  return (keys.length === 3 || keys.length === 4 && Object.hasOwn(obj, 'avatarQuality')) && keys.every((key) => ['locale', 'theme', 'interviewRole', 'avatarQuality'].includes(key)) &&
+    (!Object.hasOwn(obj, 'avatarQuality') || obj.avatarQuality === 'low' || obj.avatarQuality === 'standard') && obj.locale === 'ko-KR' &&
     obj.interviewRole === 'backend' && THEMES.some((theme) => obj.theme === theme);
 }
