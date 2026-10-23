@@ -12,3 +12,7 @@
 ## Windows 줄바꿈 실패와 수정
 
 초기 head 44a52b6의 Windows 실행 39998687112는 새 큐 통합 검사에서 CRLF 작업 사본과 GitHub LF blob의 해시 차이로 단위555통과/1실패였다. 관련 #84에 근거와 수정 AC를 기록했다. 운영 planner의 원본 Git blob 해시 검증은 유지하고 테스트의 작업 사본만 LF로 정규화했다. 수정 후 check는 단위556·정책41 성공이며 실제 스펙 파일을 잠시 CRLF로 만든 별도 큐 테스트6개도 종료0이었다. 원본 스펙 바이트는 검사 직후 복원했고 최종 Windows 결과는 PR에서 별도로 확인한다.
+
+## Gemini headless 실행 확인
+
+새 고정3파일 명령을 실제 실행하자 avatar/desktop2개는 성공했지만 기존 Gemini smoke가 headless 인수를 읽지 않아 Missing X server or $DISPLAY로1개 실패했다(#85). Gemini 테스트에 기존 두 테스트와 같은 조건부 Ozone/SwiftShader launch 인수를 추가했고 Chromium sandbox=true·제품 코드·Windows 기본 실행은 유지했다. 같은 명령을 재실행해 실제 Electron3개가30.2초에 통과했으며 check도 단위556·정책41로 성공했다. build는 앞서 같은 제품 코드에서 종료0이었다. 이 결과는 현재 제품의 합성 Gemini 회귀이며 후속 역할·발언자 기능 구현 성공을 뜻하지 않는다.

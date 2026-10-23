@@ -19,7 +19,7 @@ test('Gemini uses the REST MIME enum and distinguishes safe request/model/respon
   try {
     app = await electron.launch({ chromiumSandbox: true, env,
       ...(process.env.SMOKE_EXECUTABLE ? { executablePath: resolve(process.env.SMOKE_EXECUTABLE) } : {}),
-      args: [...(process.env.SMOKE_EXECUTABLE ? [] : ['.']), `--user-data-dir=${profile}`] });
+      args: [...(process.env.SMOKE_EXECUTABLE ? [] : ['.']), ...(process.env.STUDIO_SMOKE_HEADLESS === '1' ? ['--ozone-platform=headless', '--use-gl=angle', '--use-angle=swiftshader'] : []), `--user-data-dir=${profile}`] });
     // Strict synthetic REST endpoint; nothing reaches Google and there is no product test flag.
     await app.evaluate(() => {
       globalThis.fetch = async (url, init) => {
