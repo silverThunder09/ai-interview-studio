@@ -32,7 +32,8 @@ jobs:
         (startsWith(github.event.comment.body, '<!-- ais-development-result-v2:') ||
          startsWith(github.event.comment.body, '<!-- ais-code-review-result:') ||
          startsWith(github.event.comment.body, '<!-- codex-pull-request-review-summary -->') ||
-         startsWith(github.event.comment.body, '<!-- codex-review-receipt:v1 -->'))))
+         startsWith(github.event.comment.body, '<!-- codex-review-receipt:v1 -->') ||
+         github.event.comment.body == 'Codex couldn''t complete this request. Try again later.')))
     runs-on: ubuntu-24.04
     timeout-minutes: 6
     permissions:

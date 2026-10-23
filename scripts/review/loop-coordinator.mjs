@@ -204,6 +204,18 @@ export function renderLoopPRBody(original, task, review, title) {
 }
 
 async function controlPaused(api) { return (await allPages(api, '/issues/35/labels')).some(l => ['needs-user', 'agent-paused'].includes(l.name)); }
+function nativeRequestFailure(comments, task) {
+  const sent = task.delivery?.id, requested = Date.parse(task.request?.requested_at);
+  if (!number(sent) || !Number.isFinite(requested)) return null;
+  return comments.find(c => {
+    if (!number(c.id) || c.id <= sent || c.user?.login !== 'chatgpt-codex-connector[bot]' || c.user.type !== 'Bot' ||
+      c.body !== "Codex couldn't complete this request. Try again later." ||
+      c.html_url !== `https://github.com/${REPO}/pull/${task.pr}#issuecomment-${c.id}` ||
+      typeof c.created_at !== 'string' || !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{3})?Z$/.test(c.created_at)) return false;
+    const time = Date.parse(c.created_at);
+    return Number.isFinite(time) && time >= requested && new Date(time).toISOString().replace('.000Z', 'Z') === c.created_at.replace('.000Z', 'Z');
+  }) ?? null;
+}
 async function scope(api, task, definition) {
   ensure(!await controlPaused(api), 'loop_control_paused');
   const pr = await api.request('GET', `/pulls/${task.pr}`), main = (await api.request('GET', '/branches/main')).commit.sha;
@@ -438,6 +450,11 @@ export async function runLoop({ api, sender, store, config, policy, now = Date.n
         }
         const marker = task.phase === 'review' ? `<!-- ais-code-review-result:${task.request.request_key} -->` : `<!-- ais-development-result-v2:${task.request.request_key} -->`;
         const responses = await comments(api, task.pr);
+        const failed = nativeRequestFailure(responses, task);
+        if (failed) {
+          await update(t => { t.native_failure = { comment_id: failed.id, created_at: failed.created_at, request_key: task.request.request_key, head_sha: task.head, base_sha: task.base }; });
+          throw new Error('native_codex_request_failed');
+        }
         const candidates = responses.filter(c => c.body?.startsWith(marker));
         ensure(candidates.length <= 1, 'ambiguous_cloud_result');
         if (task.phase === 'review') {

@@ -1486,6 +1486,33 @@
         "Windows CI·실제 A→B 자동 실행은 원격에서 별도 확인",
         "Legacy 성공은 사용자 제공 후속 보고이며 독립 원본 로그 검증과 구분"
       ]
+    },
+    {
+      "id": "tests-2026-10-24-native-codex-failure-local",
+      "status": "archived",
+      "date_kst": "2026-10-24",
+      "pr": null,
+      "title": "공식 Codex 실패 감지와 root 실행 안내",
+      "path": "archive/2026-10-24/native-codex-failure-local.md",
+      "tags": [
+        "automation",
+        "native-failure",
+        "no-retry",
+        "local-only"
+      ],
+      "result": "local-check-passed",
+      "tested_head_sha": "06dd65388ccda0d34b3cae3034853255aa4f6998",
+      "tested_base_sha": "a95daa641fd658736d39462421273b5b975df5e1",
+      "counts": {
+        "unit": 565,
+        "review_policy": 41
+      },
+      "evidence": [],
+      "limitations": [
+        "root인 Legacy 작업의 일반 사용자 실행은 미검증",
+        "Windows CI와 merged main은 PR에서 별도로 확인",
+        "PR86 기능 구현과 A→B 무인 실행은 미완료"
+      ]
     }
   ],
   "historical_main_verification": {

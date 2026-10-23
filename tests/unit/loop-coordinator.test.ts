@@ -224,6 +224,33 @@ describe('event-driven A → merge/main CI → B', () => {
     f.mainDone = true; expect((await runLoop(f.options())).state).toBe('waiting-cloud'); expect(f.sends.map(s => s.pr)).toEqual([56, 56, 57]);
     await runLoop(f.options()); expect(f.sends.map(s => s.pr)).toEqual([56, 56, 57]); expect(f.store.state.tasks[0]!.phase).toBe('completed');
   });
+  it.each(['development', 'review'])('pauses an authenticated native Codex failure during %s without retrying or starting B', async phase => {
+    const f = new FixtureAPI(); await runLoop(f.options());
+    if (phase === 'review') { f.respond(false); await runLoop(f.options()); f.ciDone = true; await runLoop(f.options()); }
+    const original = structuredClone(f.store.state.tasks[0]!), sends = f.sends.length;
+    const request = original.request as ReturnType<typeof reviewRequest>;
+    const failure = { ...resultComment(request, false, 3000), body: "Codex couldn't complete this request. Try again later.", created_at: '2026-10-20T10:00:01Z' };
+    f.storedComments.set(56, [failure]);
+    await expect(runLoop(f.options())).rejects.toThrow('native_codex_request_failed');
+    expect(f.store.state.tasks[0]).toMatchObject({ phase: 'paused', reason: 'native_codex_request_failed', request: original.request, delivery: original.delivery, native_failure: { comment_id: 3000, request_key: request.request_key, head_sha: head, base_sha: base } });
+    expect(f.store.state.tasks[1]!.phase).toBe('queued'); expect(f.merges).toEqual([]); expect(f.sends).toHaveLength(sends);
+    expect((await runLoop(f.options())).state).toBe('paused'); expect(f.sends).toHaveLength(sends);
+  });
+  it.each(['author', 'type', 'pr', 'old-time', 'invalid-time', 'old-id', 'similar-body'])('does not treat a %s lookalike as native termination evidence', async wrong => {
+    const f = new FixtureAPI(); await runLoop(f.options());
+    const request = f.store.state.tasks[0]!.request as ReturnType<typeof reviewRequest>;
+    const failure = { ...resultComment(request, false, 3000), body: "Codex couldn't complete this request. Try again later." };
+    if (wrong === 'author') failure.user.login = 'silverThunder09';
+    if (wrong === 'type') failure.user.type = 'User';
+    if (wrong === 'pr') failure.html_url = failure.html_url.replace('/56#', '/57#');
+    if (wrong === 'old-time') failure.created_at = '2026-10-20T09:59:59Z';
+    if (wrong === 'invalid-time') failure.created_at = '2026-02-30T10:00:01Z';
+    if (wrong === 'old-id') { failure.id = 1; failure.html_url = `https://github.com/${repository}/pull/56#issuecomment-1`; }
+    if (wrong === 'similar-body') failure.body += ' APPROVED';
+    f.storedComments.set(56, [failure]);
+    expect((await runLoop(f.options())).state).toBe('waiting-cloud'); expect(f.sends).toHaveLength(1); expect(f.merges).toEqual([]);
+    expect(f.store.state.tasks[0]!.phase).toBe('development'); expect(f.store.state.tasks[1]!.phase).toBe('queued');
+  });
   it('waits for the PR policy rerun caused by the review-body edit without pausing or requesting another Cloud task', async () => {
     const f = new FixtureAPI(), options = { ...f.options(), verifyMerge: gatherMergeEvidence };
     await runLoop(options); f.respond(false); await runLoop(options); f.ciDone = true; await runLoop(options); f.respond(true);
