@@ -16,6 +16,7 @@ export function isPendingWakeup(state, input) {
   if (r.pr === '0') {
     const bootstrap = state.bootstrap, check = bootstrap?.checks?.at(-1) ?? bootstrap;
     if (bootstrap?.ready === false && check?.key === r.key && check.main === r.head && r.head === r.base && r.head === r.checkout) return true;
+    if (state.tasks.some(t => t.pr === null && t.phase === 'queued' && t.planning_ci?.key === r.key && t.planning_ci.main === r.head && r.head === r.base && r.head === r.checkout)) return true;
     return state.tasks.some(t => t.phase === 'main-ci' && t.operation?.key === r.key && t.merged === r.head && r.head === r.base && r.head === r.checkout);
   }
   return state.tasks.some(t => t.pr === Number(r.pr) && t.phase === 'ci' && t.operation?.key === r.key && t.head === r.head && t.base === r.base && t.checkout === r.checkout);

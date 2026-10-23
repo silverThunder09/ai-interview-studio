@@ -184,7 +184,7 @@ node --experimental-strip-types scripts/review/connected-controller.ts plan resu
 
 - `approved-loop.yml`의 **새 조정자만** 신뢰 main에 contents:write·pull-requests:write·issues:write·checks:read·actions:write를 사용한다. actions:write의 구현상 사용처는 read-only `loop-validation.yml` dispatch다. GITHUB_TOKEN의 push/merge가 일반 CI를 재시작하지 않는 제약을 처리한다. CI 끄기·성공 check 작성·사람 리뷰 해제는 구현하지 않는다.
 - 기존 Event worker의 PR 수정/merge 금지는 유지한다. 새 조정자의 조건부 commit/merge·한정 A/B 승인 큐 활성화는 위 사용자 승인에 한정된다. 이후 새 MVP/보호 변경·권한 확대는 새 사용자 요청이 필요하며 후보 PR이나 CI 통과로 스스로 승인할 수 없다.
-- `AIS_CODEX_COMMENT_TOKEN`은 기존 고정 Codex 요청 댓글 POST에만 쓴다. Legacy에 토큰을 복사하거나 새 키·API 과금·서버·시간 예약을 추가하지 않는다. Codex/Actions 사용량은 발생한다.
+- 설치 당시 `AIS_CODEX_COMMENT_TOKEN`은 고정 Codex 요청 댓글 POST에만 사용했다. 2026-10-23 KST 사용자의 다음 작업 자동 준비 요청에 따른 [현재 계획 담당의 제한된 Draft 생성](event-loop.md#목표에서-다음-개발-작업으로-연결)은 별도로 구분한다. 기존 Event worker의 댓글 전용 경계와 사용자 토큰의 commit·ref·수정·merge 금지는 유지한다. Legacy에 토큰을 복사하거나 새 키·API 과금·서버·시간 예약을 추가하지 않는다. Codex/Actions 사용량은 발생한다.
 - 특권 job은 main만 checkout하며 PR 소스/artifact 실행·npm 설치를 하지 않는다. 제품 CI는 별도 read-only job에서 실제 merge checkout을 실행한다. 원본/패키지 smoke·notices 검사는 유지하고 exe 업로드 없이 실패 진단만 1일 보관한다.
 - 사람 리뷰 이벤트는 read-only `Review wake-up` 종료로 받는다. PR의 workflow를 쓰기 권한으로 실행하지 않는다.
 - 상태는 `automation/approved-loop` / `.automation/approved-loop.json`에 CAS/lease로 저장한다. 누락 상태의 자동 초기화/reset은 금지한다. 승인된 초기화 때 기존 ref 유무를 확인하고 main 기준 tree/parent를 보존한다. 기존 v1/v2·PR #52·보류 이력은 보존하며 전환 시 기존 worker의 **새 발신만** 멈춘다.

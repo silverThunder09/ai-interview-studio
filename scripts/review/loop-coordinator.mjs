@@ -10,6 +10,7 @@ import { GitHub, APIError, allPages } from './event-worker.ts';
 import { countChangeRequests, evaluateMergeGate, validatePRBody } from './policy.mjs';
 import { latestCheck, readAllReviews, readJobCIEvidence } from './ci-proof.mjs';
 import { parseNativeReviewResult } from './native-review.mjs';
+import { preparePlannedPR, verifyPlannedSeed, verifyPlannedSpec } from './loop-planner.mjs';
 
 export const REPO = 'silverThunder09/ai-interview-studio';
 export const LOOP_BRANCH = 'automation/approved-loop';
@@ -40,9 +41,15 @@ function protectedPath(path) { return /(^|\/)AGENTS\.md$/.test(path) || ['.githu
 export function parseLoopConfig(value) {
   const c = obj(value);
   ensure(c.schema === 1 && c.repository === REPO && typeof c.enabled === 'boolean' && Array.isArray(c.tasks) && c.tasks.length <= 256, 'invalid_loop_config');
+  if (c.next_decision !== undefined) ensure(typeof c.next_decision === 'string' && c.next_decision.length > 0 && c.next_decision.length <= 2000, 'invalid_next_decision');
   const ids = new Set(), prs = new Set();
   for (const t of c.tasks) {
-    ensure(/^[a-z0-9][a-z0-9-]{0,63}$/.test(t.id) && !ids.has(t.id) && number(t.pr) && !prs.has(t.pr) && t.pr !== 52, 'invalid_or_duplicate_task'); ids.add(t.id); prs.add(t.pr);
+    ensure(/^[a-z0-9][a-z0-9-]{0,63}$/.test(t.id) && !ids.has(t.id) && (number(t.pr) || t.pr === null) && (t.pr === null || !prs.has(t.pr)) && t.pr !== 52, 'invalid_or_duplicate_task'); ids.add(t.id); if (t.pr !== null) prs.add(t.pr);
+    if (t.pr === null) {
+      ensure(typeof t.title === 'string' && t.title.length > 0 && t.title.length <= 120 && !/[\r\n]/.test(t.title), 'missing_planned_title');
+      ensure(t.spec && /^harness\/specs\/[a-z0-9-]+\.md$/.test(t.spec.path) && HASH.test(t.spec.sha256 ?? ''), 'invalid_planned_spec');
+      ensure(Array.isArray(t.acceptance) && t.acceptance.length > 0 && t.acceptance.length <= 10 && t.acceptance.every(a => typeof a === 'string' && a.length > 0 && a.length <= 1000), 'missing_planned_acceptance');
+    }
     ensure(typeof t.goal === 'string' && t.goal.length > 0 && t.goal.length <= 4000 && typeof t.approval === 'string' && t.approval.length > 0, 'missing_task_approval');
     ensure(Array.isArray(t.allowed_paths) && t.allowed_paths.length > 0 && t.allowed_paths.length <= 10 && new Set(t.allowed_paths).size === t.allowed_paths.length && t.allowed_paths.every(p => typeof p === 'string' && /^[A-Za-z0-9_./-]+$/.test(p) && !p.startsWith('/') && !p.split('/').some(s => !s || s === '.' || s === '..' || s === '.git') && !protectedPath(p)), 'unapproved_task_path');
   }
@@ -66,8 +73,12 @@ export function parseLoopState(value, config) {
     ensure(!v.bootstrap.ready || v.bootstrap.checks.length === 0 || v.bootstrap.checks.at(-1).ready, 'unverified_bootstrap_check');
   }
   let active = false, queued = false;
+  const prs = new Set();
   v.tasks.forEach((t, i) => {
-    ensure(t.id === c.tasks[i].id && t.pr === c.tasks[i].pr && PHASES.includes(t.phase) && Number.isSafeInteger(t.cycles) && t.cycles >= 0 && t.cycles <= 3, 'invalid_loop_task');
+    ensure(t.id === c.tasks[i].id && (c.tasks[i].pr === null ? t.pr === null || number(t.pr) : t.pr === c.tasks[i].pr) && PHASES.includes(t.phase) && Number.isSafeInteger(t.cycles) && t.cycles >= 0 && t.cycles <= 3, 'invalid_loop_task');
+    ensure(t.pr !== null || ['queued', 'paused'].includes(t.phase), 'missing_prepared_pr');
+    if (t.planning_ci !== undefined) ensure(t.planning_ci && SHA.test(t.planning_ci.main ?? '') && HASH.test(t.planning_ci.key ?? ''), 'invalid_planning_ci');
+    if (t.pr !== null) { ensure(!prs.has(t.pr), 'duplicate_bound_pr'); prs.add(t.pr); }
     if (t.phase === 'queued') queued = true;
     else { ensure(!queued, 'out_of_order_task'); if (t.phase !== 'completed') { ensure(!active, 'overlapping_tasks'); active = true; } }
     if (t.request !== null) ensure(t.request.pr_number === t.pr && HASH.test(t.request.request_key) && SHA.test(t.request.head_sha) && SHA.test(t.request.base_sha), 'invalid_loop_request');
@@ -123,6 +134,7 @@ export class LoopStore {
     beforeChecks.forEach((before, i) => { const after = afterChecks[i]; ensure(after.main === before.main && after.key === before.key && (!before.ready || after.ready), 'bootstrap_history_changed'); });
     for (let i = 0; i < old.state.tasks.length; i++) {
       const before = old.state.tasks[i], after = next.tasks[i];
+      ensure(before.pr === null || before.pr === after.pr, 'bound_pr_changed');
       ensure(before.phase !== 'completed' || JSON.stringify(before) === JSON.stringify(after), 'completed_history_changed');
       ensure(after.cycles >= before.cycles, 'cycle_rollback');
     }
@@ -171,13 +183,17 @@ export function renderLoopPRBody(original, task, review) {
   ensure(validatePRBody(body).length === 0, 'invalid_generated_pr_body'); return body;
 }
 
+async function controlPaused(api) { return (await allPages(api, '/issues/35/labels')).some(l => ['needs-user', 'agent-paused'].includes(l.name)); }
 async function scope(api, task, definition) {
+  ensure(!await controlPaused(api), 'loop_control_paused');
   const pr = await api.request('GET', `/pulls/${task.pr}`), main = (await api.request('GET', '/branches/main')).commit.sha;
   ensure(pr.head.repo.full_name === REPO && pr.head.repo.fork === false && pr.base.repo.full_name === REPO && pr.base.ref === 'main' && pr.user.login === 'silverThunder09', 'wrong_pr_scope');
   const labels = await allPages(api, `/issues/${task.pr}/labels`);
   ensure(!labels.some(l => ['needs-user', 'agent-paused'].includes(l.name)), 'blocking_label');
   const files = await allPages(api, `/pulls/${task.pr}/files`);
-  ensure(files.length > 0 && files.every(f => definition.allowed_paths.includes(f.filename) && !protectedPath(f.filename) && f.status !== 'renamed' && f.status !== 'removed'), 'unapproved_changed_paths');
+  if (definition.pr === null) { await verifyPlannedSpec(api, definition, main); await verifyPlannedSeed(api, definition, pr.head.sha); }
+  const allowed = definition.pr === null ? [...definition.allowed_paths, `.automation/requests/${definition.id}.md`] : definition.allowed_paths;
+  ensure(files.length > 0 && files.every(f => allowed.includes(f.filename) && !protectedPath(f.filename) && f.status !== 'renamed' && f.status !== 'removed'), 'unapproved_changed_paths');
   pr.labels = labels; return { pr, main: identity(main), files };
 }
 async function comments(api, pr) { return allPages(api, `/issues/${pr}/comments`); }
@@ -304,7 +320,7 @@ async function mainSuccess(api, task) {
   return true;
 }
 
-/** Runs until the next external event is needed; no timer, sleeps or speculative next work. */
+/** Runs until the next external event is needed; only trusted-main approved work is selected. */
 export async function runLoop({ api, sender, store, config, policy, now = Date.now, sleep = pause, verifyMerge = gatherMergeEvidence, verifyMain = mainSuccess }) {
   const c = parseLoopConfig(config); if (!c.enabled) return { state: 'disabled', changes: 0 };
   ensure(policy.repository === REPO && policy.max_prs_per_run <= 2 && policy.max_fix_cycles <= 3, 'invalid_loop_policy');
@@ -338,10 +354,41 @@ export async function runLoop({ api, sender, store, config, policy, now = Date.n
     }
     for (let transitions = 0; transitions < 20; transitions++) {
       ensure(snap.state.lease?.owner === owner && snap.state.lease.until > now(), 'loop_lease_expired');
-      const index = snap.state.tasks.findIndex(t => t.phase !== 'completed'); if (index < 0) return { state: 'idle', changes };
+      if (await controlPaused(api)) return { state: 'stopped', changes };
+      const index = snap.state.tasks.findIndex(t => t.phase !== 'completed');
+      if (index < 0) {
+        if (c.next_decision) {
+          ensure(typeof c.next_decision === 'string' && c.next_decision.length <= 2000, 'invalid_next_decision');
+          const marker = `<!-- ais-next-decision:${snap.state.config_hash} -->`;
+          const previous = await comments(api, 35);
+          if (!previous.some(comment => comment.user?.login === 'github-actions[bot]' && comment.body?.startsWith(marker))) {
+            await api.request('POST', '/issues/35/comments', { body: `${marker}\n승인된 작업의 PR·main 검증을 완료했습니다. 다음 승인/검토 필요: ${c.next_decision}` });
+          }
+          return { state: 'needs-user', changes };
+        }
+        return { state: 'idle', changes };
+      }
       const task = snap.state.tasks[index], definition = c.tasks[index]; currentTask = index;
       const update = fn => save(s => fn(s.tasks[index]));
       if (task.phase === 'paused') return { state: 'paused', changes };
+      if (task.pr === null) {
+        const main = identity((await api.request('GET', '/branches/main')).commit.sha);
+        const preceding = snap.state.tasks[index - 1];
+        // A newly installed planner must pass main CI too. Later tasks reuse the
+        // preceding task's already validated merged main, without another build.
+        if (preceding?.phase !== 'completed' || preceding.merged !== main) {
+          if (!task.planning_ci) {
+            const key = randomBytes(32).toString('hex');
+            await update(t => { t.planning_ci = { main, key }; });
+            await dispatch(api, { pr: 0, head: main, base: main, merged: main, operation: { key } }, true);
+            return { state: 'waiting-planning-ci', changes };
+          }
+          ensure(task.planning_ci.main === main, 'planned_main_changed');
+          if (!await verifyMain(api, { merged: main, operation: { key: task.planning_ci.key } })) return { state: 'waiting-planning-ci', changes };
+        }
+        const pr = await preparePlannedPR({ api, sender, task, definition, update });
+        await update(t => { t.pr = pr.number; }); continue;
+      }
       const { pr, main } = await scope(api, task, definition);
       if (task.phase === 'merge' && pr.merged === true) {
         ensure(task.operation?.merge_head === pr.head.sha && task.operation.merge_base === task.base && main === pr.merge_commit_sha, 'unconfirmed_merge_recovery');
@@ -351,7 +398,8 @@ export async function runLoop({ api, sender, store, config, policy, now = Date.n
       if (task.phase === 'queued') {
         const fresh = await synchronizedPR(api, task, definition, pr, main, sleep);
         const request = requestFor(task.pr, fresh.head.sha, main, 'repair', definition.allowed_paths, now);
-        const body = buildDevelopmentRequest(request) + '\n\n승인된 작업 내용(고정 main 기획):\n' + definition.goal;
+        const body = buildDevelopmentRequest(request) + '\n\n승인된 작업 내용(고정 main 기획):\n' + definition.goal +
+          (definition.acceptance ? '\n완료 조건:\n' + definition.acceptance.map(a => `- ${a}`).join('\n') : '');
         await update(t => { t.phase = 'development'; t.head = fresh.head.sha; t.base = main; t.branch = fresh.head.ref; t.request = request; t.delivery = { phase: 'sending', hash: hash(body), body, id: null, attempted: false }; }); continue;
       }
       if (task.phase === 'development' || task.phase === 'review') {
@@ -361,6 +409,7 @@ export async function runLoop({ api, sender, store, config, policy, now = Date.n
           let sent = await receipt(api, task);
           if (!sent && task.delivery.attempted) throw new Error('ambiguous_request_delivery');
           if (!sent) {
+            if (await controlPaused(api)) return { state: 'stopped', changes };
             await update(t => { t.delivery.attempted = true; });
             sent = await sender.request('POST', `/issues/${task.pr}/comments`, { body: task.delivery.body });
             ensure(sent.user?.login === 'silverThunder09' && sent.user.type === 'User' && sent.body === task.delivery.body && number(sent.id), 'invalid_sender_receipt');
@@ -386,6 +435,7 @@ export async function runLoop({ api, sender, store, config, policy, now = Date.n
         }
         if (!candidates.length) return { state: 'waiting-cloud', changes };
         const report = parseDevelopmentResult(candidates[0], task.request); ensure(report.report.outcome === 'succeeded', 'development_failed_or_blocked');
+        ensure(definition.pr !== null || report.report.change.kind === 'patch', 'planned_task_not_implemented');
         const commit = await api.request('GET', `/git/commits/${task.head}`), tree = await api.request('GET', `/git/trees/${commit.tree.sha}?recursive=1`); ensure(tree.truncated === false, 'incomplete_patch_tree');
         const contents = {};
         for (const path of definition.allowed_paths) {
@@ -395,6 +445,7 @@ export async function runLoop({ api, sender, store, config, policy, now = Date.n
         }
         const plan = planConnectedResult({ source: 'connected-github-current-run', current_main_sha: main, pr, labels: pr.labels, labels_complete: true, comments: candidates, comments_complete: true, processed_receipt_ids: [], contents_head_sha: task.head, base_tree_sha: commit.tree.sha, contents }, task.request);
         ensure(plan.action === 'commit' || plan.action === 'review', 'invalid_development_plan');
+        ensure(definition.pr !== null || (plan.action === 'commit' && plan.files.some(f => f.path.startsWith('src/'))), 'planned_task_not_implemented');
         if (plan.action === 'commit') {
           const nextTree = await api.request('POST', '/git/trees', { base_tree: plan.base_tree_sha, tree: plan.files.map(f => ({ path: f.path, mode: '100644', type: 'blob', content: f.content })) });
           const nextCommit = await api.request('POST', '/git/commits', { message: `fix: ${definition.id}`, parents: [task.head], tree: identity(nextTree.sha) });
@@ -425,7 +476,8 @@ export async function runLoop({ api, sender, store, config, policy, now = Date.n
         if (policy.required_checks.some(name => { try { return latestCheck(checks, name).status !== 'completed'; } catch { return true; } })) return { state: 'waiting-ci', changes };
         const proofs = [];
         for (const context of policy.required_checks) proofs.push(await jobEvidence(api, { repository: REPO, pr_number: task.pr, context, head_sha: task.head, base_sha: task.base, checkout_sha: pr.merge_commit_sha }, checks));
-        const request = requestFor(task.pr, task.head, task.base, 'read-only', [], now), body = buildReviewRequest(request) + '\n\n승인된 작업 범위(진단 데이터):\n' + definition.goal + '\n허용 경로: ' + JSON.stringify(definition.allowed_paths);
+        const request = requestFor(task.pr, task.head, task.base, 'read-only', [], now), body = buildReviewRequest(request) + '\n\n승인된 작업 범위(진단 데이터):\n' + definition.goal +
+          (definition.acceptance ? '\n완료 조건:\n' + definition.acceptance.map(a => `- ${a}`).join('\n') : '') + '\n허용 경로: ' + JSON.stringify(definition.allowed_paths);
         await update(t => { t.phase = 'review'; t.validated_ci = proofs; t.request = request; t.delivery = { phase: 'sending', hash: hash(body), body, id: null, attempted: false }; }); continue;
       }
       if (task.phase === 'merge') {
@@ -449,6 +501,7 @@ export async function runLoop({ api, sender, store, config, policy, now = Date.n
     }
     throw new Error('transition_limit');
   } catch (error) {
+    if (error.message === 'loop_control_paused') return { state: 'stopped', changes };
     const reason = error instanceof APIError ? `github_http_${error.status}` : /^[a-z0-9_]+$/.test(error.message ?? '') ? error.message : 'loop_failed';
     if (currentTask !== null) await save(s => { s.tasks[currentTask].phase = 'paused'; s.tasks[currentTask].reason = reason; });
     const issues = await allPages(api, '/issues/35/comments');

@@ -2,10 +2,10 @@ export const REPO: string;
 export const LOOP_BRANCH: string;
 export function acceptsLoopWakeup(event: unknown): boolean;
 export function isCurrentMergeCheckout(pr: unknown, main: unknown, commit: unknown): boolean;
-export interface LoopTask { id: string; pr: number; phase: string; cycles: number; request: unknown; delivery: unknown; operation: unknown; applied: unknown; review: unknown; merged: unknown; reason: unknown; [key: string]: unknown }
+export interface LoopTask { id: string; pr: number | null; phase: string; cycles: number; request: unknown; delivery: unknown; operation: unknown; applied: unknown; review: unknown; merged: unknown; reason: unknown; [key: string]: unknown }
 export interface LoopState { schema: number; repository: string; revision: number; config_hash: string; lease: null | { owner: string; until: number }; bootstrap?: null | { main: string; key: string; ready: boolean; checks?: { main: string; key: string; ready: boolean }[] }; tasks: LoopTask[] }
 export function emptyLoopState(config: unknown): LoopState;
-export function parseLoopConfig(config: unknown): { enabled: boolean; tasks: unknown[] };
+export function parseLoopConfig(config: unknown): { enabled: boolean; tasks: unknown[]; next_decision?: string };
 export function parseLoopState(state: unknown, config: unknown): LoopState;
 export function appendApprovedTasks(state: unknown, config: unknown): LoopState;
 export function buildReviewRequest(request: unknown): string;
