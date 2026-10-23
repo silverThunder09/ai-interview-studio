@@ -13,3 +13,8 @@
 - [이슈 #78](https://github.com/silverThunder09/ai-interview-studio/issues/78): 제품 작업이 실행하도록 안내한 `npm run test:smoke`를 v2 보고 파서가 거절하는 계약 누락을 확인했다. 원격 운영에서 이미 실패했다고 주장하지 않으며 입력으로 재현되는 사전 검토 finding이다.
 - 수정 코드 `83a2caaccac0ea1ba3bb274cc0b2c365f3d39276`, 기준 main은 위와 같다. `npm run check` 실제 성공: TypeScript·ESLint·단위 **541개/28파일**·정책 **41개**. 정확한 smoke 성공 보고는 수용하고 nonzero를 성공으로 보고하거나 shell을 붙인 명령은 거절한다.
 - 이 변경은 보고할 수 있는 명령 이름만 추가한다. 특권 조정자가 해당 문자열을 실행하지 않으며 실제 CI·sandbox·실패 판정·머지 권한은 유지한다. Windows smoke 자체를 로컬에서 실행했다고 보고하지 않는다. 최종 원격 CI는 [PR #77](https://github.com/silverThunder09/ai-interview-studio/pull/77)에서 확인한다.
+
+## PR 리뷰 수정 — 본문 편집 후 정책 검사 재개
+
+- [이슈 #79](https://github.com/silverThunder09/ai-interview-studio/issues/79): 리뷰 기록의 본문 편집이 재실행한 PR policy가 아직 진행 중일 때 머지 판정으로 넘어가 보류되는 경합을 확인했다. pending에서는 merge 상태를 보존하고 고정 PR policy 완료 이벤트로 다시 판정한다. 필수 검사를 완화하지 않는다.
+- 수정 코드 `e6400a5ab832fc8d4bf745da47e331064cbd1b57`, 기준 main은 위와 같다. 실제 `npm run check`: TypeScript·ESLint·단위 **542개/28파일**·정책 **41개** 성공. 실제 evidence collector를 사용하는 fixture에서 본문 편집→pending 재진입2회(Cloud 추가0/머지0/보류 없음)→성공 후 머지1회·main CI 대기를 검증했다.
