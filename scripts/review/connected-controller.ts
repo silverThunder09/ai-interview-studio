@@ -8,7 +8,7 @@ export const MAX_PATCH_BYTES = 64 * 1024;
 const MAX_REPORT_BYTES = 96 * 1024;
 const SHA = /^[a-f0-9]{40}$/;
 const KEY = /^[a-f0-9]{64}$/;
-const COMMANDS = ['npm run check', 'npm run typecheck', 'npm run lint', 'npm test', 'npm run test:review', 'npm run build', 'npm run test:smoke', 'git diff --check'];
+const COMMANDS = ['npm run check', 'npm run typecheck', 'npm run lint', 'npm test', 'npm run test:review', 'npm run build', 'npm run test:smoke', 'npm run test:smoke -- tests/smoke/avatar.spec.ts tests/smoke/desktop.spec.ts', 'git diff --check'];
 type ObjectValue = Record<string, unknown>;
 export class ControllerError extends Error {
   readonly code: string;
@@ -74,6 +74,8 @@ export function buildDevelopmentRequest(value: unknown): string {
       : `승인된 수정 경로는 ${JSON.stringify(r.allowed_paths)}뿐이다. 최소 수정과 영향 검사를 수행하고 기존 텍스트 파일의 UTF-8 unified patch를 change.patch로 반환하라(64KiB·10파일 이내, rename/delete/모드 변경 금지). 보호 경로·범위 확대는 하지 말라.\n`) +
     'GitHub API·gh 인증·댓글·push·머지는 연결된 GitHub 담당의 일이다. 이를 시도하거나 API 미인증을 새 로그인으로 해결하지 말라. env/인증 설정/secret/개인자료를 조회·출력하지 말고 유료 API·다른 저장소·sandbox 해제·추가 작업 요청은 금지한다.\n' +
     `tests.command는 ${JSON.stringify(COMMANDS)} 중 실제 실행한 명령만 기록한다. 미실행 검사는 성공으로 넣지 말라. 이 로컬 보고는 별도의 Windows CI나 실제 장치 검증을 대신하지 않는다.\n` +
+    '반환하는 tests에 종료 코드가 0이 아닌 검사가 하나라도 있으면 outcome=failed와 blocker를 작성하라. npm run check만 성공했다는 이유로 전체를 succeeded로 보고하지 말라. 도구/환경 때문에 실행하지 못하면 blocked와 비민감 이유를 적는다. 실패 검사를 보고에서 지우지 않는다.\n' +
+    '3D/Electron 변경을 Linux 표시 서버 없이 검증할 때는 기존 STUDIO_SMOKE_HEADLESS=1 환경에서 허용 목록의 avatar/desktop 관련 smoke 명령을 사용할 수 있다. Chromium sandbox를 유지하고 전체 Windows 검증 성공으로 표현하지 않는다.\n' +
     '최종 응답은 아래 marker 한 줄과 JSON 코드 블록 하나만 남겨라. 플랫폼의 View task 링크는 직접 만들지 않는다. JSON은 예시를 실제 결과로 바꾸고 알 수 없는 필드를 추가하지 말라. outcome은 succeeded/failed/blocked 중 하나다. succeeded는 실제 npm run check 종료0을 포함하고 blocker=null이어야 한다. failed/blocked는 비민감 code·summary 이유를 반드시 넣는다. tests 항목의 허용 키는 command와 exit_code, 선택 필드 unit_passed와 policy_passed뿐이다. 실제 명령·exit_code와 분리해서 확인한 단위/정책 통과 수만 적는다. passed/total 같은 합산·새 필드는 금지한다. 개수를 모르면 선택 필드를 생략하고 미실행은 tests=[]로 둔다. read-only는 change.kind=none, repair는 none 또는 patch/patch 문자열을 쓴다. GitHub API 인증이 없는 것은 이 로컬 검사의 실패 사유가 아니다.\n' +
     `<!-- ais-development-result-v2:${r.request_key} -->\n\`\`\`json\n${JSON.stringify(example)}\n\`\`\``;
 }
