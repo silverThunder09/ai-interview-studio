@@ -35,7 +35,7 @@ export function acceptsLoopWakeup(event) {
   const run = event?.workflow_run;
   return event?.repository?.full_name === REPO && run?.head_repository?.full_name === REPO &&
     run.status === 'completed' && number(run.id) && SHA.test(run.head_sha ?? '') &&
-    ['.github/workflows/loop-validation.yml', '.github/workflows/review-wakeup.yml'].includes(run.path);
+    ['.github/workflows/loop-validation.yml', '.github/workflows/review-wakeup.yml', '.github/workflows/pr-policy.yml'].includes(run.path);
 }
 function protectedPath(path) { return /(^|\/)AGENTS\.md$/.test(path) || ['.github/', '.agents/', 'harness/', 'scripts/review/'].some(p => path.startsWith(p)) || /(^|\/)(package(-lock)?\.json|\.npmrc|\.node-version|.*\.lock)$/.test(path); }
 export function parseLoopConfig(value) {
@@ -481,6 +481,10 @@ export async function runLoop({ api, sender, store, config, policy, now = Date.n
         await update(t => { t.phase = 'review'; t.validated_ci = proofs; t.request = request; t.delivery = { phase: 'sending', hash: hash(body), body, id: null, attempted: false }; }); continue;
       }
       if (task.phase === 'merge') {
+        // Rendering the review record edits the body and starts a fresh PR policy
+        // attempt. Pending CI is an external boundary, not a failed merge policy.
+        const checks = await allChecks(api, pr.head.sha);
+        if (policy.required_checks.some(name => { try { return latestCheck(checks, name).status !== 'completed'; } catch { return true; } })) return { state: 'waiting-ci', changes };
         const input = await verifyMerge(api, definition, task, policy), gate = evaluateMergeGate(input, policy); ensure(gate.allowed, 'merge_policy_denied');
         // CI log downloads can take time. Re-read human reviews/threads/labels and current checks
         // as well as commit identities before the irreversible operation.

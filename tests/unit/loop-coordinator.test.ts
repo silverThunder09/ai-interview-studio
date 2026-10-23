@@ -72,6 +72,7 @@ describe('workflow completion wake-up', () => {
   it('accepts the actual dynamic CI name using its stable workflow path', () => {
     expect(acceptsLoopWakeup(event)).toBe(true);
     expect(acceptsLoopWakeup({ ...event, workflow_run: { ...event.workflow_run, name: 'Review wake-up', path: '.github/workflows/review-wakeup.yml' } })).toBe(true);
+    expect(acceptsLoopWakeup({ ...event, workflow_run: { ...event.workflow_run, name: 'PR policy', path: '.github/workflows/pr-policy.yml' } })).toBe(true);
   });
   it('rejects name spoofing, another repository, pending runs and self wake-ups', () => {
     for (const run of [
@@ -211,6 +212,27 @@ describe('event-driven A → merge/main CI → B', () => {
     expect(f.wakeups).toEqual([56, 0]);
     f.mainDone = true; expect((await runLoop(f.options())).state).toBe('waiting-cloud'); expect(f.sends.map(s => s.pr)).toEqual([56, 56, 57]);
     await runLoop(f.options()); expect(f.sends.map(s => s.pr)).toEqual([56, 56, 57]); expect(f.store.state.tasks[0]!.phase).toBe('completed');
+  });
+  it('waits for the PR policy rerun caused by the review-body edit without pausing or requesting another Cloud task', async () => {
+    const f = new FixtureAPI(), options = { ...f.options(), verifyMerge: gatherMergeEvidence };
+    await runLoop(options); f.respond(false); await runLoop(options); f.ciDone = true; await runLoop(options); f.respond(true);
+    let pending = true, edited = false; const original = f.request.bind(f);
+    f.request = async (method, path, value) => {
+      if (method === 'PATCH' && path === '/pulls/56') edited = true;
+      const result = await original(method, path, value);
+      if (edited && pending && path.includes('/check-runs?')) {
+        const checks = result as { check_runs: { name: string }[] };
+        return { check_runs: checks.check_runs.map(c => c.name === 'pr-policy' ? { ...c, status: 'in_progress', conclusion: null } : c) };
+      }
+      return result;
+    };
+    for (let i = 0; i < 2; i++) {
+      expect((await runLoop(options)).state).toBe('waiting-ci');
+      expect(f.store.state.tasks[0]!.phase).toBe('merge'); expect(f.store.state.tasks[0]!.reason).toBeNull(); expect(f.merges).toHaveLength(0); expect(f.sends).toHaveLength(2);
+    }
+    pending = false;
+    expect((await runLoop(options)).state).toBe('waiting-main-ci');
+    expect(f.merges).toEqual([56]); expect(f.sends).toHaveLength(2);
   });
   it('continues once from official native review receipts and still waits for main CI before B', async () => {
     const f = new FixtureAPI(); await runLoop(f.options()); f.respond(false); await runLoop(f.options()); f.ciDone = true; await runLoop(f.options());
