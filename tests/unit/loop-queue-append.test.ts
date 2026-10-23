@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { appendApprovedTasks, emptyLoopState, LoopStore, parseLoopState, type LoopState } from '../../scripts/review/loop-coordinator.mjs';
 
 const repository = 'silverThunder09/ai-interview-studio';
@@ -32,6 +33,23 @@ class StateAPI {
 }
 
 describe('approved queue extension', () => {
+  it('extends the installed completed queue with the two approved product goals without rewriting receipts', () => {
+    const config = JSON.parse(readFileSync(new URL('../../.github/approved-loop.json', import.meta.url), 'utf8'));
+    const previous = { ...config, tasks: config.tasks.slice(0, 5) };
+    const state = emptyLoopState(previous);
+    state.tasks.forEach((task, i) => Object.assign(task, { pr: task.pr ?? 90 + i, phase: 'completed', merged: sha('1'), manual_completion: { original_failure_preserved: true } }));
+    const original = structuredClone(state), extended = appendApprovedTasks(state, config);
+    expect(state).toEqual(original); expect(extended.tasks.slice(0, 5)).toEqual(original.tasks);
+    expect(extended.tasks.slice(5).map(t => ({ id: t.id, phase: t.phase, pr: t.pr, request: t.request }))).toEqual([
+      { id: 'gemini-interviewer-speaker', phase: 'queued', pr: null, request: null },
+      { id: 'gemini-speaker-avatar', phase: 'queued', pr: null, request: null },
+    ]);
+    // GitHub hashes the Git blob; Windows autocrlf may change only the working copy.
+    const spec = readFileSync(new URL('../../harness/specs/gemini-local-interview.md', import.meta.url), 'utf8');
+    const specHash = createHash('sha256').update(spec.replace(/\r\n/g, '\n')).digest('hex');
+    expect(config.tasks.slice(5).every((task: { spec: { sha256: string } }) => task.spec.sha256 === specHash)).toBe(true);
+    expect(appendApprovedTasks(extended, config)).toBe(extended);
+  });
   it('preserves every completed receipt and bootstrap byte and appends only queued work', () => {
     const old = completed(), original = structuredClone(old), next = appendApprovedTasks(old, after);
     expect(old).toEqual(original); expect(next.tasks.slice(0, 1)).toEqual(old.tasks);

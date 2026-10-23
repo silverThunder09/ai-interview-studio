@@ -1379,13 +1379,24 @@
       "pr": null,
       "title": "Codex 작업 결과 한국어 요약·접힌 JSON 검증",
       "path": "archive/2026-10-23/codex-result-template-local.md",
-      "tags": ["codex", "result-template", "strict-parser", "local-only"],
+      "tags": [
+        "codex",
+        "result-template",
+        "strict-parser",
+        "local-only"
+      ],
       "result": "local-check-passed",
       "tested_head_sha": "3cbd058e334ee8d0ea196f3c19f350b346991fe8",
       "tested_base_sha": "3654185ceca59d7d0d27e29158f3a1759137f387",
-      "counts": {"unit": 553, "review_policy": 41},
+      "counts": {
+        "unit": 553,
+        "review_policy": 41
+      },
       "evidence": [],
-      "limitations": ["합성 공식 댓글 fixture이며 실제 Codex의 새 양식 반환은 아직 미검증", "최종 Windows CI·원격 상태는 해당 PR에서 별도 확인"]
+      "limitations": [
+        "합성 공식 댓글 fixture이며 실제 Codex의 새 양식 반환은 아직 미검증",
+        "최종 Windows CI·원격 상태는 해당 PR에서 별도 확인"
+      ]
     },
     {
       "id": "tests-2026-10-23-avatar-keyboard-local",
@@ -1394,13 +1405,28 @@
       "pr": 81,
       "title": "키보드 시점 조작·실제 WebGL 픽셀·Cloud 실패 후 복구",
       "path": "archive/2026-10-23/avatar-keyboard-local.md",
-      "tags": ["avatar", "keyboard", "camera", "webgl", "manual-recovery", "local-only"],
+      "tags": [
+        "avatar",
+        "keyboard",
+        "camera",
+        "webgl",
+        "manual-recovery",
+        "local-only"
+      ],
       "result": "local-check-build-smoke-passed",
       "tested_head_sha": "d837573be0fc1bc76297ea1c7593a265535dd94a",
       "tested_base_sha": "3654185ceca59d7d0d27e29158f3a1759137f387",
-      "counts": {"unit": 549, "review_policy": 41, "linux_related_smoke": 2},
+      "counts": {
+        "unit": 549,
+        "review_policy": 41,
+        "linux_related_smoke": 2
+      },
       "evidence": [],
-      "limitations": ["원래 Cloud는 libatk 누락으로 smoke1·failed이며 성공으로 바꾸지 않음", "현재 Cloud에서 검토 담당이 보완·실제 검증한 수동 복구", "Legacy 설치 단계는 별도이며 최종 Windows/main/실물 장치는 PR에서 확인"]
+      "limitations": [
+        "원래 Cloud는 libatk 누락으로 smoke1·failed이며 성공으로 바꾸지 않음",
+        "현재 Cloud에서 검토 담당이 보완·실제 검증한 수동 복구",
+        "Legacy 설치 단계는 별도이며 최종 Windows/main/실물 장치는 PR에서 확인"
+      ]
     },
     {
       "id": "tests-2026-10-23-avatar-quality-local",
@@ -1432,6 +1458,33 @@
         "연결 담당의 main 설정 저장 수정 뒤 실제 로컬 관련 smoke2 성공",
         "최종 Windows CI·merged main·다음 자동 작업은 PR80/이슈35에서 확인",
         "실물 GalaxyBook GPU/장치는 미검증"
+      ]
+    },
+    {
+      "id": "tests-2026-10-24-gemini-speaker-queue-local",
+      "status": "archived",
+      "date_kst": "2026-10-24",
+      "pr": null,
+      "title": "Gemini 역할·3D 표시 승인 큐 및 결과 계약",
+      "path": "archive/2026-10-24/gemini-speaker-queue-local.md",
+      "tags": [
+        "gemini",
+        "approved-queue",
+        "strict-parser",
+        "local-only"
+      ],
+      "result": "local-check-passed",
+      "tested_head_sha": "da34ef287f1e6b8b1c567389327e3400fa4b41f3",
+      "tested_base_sha": "0e71a1be43a65c355970b1fc710a918be10f97db",
+      "counts": {
+        "unit": 556,
+        "review_policy": 41
+      },
+      "evidence": [],
+      "limitations": [
+        "제품 기능은 후속 Cloud 작업에서 구현",
+        "Windows CI·실제 A→B 자동 실행은 원격에서 별도 확인",
+        "Legacy 성공은 사용자 제공 후속 보고이며 독립 원본 로그 검증과 구분"
       ]
     }
   ],
