@@ -1388,6 +1388,21 @@
       "limitations": ["합성 공식 댓글 fixture이며 실제 Codex의 새 양식 반환은 아직 미검증", "최종 Windows CI·원격 상태는 해당 PR에서 별도 확인"]
     },
     {
+      "id": "tests-2026-10-23-avatar-keyboard-local",
+      "status": "archived",
+      "date_kst": "2026-10-23",
+      "pr": 81,
+      "title": "키보드 시점 조작·실제 WebGL 픽셀·Cloud 실패 후 복구",
+      "path": "archive/2026-10-23/avatar-keyboard-local.md",
+      "tags": ["avatar", "keyboard", "camera", "webgl", "manual-recovery", "local-only"],
+      "result": "local-check-build-smoke-passed",
+      "tested_head_sha": "d837573be0fc1bc76297ea1c7593a265535dd94a",
+      "tested_base_sha": "3654185ceca59d7d0d27e29158f3a1759137f387",
+      "counts": {"unit": 549, "review_policy": 41, "linux_related_smoke": 2},
+      "evidence": [],
+      "limitations": ["원래 Cloud는 libatk 누락으로 smoke1·failed이며 성공으로 바꾸지 않음", "현재 Cloud에서 검토 담당이 보완·실제 검증한 수동 복구", "Legacy 설치 단계는 별도이며 최종 Windows/main/실물 장치는 PR에서 확인"]
+    },
+    {
       "id": "tests-2026-10-23-avatar-quality-local",
       "status": "archived",
       "date_kst": "2026-10-23",
