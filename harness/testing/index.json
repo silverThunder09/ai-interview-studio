@@ -1292,6 +1292,33 @@
         "이 기록은 로컬 코드 검사이며 원격 Cloud/머지 성공 증거가 아니다",
         "최종 CI 및 실제 후속 실행은 PR76/PR75/이슈35에서 확인"
       ]
+    },
+    {
+      "id": "tests-2026-10-23-goal-planner-local",
+      "status": "archived",
+      "date_kst": "2026-10-23",
+      "title": "승인 스펙에서 다음 PR 준비 · 로컬 검사",
+      "path": "archive/2026-10-23/goal-planner-local.md",
+      "tags": [
+        "automation",
+        "goal-plan",
+        "draft-pr",
+        "idempotency",
+        "stop",
+        "local-only"
+      ],
+      "result": "local-check-build-passed",
+      "tested_head_sha": "3787c580929b5f6b17755ace66136a820e359805",
+      "tested_base_sha": "0d778b601112217a52b67a5c2e09bd71109dc3c8",
+      "counts": {
+        "unit": 540,
+        "review_policy": 41
+      },
+      "evidence": [],
+      "limitations": [
+        "합성 API·로컬 검사이며 실제 Cloud·PR·머지 완료 증거가 아니다",
+        "최종 Windows CI 및 실제 후속 제품 작업은 연결 PR/이슈35에서 확인"
+      ]
     }
   ],
   "historical_main_verification": {
