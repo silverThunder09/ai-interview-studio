@@ -1,4 +1,4 @@
-import { DEFAULT_SETTINGS, isSettings, type Result, type Settings, type Snapshot } from '../shared/contracts';
+import { DEFAULT_SETTINGS, isSettings, type AvatarQuality, type Result, type Settings, type Snapshot } from '../shared/contracts';
 
 export function createHandlers(version: string, persistence?: { settings(): Settings; updateSettings(settings: Settings): void }) {
   let settings: Settings = persistence?.settings() ?? { ...DEFAULT_SETTINGS };
@@ -12,10 +12,20 @@ export function createHandlers(version: string, persistence?: { settings(): Sett
     },
     update(args: unknown[]): Result<Settings> {
       if (args.length !== 1 || !isSettings(args[0])) return invalid();
-      try { persistence?.updateSettings(args[0]); }
+      // Theme callers can hold an older snapshot. They must not overwrite quality.
+      const next = { ...settings, locale: args[0].locale, theme: args[0].theme, interviewRole: args[0].interviewRole };
+      try { persistence?.updateSettings(next); }
       catch { return { ok: false, error: { code: 'UNAVAILABLE', message: '설정을 저장하지 못했습니다. 이전 설정은 유지됩니다.' } }; }
-      settings = { ...args[0] };
+      settings = next;
       return { ok: true, value: { ...settings } };
+    },
+    avatarQuality(args: unknown[]): Result<AvatarQuality> {
+      if (args.length !== 1 || args[0] !== 'low' && args[0] !== 'standard') return invalid();
+      const next: Settings = { ...settings, avatarQuality: args[0] };
+      try { persistence?.updateSettings(next); }
+      catch { return { ok: false, error: { code: 'UNAVAILABLE', message: '품질 설정을 저장하지 못했습니다. 이전 저장값은 유지됩니다.' } }; }
+      settings = next;
+      return { ok: true, value: args[0] };
     },
   };
 }

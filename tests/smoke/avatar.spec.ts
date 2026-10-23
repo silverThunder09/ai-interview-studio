@@ -1,5 +1,5 @@
 import { _electron as electron, expect, test, type ElectronApplication } from '@playwright/test';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, unlink, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { avatarFixture, texturedAvatarFixture } from '../fixtures/avatar';
@@ -31,6 +31,13 @@ test('two WebGL interviewers, offline GLB/glTF import, motion, restoration and c
   try {
     let page = await launch();
     const canvas = page.locator('.avatar-viewport canvas');
+    const quality = page.getByLabel('렌더링 품질');
+    await expect(quality).toHaveValue('low');
+    await expect(quality).toBeEnabled(); await quality.selectOption('standard');
+    await expect(quality).toBeEnabled(); // The main write finishes before leaving the view.
+    await page.getByRole('button', { name: '시작하기', exact: true }).click();
+    await page.getByRole('button', { name: '3D 면접관', exact: true }).click();
+    await expect(quality).toHaveValue('standard');
     await expect.poll(async () => Number(await canvas.getAttribute('data-fps')), { timeout: 10_000 }).toBeGreaterThan(0);
     expect(await canvas.evaluate(c => (c as HTMLCanvasElement).getContext('webgl2')?.getParameter(0x1f02))).toContain('WebGL');
     async function visibleCharacters() {
@@ -85,11 +92,32 @@ test('two WebGL interviewers, offline GLB/glTF import, motion, restoration and c
     await expect.poll(() => page.evaluate(() => Reflect.get(window, '__testAvatarContextReleased'))).toBe(true);
     await app!.close(); app = undefined;
     page = await launch(); await page.getByText('면접관 모델 설정', { exact: true }).click();
+    await expect(page.getByLabel('렌더링 품질')).toHaveValue('standard');
     await expect(page.locator('.avatar-models article').first()).toContainText('synthetic.glb');
     await expect(page.locator('.avatar-models article').last()).toContainText('synthetic.gltf');
     await page.getByRole('button', { name: 'A 기본 모델', exact: true }).click();
     await expect(page.locator('.avatar-models article').first()).toContainText('기본 3D 캐릭터');
     await expect(page.locator('.avatar-models article').last()).toContainText('synthetic.gltf');
+    const settingsFile = join(profile, 'settings.json'), previousSettings = await readFile(settingsFile, 'utf8');
+    await writeFile(settingsFile + '.tmp', 'existing conflict');
+    await page.getByLabel('렌더링 품질').selectOption('low');
+    await expect(page.getByRole('alert')).toContainText('이 화면에만 적용했습니다');
+    expect(await readFile(settingsFile, 'utf8')).toBe(previousSettings);
+    expect(await readFile(settingsFile + '.tmp', 'utf8')).toBe('existing conflict');
+    await unlink(settingsFile + '.tmp'); await page.getByRole('button', { name: '품질 저장 다시 시도', exact: true }).click();
+    await expect(page.getByRole('alert')).toHaveCount(0);
+    await expect(page.locator('.avatar-viewport canvas')).toHaveAttribute('data-studio-ready', 'true');
+    await app!.close(); app = undefined; page = await launch();
+    await expect(page.getByLabel('렌더링 품질')).toHaveValue('low');
+    await app!.close(); app = undefined;
+    const damagedSettings = JSON.stringify({ ...JSON.parse(await readFile(settingsFile, 'utf8')), version: 2 });
+    await writeFile(settingsFile, damagedSettings); page = await launch();
+    await expect(page.getByLabel('렌더링 품질')).toHaveValue('low');
+    await page.getByLabel('렌더링 품질').selectOption('standard');
+    await expect(page.getByRole('alert')).toContainText('이전 저장값');
+    expect(await readFile(settingsFile, 'utf8')).toBe(damagedSettings);
+    await page.getByRole('button', { name: '시작하기', exact: true }).click();
+    await expect(page.getByRole('heading', { name: '오늘의 연습을 시작할까요?' })).toBeVisible();
     expect(errors).toEqual([]);
   } finally { await app?.close(); await rm(directory, { recursive: true, force: true }); }
 });

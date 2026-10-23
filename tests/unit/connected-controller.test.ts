@@ -24,8 +24,10 @@ describe('development v2 result boundary', () => {
   it('accepts the requested Electron smoke report without hiding a failure or allowing shell text', () => {
     const value = { ...report(), tests: [{ command: 'npm run check', exit_code: 0 }, { command: 'npm run test:smoke', exit_code: 0 }] };
     expect(parseDevelopmentResult(comment(wrap(JSON.stringify(value))), request).report.tests).toEqual(value.tests);
+    const targeted = { ...value, tests: [value.tests[0], { command: 'npm run test:smoke -- tests/smoke/avatar.spec.ts tests/smoke/desktop.spec.ts', exit_code: 0 }] };
+    expect(parseDevelopmentResult(comment(wrap(JSON.stringify(targeted))), request).report.tests).toEqual(targeted.tests);
     expect(buildDevelopmentRequest(request)).toContain('npm run test:smoke');
-    for (const test of [{ command: 'npm run test:smoke', exit_code: 1 }, { command: 'npm run test:smoke; echo secret', exit_code: 0 }]) {
+    for (const test of [{ command: 'npm run test:smoke', exit_code: 1 }, { command: targeted.tests[1]!.command, exit_code: 1 }, { command: 'npm run test:smoke; echo secret', exit_code: 0 }]) {
       expect(() => parseDevelopmentResult(comment(wrap(JSON.stringify({ ...value, tests: [value.tests[0], test] }))), request)).toThrow();
     }
   });

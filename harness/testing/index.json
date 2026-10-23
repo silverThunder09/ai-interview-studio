@@ -1371,6 +1371,38 @@
       "limitations": [
         "합성 API로 pending→재개를 검증했으며 최종 원격 CI와 실제 후속 실행은 PR77/이슈35에서 확인"
       ]
+    },
+    {
+      "id": "tests-2026-10-23-avatar-quality-local",
+      "status": "archived",
+      "date_kst": "2026-10-23",
+      "pr": 80,
+      "title": "3D 품질 보존 · 실제 재시작과 검토 복구",
+      "path": "archive/2026-10-23/avatar-quality-local.md",
+      "tags": [
+        "avatar",
+        "quality",
+        "local-settings",
+        "ipc",
+        "manual-repair",
+        "headless",
+        "local-only"
+      ],
+      "result": "local-check-build-smoke-passed",
+      "tested_head_sha": "524cc2666f3cae933f331b2fa878542d9454b68c",
+      "tested_base_sha": "00dd0a7fed2bbcfccefba461917d1b55ca37b220",
+      "counts": {
+        "unit": 547,
+        "review_policy": 41,
+        "linux_related_smoke": 2
+      },
+      "evidence": [],
+      "limitations": [
+        "자동 Cloud 결과는 smoke1/succeeded 불일치로 거절된 원본이며 성공으로 바꾸지 않음",
+        "연결 담당의 main 설정 저장 수정 뒤 실제 로컬 관련 smoke2 성공",
+        "최종 Windows CI·merged main·다음 자동 작업은 PR80/이슈35에서 확인",
+        "실물 GalaxyBook GPU/장치는 미검증"
+      ]
     }
   ],
   "historical_main_verification": {
