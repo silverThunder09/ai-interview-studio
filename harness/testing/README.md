@@ -51,6 +51,8 @@
 
 ## 기록·아카이브 운영
 
+[PR #81 키보드 시점 조작·Cloud 실패 후 검증](archive/2026-10-23/avatar-keyboard-local.md): 단위549·정책41·build·실제 Electron2 성공. 픽셀 기반 확대/초기화·거리 제한·포커스·기존 회귀를 검사하고 Legacy 의존성 실패와 수동 복구를 구분했다.
+
 [PR #80 품질 설정 보존의 로컬 검증·복구](archive/2026-10-23/avatar-quality-local.md): 단위547·정책41·빌드·실제 headless Electron2 성공. 자동 Cloud의 실패 보고·재시작 실패와 연결 담당의 수정, 원격 대기를 구분했다.
 
 자동화 별도 기록: [PR #76 후속 승인 큐의 로컬 검사](archive/2026-10-23/pr-76-local-automation.md). 앱의 최신 기준을 교체하지 않으며 실제 원격 후속 실행 결과는 연결된 PR/운영 이슈에서 구분한다.
