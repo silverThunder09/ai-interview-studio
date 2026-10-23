@@ -21,6 +21,13 @@ const patch = 'diff --git a/src/example.ts b/src/example.ts\nindex aaaaaaa..bbbb
 const repair: DevelopmentRequest = { ...request, mode: 'repair', allowed_paths: ['src/example.ts'] };
 
 describe('development v2 result boundary', () => {
+  it.each(['failed', 'blocked'] as const)('does not treat a %s report with a patch as an applicable result', outcome => {
+    const value = { ...report(), outcome, tests: [{ command: 'npm run check', exit_code: 0 }, { command: 'npm run test:smoke', exit_code: 1 }], change: { kind: 'patch', patch }, blocker: { code: 'electron_runtime_dependency_missing', summary: 'Electron 실행 라이브러리가 없어 smoke를 시작하지 못했습니다.' } };
+    const c = comment(wrap(JSON.stringify(value)));
+    expect(() => parseDevelopmentResult(c, repair)).toThrow('unexpected_patch');
+    expect(planConnectedResult({ ...snapshot(), comments: [c] }, repair)).toEqual({ action: 'blocked', reason: 'unexpected_patch' });
+    expect(buildDevelopmentRequest(repair)).toContain('failed/blocked 결과의 change는 반드시 {"kind":"none"}');
+  });
   it('shows readable results above folded JSON while keeping the exact report and patch contract', () => {
     const value = { ...report(), change: { kind: 'patch', patch } } as DevelopmentReport;
     const body = renderDevelopmentResult(value, '요청한 동작과 관련 테스트를 수정했습니다.');
