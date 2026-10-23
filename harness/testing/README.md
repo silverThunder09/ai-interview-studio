@@ -51,6 +51,8 @@
 
 ## 기록·아카이브 운영
 
+[Gemini 역할·3D 표시 승인 큐 검증](archive/2026-10-24/gemini-speaker-queue-local.md): 단위556·정책41 성공. 기존 완료 기록 보존·두 작업 추가·결과 계약을 확인했으며 실제 후속 자동 실행과 구분한다.
+
 [Codex 작업 결과 양식의 로컬 검증](archive/2026-10-23/codex-result-template-local.md): 단위553·정책41 성공. 사람용 요약과 접힌 JSON의 일치·실패/위장/오래된 결과 거절을 확인했으며 실제 공식 댓글·최종 원격 검증과 구분한다.
 
 [PR #81 키보드 시점 조작·Cloud 실패 후 검증](archive/2026-10-23/avatar-keyboard-local.md): 단위549·정책41·build·실제 Electron2 성공. 픽셀 기반 확대/초기화·거리 제한·포커스·기존 회귀를 검사하고 Legacy 의존성 실패와 수동 복구를 구분했다.
