@@ -1541,6 +1541,34 @@
         "Windows에서 Linux 전용10개 검사는 적용 대상 아님",
         "외부 Legacy 설정 반영·기존 요청 종료·전체 A→B 실행은 미확인"
       ]
+    },
+    {
+      "id": "tests-2026-10-25-root-runtime-fixture",
+      "status": "archived",
+      "date_kst": "2026-10-25",
+      "pr": null,
+      "title": "초기 root 검사와 합성 fixture 실행 계정 분리",
+      "path": "archive/2026-10-25/root-runtime-fixture.md",
+      "tags": [
+        "automation",
+        "root-fixture",
+        "regression",
+        "local-only"
+      ],
+      "result": "local-check-passed",
+      "tested_head_sha": "fc2063e083c4399e3c7759be887f0de963327bd2",
+      "tested_base_sha": "a46353f131a8aa0c649f299143b18d32a4c52cc8",
+      "counts": {
+        "unit": 587,
+        "review_policy": 41,
+        "linux_runtime_fixture": 13
+      },
+      "evidence": [],
+      "limitations": [
+        "UID0은 합성 fixture 조건이며 실제 OS 권한 변경 없음",
+        "신규 root 컨테이너 설치 및 PR86 내부 실패 원인은 미검증",
+        "Windows에서 Linux전용13개 제외; 원격 CI는 PR에서 확인"
+      ]
     }
   ],
   "historical_main_verification": {

@@ -51,6 +51,8 @@
 
 ## 기록·아카이브 운영
 
+[초기 root 검사 fixture 회귀](archive/2026-10-25/root-runtime-fixture.md): 모의 UID0에서2실패를 재현한 뒤 관련13개·전체 단위587·정책41 성공. 실제 Electron root 거절을 유지하며 신규 Cloud 환경의 실측과 구분한다.
+
 [Codex 요청 구분·Linux 환경 진입점](archive/2026-10-25/request-correlation-runtime-local.md): 단위584·정책41·실제 UID1000 Electron3 성공. 교차 요청의 실패 혼동과 설치/재사용·현재 수정 전달을 검사했고 신규 root 환경의 실측과 구분한다.
 
 [공식 Codex 실패 감지 검증](archive/2026-10-24/native-codex-failure-local.md): 단위565·정책41 성공. 진짜 실패의 보류 전환·7종 유사 응답 거절·중복 실행 방지를 확인했다. #86의 root 실행 실패와 실제 무인 실행 미완료를 구분한다.
