@@ -67,6 +67,11 @@ describe('development v2 result boundary', () => {
     const targeted = { ...value, tests: [value.tests[0], { command: 'npm run test:smoke -- tests/smoke/avatar.spec.ts tests/smoke/desktop.spec.ts', exit_code: 0 }] };
     expect(parseDevelopmentResult(comment(wrap(JSON.stringify(targeted))), request).report.tests).toEqual(targeted.tests);
     const gemini = { ...value, tests: [value.tests[0], { command: 'npm run test:smoke -- tests/smoke/gemini.spec.ts tests/smoke/avatar.spec.ts tests/smoke/desktop.spec.ts', exit_code: 0 }] };
+    const runtime = { ...value, tests: [value.tests[0], { command: 'bash scripts/codex/smoke.sh', exit_code: 0 }] };
+    expect(parseDevelopmentResult(comment(wrap(JSON.stringify(runtime))), request).report.tests).toEqual(runtime.tests);
+    for (const bad of [{ ...runtime.tests[1], exit_code: 1 }, { ...runtime.tests[1], command: 'bash scripts/codex/smoke.sh; echo extra' }]) {
+      expect(() => parseDevelopmentResult(comment(wrap(JSON.stringify({ ...runtime, tests: [value.tests[0], bad] }))), request)).toThrow();
+    }
     expect(parseDevelopmentResult(comment(wrap(JSON.stringify(gemini))), request).report.tests).toEqual(gemini.tests);
     expect(() => parseDevelopmentResult(comment(wrap(JSON.stringify({ ...gemini, tests: [value.tests[0], { ...gemini.tests[1], exit_code: 1 }] }))), request)).toThrow('unproven_success');
     expect(() => parseDevelopmentResult(comment(wrap(JSON.stringify({ ...gemini, tests: [value.tests[0], { ...gemini.tests[1], command: gemini.tests[1]!.command + '; echo extra' }] }))), request)).toThrow('invalid_test');

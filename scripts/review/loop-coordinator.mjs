@@ -207,14 +207,25 @@ async function controlPaused(api) { return (await allPages(api, '/issues/35/labe
 function nativeRequestFailure(comments, task) {
   const sent = task.delivery?.id, requested = Date.parse(task.request?.requested_at);
   if (!number(sent) || !Number.isFinite(requested)) return null;
-  return comments.find(c => {
+  const created = c => {
+    if (typeof c.created_at !== 'string' || !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{3})?Z$/.test(c.created_at)) return NaN;
+    const time = Date.parse(c.created_at);
+    return Number.isFinite(time) && new Date(time).toISOString().replace('.000Z', 'Z') === c.created_at.replace('.000Z', 'Z') ? time : NaN;
+  };
+  const failed = [...comments].sort((a, b) => a.id - b.id).find(c => {
     if (!number(c.id) || c.id <= sent || c.user?.login !== 'chatgpt-codex-connector[bot]' || c.user.type !== 'Bot' ||
       c.body !== "Codex couldn't complete this request. Try again later." ||
-      c.html_url !== `https://github.com/${REPO}/pull/${task.pr}#issuecomment-${c.id}` ||
-      typeof c.created_at !== 'string' || !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{3})?Z$/.test(c.created_at)) return false;
-    const time = Date.parse(c.created_at);
-    return Number.isFinite(time) && time >= requested && new Date(time).toISOString().replace('.000Z', 'Z') === c.created_at.replace('.000Z', 'Z');
+      c.html_url !== `https://github.com/${REPO}/pull/${task.pr}#issuecomment-${c.id}`) return false;
+    return created(c) >= requested;
   }) ?? null;
+  if (!failed) return null;
+  // A native failure has no request key. A later invocation makes its owner unknowable.
+  const conflicting = comments.filter(c => number(c.id) && c.id > sent && c.id < failed.id &&
+    ['User', 'Bot'].includes(c.user?.type) && typeof c.user?.login === 'string' &&
+    c.html_url === `https://github.com/${REPO}/pull/${task.pr}#issuecomment-${c.id}` &&
+    typeof c.body === 'string' && /(?:^|\s)@codex\b/i.test(c.body) && created(c) >= requested && created(c) <= created(failed))
+    .map(c => c.id).sort((a, b) => a - b);
+  return { comment: failed, conflicting_request_ids: conflicting };
 }
 async function scope(api, task, definition) {
   ensure(!await controlPaused(api), 'loop_control_paused');
@@ -452,7 +463,12 @@ export async function runLoop({ api, sender, store, config, policy, now = Date.n
         const responses = await comments(api, task.pr);
         const failed = nativeRequestFailure(responses, task);
         if (failed) {
-          await update(t => { t.native_failure = { comment_id: failed.id, created_at: failed.created_at, request_key: task.request.request_key, head_sha: task.head, base_sha: task.base }; });
+          const receipt = { comment_id: failed.comment.id, created_at: failed.comment.created_at, head_sha: task.head, base_sha: task.base };
+          if (failed.conflicting_request_ids.length) {
+            await update(t => { t.unattributed_native_failure = { ...receipt, observed_during_request_key: task.request.request_key, conflicting_request_ids: failed.conflicting_request_ids }; });
+            throw new Error('ambiguous_native_codex_failure');
+          }
+          await update(t => { t.native_failure = { ...receipt, request_key: task.request.request_key }; });
           throw new Error('native_codex_request_failed');
         }
         const candidates = responses.filter(c => c.body?.startsWith(marker));
