@@ -1513,6 +1513,34 @@
         "Windows CI와 merged main은 PR에서 별도로 확인",
         "PR86 기능 구현과 A→B 무인 실행은 미완료"
       ]
+    },
+    {
+      "id": "tests-2026-10-25-request-correlation-runtime-local",
+      "status": "archived",
+      "date_kst": "2026-10-25",
+      "pr": null,
+      "title": "Codex 요청별 실패 구분과 Linux 환경 재현",
+      "path": "archive/2026-10-25/request-correlation-runtime-local.md",
+      "tags": [
+        "automation",
+        "request-correlation",
+        "cloud-runtime",
+        "linux-smoke"
+      ],
+      "result": "local-check-passed",
+      "tested_head_sha": "ce2286a39e79c82b2697956cb2501e0c3d61c5cd",
+      "tested_base_sha": "5c8194792b3a97f147b57a42a24f9c799786add0",
+      "counts": {
+        "unit": 584,
+        "review_policy": 41,
+        "linux_related_smoke": 3
+      },
+      "evidence": [],
+      "limitations": [
+        "의존성 재사용 검증이며 신규 root 컨테이너 설치는 미검증",
+        "Windows에서 Linux 전용10개 검사는 적용 대상 아님",
+        "외부 Legacy 설정 반영·기존 요청 종료·전체 A→B 실행은 미확인"
+      ]
     }
   ],
   "historical_main_verification": {
