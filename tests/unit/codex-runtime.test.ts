@@ -19,7 +19,8 @@ describe.skipIf(process.platform !== 'linux')('versioned Linux Cloud runtime', (
     put(join(repo, 'private.env'), 'synthetic untracked file must not be copied');
     put(join(repo, 'node_modules/@playwright/test/cli.js'), `
 const fs=require('node:fs'),assert=require('node:assert');
-assert.notEqual(process.getuid(),0);
+if(process.env.AIS_TEST_FIXTURE_UID==='0')process.getuid=()=>0;
+if(process.env.AIS_TEST_ROOT==='1')assert.equal(process.env.AIS_TEST_RUNTIME,'1');
 assert.deepEqual(process.argv.slice(2),['test','tests/smoke/gemini.spec.ts','tests/smoke/avatar.spec.ts','tests/smoke/desktop.spec.ts']);
 assert.equal(process.env.STUDIO_SMOKE_HEADLESS,'1');
 assert.equal(fs.readFileSync('src/value.txt','utf8'),'uncommitted work');
@@ -32,9 +33,9 @@ process.exit(Number(process.env.AIS_TEST_SMOKE_EXIT||0));`);
     put(join(repo, 'node_modules/.bin/playwright'), '#!/bin/bash\nprintf "os-deps %s\\n" "$*" >> "$AIS_TEST_CALLS"\n', true);
     const command = (name: string, body: string) => put(join(bin, name), '#!/bin/bash\nset -eu\n' + body + '\n', true);
     command('git', 'case "$*" in\n "rev-parse HEAD") printf "%040d\\n" 1;;\n "ls-files -z") printf "%s\\0" .node-version src/value.txt;;\n "diff --exit-code -- package.json package-lock.json .node-version") exit 0;;\n *) exit 2;;\nesac');
-    command('id', 'if [ "$#" -eq 2 ] && [ "$2" = "ais-test" ]; then echo 1000; elif [ "${AIS_TEST_ROOT:-0}" = 1 ] && [ "${AIS_TEST_RUNTIME:-0}" != 1 ]; then echo 0; else echo 1000; fi');
+    command('id', 'if [ "$#" -eq 2 ] && [ "$2" = "ais-test" ]; then echo 1000; elif { [ "${AIS_TEST_ROOT:-0}" = 1 ] && [ "${AIS_TEST_RUNTIME:-0}" != 1 ]; } || [ "${AIS_TEST_STILL_ROOT:-0}" = 1 ]; then echo 0; else echo 1000; fi');
     command('getent', 'if [ "${AIS_TEST_NO_USER:-0}" = 1 ]; then exit 2; fi\nprintf "ais-test:x:1000:1000::/tmp:/bin/bash\\n"');
-    // Simulates privilege-drop dispatch while the test itself already runs as UID 1000.
+    // Verify mocked dispatch, independently of the UID running this unit suite.
     command('runuser', '[ "$1" = -u ] && [ "$2" = ais-test ] && [ "$3" = -- ]\nshift 3\nAIS_TEST_RUNTIME=1 "$@"');
     command('npm', 'printf "npm %s\\n" "$*" >> "$AIS_TEST_CALLS"\nif [ "$*" = "run check" ]; then exit "${AIS_TEST_CHECK_EXIT:-0}"; fi');
     command('ldd', 'if [ "${AIS_TEST_MISSING_LIB:-0}" = 1 ]; then echo "libfixture.so => not found"; else echo "libraries available"; fi');
@@ -53,6 +54,14 @@ process.exit(Number(process.env.AIS_TEST_SMOKE_EXIT||0));`);
     const e = f.evidence('ais-codex-smoke-evidence.');
     expect(readFileSync(join(e, 'launcher-uid'), 'utf8').trim()).toBe('0');
     expect(readFileSync(join(e, 'runtime-uid'), 'utf8').trim()).toBe('1000');
+  });
+  it.each([false, true])('keeps mocked routing independent of setup runner UID (root launcher=%s)', root => {
+    const f = fixture(root), r = f.run('smoke.sh', [], { AIS_TEST_FIXTURE_UID: '0' });
+    expect(r.status, r.stderr).toBe(0); expect(f.log()).toEqual(['smoke']);
+  });
+  it('still refuses smoke if delegated identity reports root', () => {
+    const f = fixture(true), r = f.run('smoke.sh', [], { AIS_TEST_STILL_ROOT: '1' });
+    expect(r.status).toBe(2); expect(r.stderr).toContain('Refusing Electron smoke as root'); expect(f.log()).toEqual([]);
   });
   it('fails before launch when no existing UID 1000 account is available', () => {
     const f = fixture(true), r = f.run('smoke.sh', [], { AIS_TEST_NO_USER: '1' });
