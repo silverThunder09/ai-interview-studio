@@ -236,6 +236,37 @@ describe('event-driven A → merge/main CI → B', () => {
     expect(f.store.state.tasks[1]!.phase).toBe('queued'); expect(f.merges).toEqual([]); expect(f.sends).toHaveLength(sends);
     expect((await runLoop(f.options())).state).toBe('paused'); expect(f.sends).toHaveLength(sends);
   });
+  it.each(['development', 'review'])('keeps a native failure unattributed when another invocation overlaps %s', async phase => {
+    const f = new FixtureAPI(); await runLoop(f.options());
+    if (phase === 'review') { f.respond(false); await runLoop(f.options()); f.ciDone = true; await runLoop(f.options()); }
+    const original = structuredClone(f.store.state.tasks[0]!), sends = f.sends.length;
+    const request = original.request as ReturnType<typeof reviewRequest>;
+    const invocation = { ...resultComment(request, false, 2500), user: { login: 'silverThunder09', type: 'User' }, body: '@codex inspect runtime only; no product edits', created_at: '2026-10-20T10:00:01Z' };
+    const failure = { ...resultComment(request, false, 3000), body: "Codex couldn't complete this request. Try again later.", created_at: '2026-10-20T10:00:02Z' };
+    f.storedComments.set(56, [failure, invocation]); // API ordering must not decide ownership.
+    await expect(runLoop(f.options())).rejects.toThrow('ambiguous_native_codex_failure');
+    expect(f.store.state.tasks[0]).toMatchObject({ phase: 'paused', reason: 'ambiguous_native_codex_failure', request: original.request, delivery: original.delivery, unattributed_native_failure: { comment_id: 3000, observed_during_request_key: request.request_key, conflicting_request_ids: [2500] } });
+    expect(f.store.state.tasks[0]!.native_failure).toBeUndefined();
+    expect(f.store.state.tasks[1]!.phase).toBe('queued'); expect(f.merges).toEqual([]); expect(f.sends).toHaveLength(sends);
+    expect((await runLoop(f.options())).state).toBe('paused'); expect(f.sends).toHaveLength(sends);
+  });
+  it.each(['other-pr', 'older-id', 'older-time', 'invalid-time', 'later-id', 'later-time', 'ordinary-comment'])('does not attach a %s comment to the native failure', async wrong => {
+    const f = new FixtureAPI(); await runLoop(f.options());
+    const request = f.store.state.tasks[0]!.request as ReturnType<typeof reviewRequest>;
+    const invocation = { ...resultComment(request, false, 2500), user: { login: 'silverThunder09', type: 'User' }, body: '@codex inspect runtime', created_at: '2026-10-20T10:00:01Z' };
+    if (wrong === 'other-pr') invocation.html_url = invocation.html_url.replace('/56#', '/57#');
+    if (wrong === 'older-id') { invocation.id = 1; invocation.html_url = `https://github.com/${repository}/pull/56#issuecomment-1`; }
+    if (wrong === 'older-time') invocation.created_at = '2026-10-20T09:59:59Z';
+    if (wrong === 'invalid-time') invocation.created_at = '2026-02-30T10:00:01Z';
+    if (wrong === 'later-id') { invocation.id = 3500; invocation.html_url = `https://github.com/${repository}/pull/56#issuecomment-3500`; }
+    if (wrong === 'later-time') invocation.created_at = '2026-10-20T10:00:03Z';
+    if (wrong === 'ordinary-comment') invocation.body = '환경 점검 기록';
+    const failure = { ...resultComment(request, false, 3000), body: "Codex couldn't complete this request. Try again later.", created_at: '2026-10-20T10:00:02Z' };
+    f.storedComments.set(56, [invocation, failure]);
+    await expect(runLoop(f.options())).rejects.toThrow('native_codex_request_failed');
+    expect(f.store.state.tasks[0]!.unattributed_native_failure).toBeUndefined();
+    expect(f.store.state.tasks[0]!.native_failure).toMatchObject({ comment_id: 3000, request_key: request.request_key });
+  });
   it.each(['author', 'type', 'pr', 'old-time', 'invalid-time', 'old-id', 'similar-body'])('does not treat a %s lookalike as native termination evidence', async wrong => {
     const f = new FixtureAPI(); await runLoop(f.options());
     const request = f.store.state.tasks[0]!.request as ReturnType<typeof reviewRequest>;

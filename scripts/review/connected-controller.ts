@@ -8,7 +8,7 @@ export const MAX_PATCH_BYTES = 64 * 1024;
 const MAX_REPORT_BYTES = 96 * 1024;
 const SHA = /^[a-f0-9]{40}$/;
 const KEY = /^[a-f0-9]{64}$/;
-const COMMANDS = ['npm run check', 'npm run typecheck', 'npm run lint', 'npm test', 'npm run test:review', 'npm run build', 'npm run test:smoke', 'npm run test:smoke -- tests/smoke/avatar.spec.ts tests/smoke/desktop.spec.ts', 'npm run test:smoke -- tests/smoke/gemini.spec.ts tests/smoke/avatar.spec.ts tests/smoke/desktop.spec.ts', 'git diff --check'];
+const COMMANDS = ['npm run check', 'npm run typecheck', 'npm run lint', 'npm test', 'npm run test:review', 'npm run build', 'npm run test:smoke', 'npm run test:smoke -- tests/smoke/avatar.spec.ts tests/smoke/desktop.spec.ts', 'npm run test:smoke -- tests/smoke/gemini.spec.ts tests/smoke/avatar.spec.ts tests/smoke/desktop.spec.ts', 'bash scripts/codex/smoke.sh', 'git diff --check'];
 type ObjectValue = Record<string, unknown>;
 export class ControllerError extends Error {
   readonly code: string;
@@ -74,7 +74,7 @@ export function buildDevelopmentRequest(value: unknown): string {
       : `승인된 수정 경로는 ${JSON.stringify(r.allowed_paths)}뿐이다. 최소 수정과 영향 검사를 수행하고 기존 텍스트 파일의 UTF-8 unified patch를 change.patch로 반환하라(64KiB·10파일 이내, rename/delete/모드 변경 금지). 보호 경로·범위 확대는 하지 말라.\n`) +
     'GitHub API·gh 인증·댓글·push·머지는 연결된 GitHub 담당의 일이다. 이를 시도하거나 API 미인증을 새 로그인으로 해결하지 말라. env/인증 설정/secret/개인자료를 조회·출력하지 말고 유료 API·다른 저장소·sandbox 해제·추가 작업 요청은 금지한다.\n' +
     '사용자가 검증한 Legacy 실행 환경에서는 기본 실행의 자식 프로세스/Electron EPERM이 정식 확장 실행 권한에서 해소됐다. 검사 명령은 처음부터 실행 도구가 제공하는 정식 확장 실행 권한(require_escalated 등)을 사용하되 승인 절차를 우회하지 말라. 네트워크 권한은 별도이며 의존성 설치가 필요하면 고정 lockfile과 쓰기 가능한 임시 npm 캐시를 사용한다. 설치가 실패하면 도구가 없는 상태로 검사를 연달아 실행하지 말라. Chromium sandbox=true·proxy·TLS는 유지한다. 권한 승인이 필요하지만 받을 수 없으면 blocked로 보고하고 su 비밀번호·새 인증·sandbox 해제로 해결하지 않는다.\n' +
-    'Electron smoke 전에는 실제 실행 계정의 id -u를 확인한다. 확장 실행이 root(uid=0)로 바뀌면 sandbox=true인 Electron은 시작할 수 없다. 이때 환경이 이미 제공하는 일반 사용자와 허용된 권한 낮추기 방법(runuser 등)이 있고 해당 작업 사본·Node·의존성 접근이 가능한 경우에만 그 사용자로 검사한다. 계정 생성·비밀번호 조회·sudo 권한 추가·임의 소유권/권한 변경·--no-sandbox는 금지한다. 일반 사용자 실행이 불가능하면 같은 root 실행을 반복하지 말고 blocked와 electron_root_execution 이유를 최종 결과에 남긴다.\n' +
+    'Electron smoke 전에는 검사와 동일한 실행 권한의 id -u를 확인한다. Linux에서는 신뢰하는 main에서 온 scripts/codex/smoke.sh를 bash로 실행하고 BASH_ENV는 그 호출에서 비워 옛 자동 hook의 중복 실행을 막는다. 보고할 명령은 bash scripts/codex/smoke.sh다. 이 고정 검사는 Gemini/avatar/desktop 3개를 headless로 실행하며, root launcher면 기존 UID1000 계정의 임시 작업 사본에 현재 tracked 수정과 build 결과를 보존해 넘긴다. 계정 생성·비밀번호 조회·sudo 권한 추가·원본 소유권/권한 변경·--no-sandbox는 금지한다. helper·의존성·일반 사용자 실행이 준비되지 않으면 blocked로 보고하며 setup.sh --fresh나 OS 설치를 에이전트 단계에서 실행하지 않는다. smoke 증거의 실제 exit code·runtime UID와 원본 HEAD를 확인하고 실패를 숨기지 않는다.\n' +
     `tests.command는 ${JSON.stringify(COMMANDS)} 중 실제 실행한 명령만 기록한다. 미실행 검사는 성공으로 넣지 말라. 이 로컬 보고는 별도의 Windows CI나 실제 장치 검증을 대신하지 않는다.\n` +
     '반환하는 tests에 종료 코드가 0이 아닌 검사가 하나라도 있으면 outcome=failed와 blocker를 작성하라. npm run check만 성공했다는 이유로 전체를 succeeded로 보고하지 말라. 도구/환경 때문에 실행하지 못하면 blocked와 비민감 이유를 적는다. 실패 검사를 보고에서 지우지 않는다.\n' +
     'failed/blocked 결과의 change는 반드시 {"kind":"none"}이다. 실패한 작업의 patch는 자동 반영하지 않는다. 작업 사본에 남은 수정은 실패 이유와 구분하고, JSON에 실패 patch를 넣거나 실패를 숨겨 succeeded로 바꾸지 않는다.\n' +

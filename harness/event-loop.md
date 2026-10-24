@@ -1,5 +1,12 @@
 # 이벤트 기반 개발 루프
 
+## 현재 요청의 실패 구분과 Cloud 환경
+
+- 활성 상태는 신뢰하는 main의 `.github/approved-loop.json`과 #35의 최신 운영 기록으로 확인한다. 설치 성공·봇 수신·리뷰 완료·제품 개발 완료는 구분한다.
+- 공식 일반 실패 문장에는 요청 key가 없다. 현재 전송 이후 실패 이전에 같은 PR의 별도 Codex 요청이 있으면 `ambiguous_native_codex_failure`로 보류하고 실패 댓글·끼어든 요청 ID를 `unattributed_native_failure`에 남긴다. 현재 개발의 확정 실패로 귀속하거나 다음 작업을 시작하지 않는다. 원래 요청과 과거 실패 이력은 유지한다.
+- 일반적인 “Try again later”만으로 일시적 오류라고 단정하지 않는다. 같은 key/본문을 재전송하면 유일한 receipt·결과 계약을 깨므로 자동 재전송하지 않는다. 기존 작업의 종료/모호함을 확인하고 승인된 복구를 할 때는 같은 task ID·이력·회차를 유지하며 새 request key를 사용한다. 사람 리뷰·필수 CI·권한·sandbox 조건은 그대로다.
+- Linux 설치·UID 전환·check/build/smoke의 저장소 진입점은 [scripts/codex](../scripts/codex/README.md)다. `--fresh`는 초기 설치 전용이고 작업 중 검사는 기존 의존성과 고정 smoke helper를 사용한다. 원본을 유지하며 현재 수정 코드를 검사하고 실제 UID/exit code를 기록한다. 외부 Legacy 설정 반영과 신규 컨테이너 성공은 별도 확인한다.
+
 ## 별도 설계 초안
 
 [GitHub 담당·Legacy 개발 담당 역할 분리](event-loop-role-separation.md)는 2026-10-20 KST 사용자가 요청한 설계 초안이다. 문서 작성과 검증 후 머지만 승인됐으며 구현·새 인증·권한/종료 계약 변경·활성화는 별도 승인 대상이다. 아래의 현재 운영 규칙과 기존 outbox는 그대로 유지한다.
