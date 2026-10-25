@@ -505,11 +505,29 @@ function nativeFixture() {
     return result;
   };
   const runs = () => ['checks', 'package', 'pr-policy'].map((name, i) => ({ id: name === 'pr-policy' ? policyRun : 100 + i, run_attempt: 1, repository: { full_name: repository }, head_repository: { full_name: repository }, head_sha: head, event: 'pull_request', path: ['.github/workflows/ci.yml', '.github/workflows/windows-build.yml', '.github/workflows/pr-policy.yml'][i], status: f.ciDone && !(policyPending && name === 'pr-policy') ? 'completed' : 'in_progress', conclusion: approval ? 'action_required' : f.ciDone && !(policyPending && name === 'pr-policy') ? 'success' : null }));
-  f.pagesObject = async path => path.startsWith('/actions/runs?') ? runs() : original(path);
+  f.pagesObject = async path => {
+    if (path.startsWith('/actions/runs?')) return runs();
+    if (path.startsWith(`/actions/runs/${policyRun}/`)) return (await original(path.replace(`/runs/${policyRun}/`, '/runs/102/')) as Record<string, unknown>[]).map(j => ({ ...j, run_id: policyRun }));
+    return original(path);
+  };
+  const originalLog = f.jobLog.bind(f);
+  f.jobLog = async id => (await originalLog(id)).replace('"run_id":"102"', `"run_id":"${policyRun}"`);
   const writer = { bind: () => ({ request: f.request.bind(f), graphql: f.graphql.bind(f) }) };
-  return { f, runs, options: { ...f.options(), config: { ...config, pr_auth: 'github-app' }, writer }, approval: (value: boolean) => { approval = value; }, pending: (value: boolean) => { pendingAfterEdit = value; if (!value) policyPending = false; }, registerPolicy: (value: boolean) => { registerPolicy = value; } };
+  return { f, runs, options: { ...f.options(), sleep: async () => {}, config: { ...config, pr_auth: 'github-app' }, writer }, approval: (value: boolean) => { approval = value; }, pending: (value: boolean) => { pendingAfterEdit = value; if (!value) policyPending = false; }, registerPolicy: (value: boolean) => { registerPolicy = value; } };
 }
 describe('native CI automatic continuation', () => {
+  it('rechecks real-shaped native run/job/Record stdout evidence after the body edit before merging', async () => {
+    const { f, options } = nativeFixture(), current = { ...options, verifyMerge: gatherMergeEvidence };
+    await runLoop(current); f.respond(false); await runLoop(current); f.ciDone = true; await runLoop(current); f.respond(true);
+    expect((await runLoop(current)).state).toBe('waiting-main-ci'); expect(f.merges).toEqual([56]);
+    expect(f.reads).toContain('GET /actions/runs/103'); expect(f.sends).toHaveLength(2);
+  });
+  it('consumes CI which already completed before the Cloud result without depending on another completion event', async () => {
+    const { f, options } = nativeFixture();
+    await runLoop(options); f.ciDone = true; f.respond(false);
+    expect((await runLoop(options)).state).toBe('waiting-cloud');
+    expect(f.store.state.tasks[0]!.phase).toBe('review'); expect(f.sends).toHaveLength(2); expect(f.dispatches).toEqual([]);
+  });
   it('keeps merge waiting if a new native CI starts during evidence gathering', async () => {
     const { f, options } = nativeFixture();
     await runLoop(options); f.respond(false); await runLoop(options); f.ciDone = true; await runLoop(options); f.respond(true);

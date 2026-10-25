@@ -402,6 +402,11 @@ export async function runLoop({ api, sender, store, config, policy, writer, now 
   const c = parseLoopConfig(config); if (!c.enabled) return { state: 'disabled', changes: 0 };
   const native = c.pr_auth === 'github-app';
   ensure(!native || writer, 'missing_product_writer');
+  const nativeStatus = async task => {
+    let result = await nativeCIStatus(api, task, policy);
+    for (let attempt = 0; ['native_ci_registration', 'native_policy_registration'].includes(result.waiting) && attempt < 3; attempt++) { await sleep(1000); result = await nativeCIStatus(api, task, policy); }
+    return result;
+  };
   ensure(policy.repository === REPO && policy.max_prs_per_run <= 2 && policy.max_fix_cycles <= 3, 'invalid_loop_policy');
   ensure(c.tasks.every(t => t.allowed_paths.every(path => !policy.protected_paths.some(p => p.endsWith('/') ? path.startsWith(p) : path === p))), 'protected_task_path');
   let snap = await store.load(), changes = 0, currentTask = null;
@@ -523,7 +528,7 @@ export async function runLoop({ api, sender, store, config, policy, writer, now 
           const updatedBody = renderLoopPRBody(pr.body, task, review, definition.title ?? definition.goal);
           if (updatedBody !== pr.body) {
             if (native) {
-              const before = await nativeCIStatus(api, { ...task, policy_update: null }, policy);
+              const before = await nativeStatus({ ...task, policy_update: null });
               if (before.waiting) return { state: before.waiting === 'workflow_approval' ? 'waiting-workflow-approval' : 'waiting-ci', changes };
               const current = latestCheck(before.checks, 'pr-policy').details_url.match(/\/actions\/runs\/(\d+)\/job\//);
               ensure(current, 'missing_policy_update_run');
@@ -568,12 +573,14 @@ export async function runLoop({ api, sender, store, config, policy, writer, now 
           const fresh = await preparedMergeCheckout(api, task, definition, sleep);
           const key = randomBytes(32).toString('hex');
           await update(t => { t.operation = { key, dispatched: !native, ci_mode: native ? 'native' : 'dispatch' }; t.checkout = fresh.merge_commit_sha; });
-          if (!native) await dispatch(api, { ...task, checkout: fresh.merge_commit_sha, operation: { key } }, false);
-          return { state: 'waiting-ci', changes };
+          if (!native) { await dispatch(api, { ...task, checkout: fresh.merge_commit_sha, operation: { key } }, false); return { state: 'waiting-ci', changes }; }
+          // Native CI may already have completed while Cloud was running. Consume
+          // the current result now rather than wait forever for an event already sent.
+          continue;
         }
         ensure(pr.head.sha === task.head && main === task.base && pr.base.sha === main && pr.draft === false, 'stale_ci_snapshot');
         identity(pr.merge_commit_sha);
-        const status = native ? await nativeCIStatus(api, task, policy) : null;
+        const status = native ? await nativeStatus(task) : null;
         if (status?.waiting) {
           if (task.waiting?.reason !== status.waiting) await update(t => { t.waiting = { reason: status.waiting, head: t.head, base: t.base }; });
           return { state: status.waiting === 'workflow_approval' ? 'waiting-workflow-approval' : 'waiting-ci', changes };
@@ -589,7 +596,7 @@ export async function runLoop({ api, sender, store, config, policy, writer, now 
       if (task.phase === 'merge') {
         // Rendering the review record edits the body and starts a fresh PR policy
         // attempt. Pending CI is an external boundary, not a failed merge policy.
-        const status = native ? await nativeCIStatus(api, task, policy) : null;
+        const status = native ? await nativeStatus(task) : null;
         if (status?.waiting) {
           if (task.waiting?.reason !== status.waiting) await update(t => { t.waiting = { reason: status.waiting, head: t.head, base: t.base }; });
           return { state: status.waiting === 'workflow_approval' ? 'waiting-workflow-approval' : 'waiting-ci', changes };
