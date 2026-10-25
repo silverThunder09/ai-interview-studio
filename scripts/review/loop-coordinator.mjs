@@ -608,7 +608,10 @@ export async function runLoop({ api, sender, store, config, policy, writer, now 
           await product.request('PATCH', `/git/refs/heads/${task.branch}`, { sha: task.applied.sha, force: false });
         }
         await ready(product, pr);
-        await update(t => { t.phase = 'ci'; t.head = t.applied.sha; t.operation = null; }); continue;
+        await update(t => {
+          if (t.repair_findings?.length) t.repairs.at(-1).applied = { ...t.applied };
+          t.phase = 'ci'; t.head = t.applied.sha; t.operation = null;
+        }); continue;
       }
       if (task.phase === 'ci') {
         if (!task.operation) {
