@@ -1641,6 +1641,23 @@
         "Linux SwiftShader; real Windows laptop and realistic assets unverified",
         "Subsequent renderer/slot recovery features are separate work"
       ]
+    },
+    {
+      "id": "tests-2026-10-26-patch-unicode",
+      "status": "archived",
+      "scope": "automation",
+      "date_kst": "2026-10-26",
+      "issue": 107,
+      "title": "한국어 개발 패치의 ASCII-safe 전달과 strict 원본 검사",
+      "path": "archive/2026-10-26/patch-unicode-local.md",
+      "head_sha": "801b4064635f2c4829df0303d64f398b3bde83f1",
+      "base_sha": "94b8a9801093b0a4ae8016ea8eb05da48244214e",
+      "unit": 693,
+      "review_policy": 41,
+      "limitations": [
+        "Actual corrupt receipt stays rejected; canonical commit replay is a local fixture only",
+        "Deployment and new Cloud transport validation pending on issue35"
+      ]
     }
   ],
   "historical_main_verification": {

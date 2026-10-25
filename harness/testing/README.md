@@ -29,6 +29,8 @@
 
 ## 여기서 말하는 테스트
 
+[개발 결과의 한국어 패치 전달](archive/2026-10-26/patch-unicode-local.md): unit693·policy41 성공. 실제 PR105의 손상 문맥을 보존하고 ASCII-safe 직렬화·정확한 왕복/거절 조건을 검증했다. 기존 공식 결과와 로컬 fixture·운영 인수는 구분한다.
+
 [일시정지 중 3D 모델 교체·복원 픽셀 검증](archive/2026-10-26/avatar-paused-local.md): 실제 main에서 결함을 재현한 뒤 unit689·정책41·build·관련 sandbox Electron3과 Windows 검증이 성공했다. 후속 그래픽/슬롯별 복구 작업과 실제 사용자 기기 검증은 별도다.
 
 [수정 commit 검증의 실제 transport 회귀](archive/2026-10-25/repair-commit-proof-local.md): 단위689·정책41 성공. 기존 API 경로 보호를 유지한 실제 클라이언트 경유와 개별 수정 commit/first-parent/main merge 이력을 확인했으며 설치 후 복구 결과는 #35에서 추적한다.
