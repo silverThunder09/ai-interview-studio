@@ -21,6 +21,7 @@ export class AvatarStage {
   private frames = 0;
   private sample = 0;
   private elapsed = 0;
+  private redraw = true;
   private readonly pacer = new FramePacer();
   private readonly motion = matchMedia('(prefers-reduced-motion: reduce)');
   state: StageState = { active: 'a', speaking: null, quality: 'low', paused: false };
@@ -58,6 +59,7 @@ export class AvatarStage {
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, this.state.quality === 'low' ? 1 : 1.5));
     this.renderer.setSize(Math.max(1, rect.width), Math.max(1, rect.height), false);
     this.camera.aspect = Math.max(1, rect.width) / Math.max(1, rect.height); this.camera.updateProjectionMatrix();
+    this.redraw = true;
   }
   setQuality(quality: 'low' | 'standard') { this.state.quality = quality; this.resize(); }
   resetView() { this.controls.reset(); }
@@ -78,14 +80,21 @@ export class AvatarStage {
   private contextRestored = () => { this.lost = false; this.failure(''); this.resize(); };
   private frame = (stamp: number) => {
     if (this.disposed || this.lost) return;
-    if (document.hidden || this.state.paused) { this.last = 0; this.sample = 0; this.frames = 0; this.pacer.reset(); return; }
+    if (document.hidden || this.state.paused) {
+      this.last = 0; this.sample = 0; this.frames = 0; this.pacer.reset();
+      if (!document.hidden && this.redraw) {
+        for (const slot of ['a', 'b'] as const) this.rings[slot].visible = this.state.active === slot;
+        this.renderer.render(this.scene, this.camera); this.redraw = false;
+      }
+      return;
+    }
     if (!this.pacer.due(stamp)) return;
     const delta = this.last ? Math.min((stamp - this.last) / 1000, 0.1) : 0; this.last = stamp; this.elapsed += delta;
     for (const slot of ['a', 'b'] as const) {
       this.actors[slot].update(this.elapsed + (slot === 'b' ? 1.7 : 0), delta, this.state.speaking === slot, this.motion.matches);
       this.rings[slot].visible = this.state.active === slot;
     }
-    this.controls.update(); this.renderer.render(this.scene, this.camera);
+    this.controls.update(); this.renderer.render(this.scene, this.camera); this.redraw = false;
     if (!this.sample) this.sample = stamp;
     this.frames++;
     if (stamp - this.sample > 2000) {
@@ -100,10 +109,10 @@ export class AvatarStage {
     let accepted: boolean;
     try { accepted = await accept(); } catch (error) { actor.dispose(); throw error; }
     if (!accepted || this.disposed || epoch !== this.epochs[slot]) { actor.dispose(); return null; }
-    const old = this.actors[slot]; this.scene.remove(old.root); old.dispose(); this.actors[slot] = actor; this.install(slot, actor);
+    const old = this.actors[slot]; this.scene.remove(old.root); old.dispose(); this.actors[slot] = actor; this.install(slot, actor); this.redraw = true;
     return actor.capability;
   }
-  reset(slot: AvatarSlot) { ++this.epochs[slot]; const old = this.actors[slot]; this.scene.remove(old.root); old.dispose(); this.actors[slot] = defaultActor(slot === 'a'); this.install(slot, this.actors[slot]); }
+  reset(slot: AvatarSlot) { ++this.epochs[slot]; const old = this.actors[slot]; this.scene.remove(old.root); old.dispose(); this.actors[slot] = defaultActor(slot === 'a'); this.install(slot, this.actors[slot]); this.redraw = true; }
   dispose() {
     if (this.disposed) return;
     this.disposed = true; ++this.epochs.a; ++this.epochs.b;
