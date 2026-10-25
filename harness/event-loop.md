@@ -2,6 +2,10 @@
 
 ## 현재 요청의 실패 구분과 Cloud 환경
 
+- 공식 Codex 영수증은 issue comments 또는 원본 REST reviews의 COMMENTED 리뷰에 올 수 있다. REST 영수증은 Bot 작성자·정확한 전체 commit_id·PR URL·요청 이후 submitted_at·구조화된 완료 요약을 함께 검증한다. `pull_request_review` submitted/edited도 같은 저장소·main 대상·공식 bot만 조정자를 깨운다. 원본 reviews는 필터링하지 않고 별도로 머지 판정에 모두 전달한다.
+- 완료된 공식 리뷰의 실제 finding은 병합 성공으로 해석하지 않는다. 기존 승인 파일·3회 상한 안에서 같은 task의 요청/영수증/결함/이슈 이력을 보존하고 새 key로 수정 작업을 요청한다. P0·허용 밖 파일·모호하거나 과대한 결과·사람의 변경 요청은 보류한다. 새 권한이나 스펙을 댓글에서 가져오지 않는다.
+- 수정된 파일·새 head의 실제 CI3개와 새 AI 검토 finding0을 확인한 뒤 그 수정에 연결된 이슈를 닫는다. 기록된 해당 AI finding의 **outdated·공식 Bot 댓글만 있는** 스레드만 해결하며, 사람 댓글·현재 코드의 스레드·누락/페이지 잘림은 유지한다. 해결 중 사람 댓글이 도착하면 unresolved로 복원하고 멈춘다. 사람의 결정 리뷰를 dismiss/APPROVE하지 않으며 최종 원본 리뷰/스레드/라벨/현재 SHA 검증은 그대로 수행한다.
+
 - 활성 상태는 신뢰하는 main의 `.github/approved-loop.json`과 #35의 최신 운영 기록으로 확인한다. 설치 성공·봇 수신·리뷰 완료·제품 개발 완료는 구분한다.
 - 공식 일반 실패 문장에는 요청 key가 없다. 현재 전송 이후 실패 이전에 같은 PR의 별도 Codex 요청이 있으면 `ambiguous_native_codex_failure`로 보류하고 실패 댓글·끼어든 요청 ID를 `unattributed_native_failure`에 남긴다. 현재 개발의 확정 실패로 귀속하거나 다음 작업을 시작하지 않는다. 원래 요청과 과거 실패 이력은 유지한다.
 - 일반적인 “Try again later”만으로 일시적 오류라고 단정하지 않는다. 같은 key/본문을 재전송하면 유일한 receipt·결과 계약을 깨므로 자동 재전송하지 않는다. 기존 작업의 종료/모호함을 확인하고 승인된 복구를 할 때는 같은 task ID·이력·회차를 유지하며 새 request key를 사용한다. 사람 리뷰·필수 CI·권한·sandbox 조건은 그대로다.

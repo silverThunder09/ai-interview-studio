@@ -516,6 +516,23 @@ function nativeFixture() {
   return { f, runs, options: { ...f.options(), sleep: async () => {}, config: { ...config, pr_auth: 'github-app' }, writer }, approval: (value: boolean) => { approval = value; }, pending: (value: boolean) => { pendingAfterEdit = value; if (!value) policyPending = false; }, registerPolicy: (value: boolean) => { registerPolicy = value; } };
 }
 describe('native CI automatic continuation', () => {
+  it('turns an ended REST-native finding into one scoped repair request, not indefinite waiting or a merge', async () => {
+    const { f, options } = nativeFixture();
+    await runLoop(options); f.respond(false); await runLoop(options); f.ciDone = true; await runLoop(options);
+    const summary = nativeResultComments()[1]!; summary.body = summary.body.replaceAll('"has_any_findings":false', '"has_any_findings":true').replaceAll('"has_unresolved_findings":false', '"has_unresolved_findings":true');
+    f.storedComments.set(56, [summary]); const original = f.request.bind(f), issues: { number: number; body: string; state: string }[] = [];
+    const receipt = { id: 3000, user: { login: 'chatgpt-codex-connector[bot]', type: 'Bot' }, state: 'COMMENTED', commit_id: head, submitted_at: '2026-10-20T10:00:02Z', html_url: `https://github.com/${repository}/pull/56#pullrequestreview-3000`, body: `<!-- codex-review-receipt:v1 -->\n\n**Reviewed commit:** \`${head.slice(0,10)}\`` };
+    f.request = async (method, url, body) => {
+      if (url.startsWith('/pulls/56/reviews?')) return [receipt];
+      if (url.startsWith('/pulls/56/comments?')) return [{ id: 3001, user: receipt.user, commit_id: head, created_at: '2026-10-20T10:00:02Z', html_url: `https://github.com/${repository}/pull/56#discussion_r3001`, pull_request_review_id: 3000, path: 'tests/unit/probe.test.ts', original_line: 1, body: 'P2 Badge Fix this concrete failure\n<!-- codex-code-review-finding:v1 -->' }];
+      if (url.startsWith('/issues?state=all')) return issues;
+      if (method === 'POST' && url === '/issues') { const issue = { number: 100, body: String((body as { body: string }).body), state: 'open' }; issues.push(issue); return issue; }
+      return original(method, url, body);
+    };
+    expect((await runLoop(options)).state).toBe('waiting-cloud');
+    expect(f.store.state.tasks[0]).toMatchObject({ phase: 'development', cycles: 1 }); expect(f.sends).toHaveLength(3); expect(f.sends[2]!.body).toContain('Fix this concrete failure'); expect(issues).toHaveLength(1); expect(f.merges).toEqual([]);
+    await runLoop(options); expect(f.sends).toHaveLength(3); expect(issues).toHaveLength(1);
+  });
   it('waits for an active old-base review to finish, then normally merges main and rechecks CI without a duplicate Cloud task', async () => {
     const { f, options } = nativeFixture();
     await runLoop(options); f.respond(false); await runLoop(options); f.ciDone = true; await runLoop(options);
