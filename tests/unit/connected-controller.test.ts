@@ -21,6 +21,47 @@ const patch = 'diff --git a/src/example.ts b/src/example.ts\nindex aaaaaaa..bbbb
 const repair: DevelopmentRequest = { ...request, mode: 'repair', allowed_paths: ['src/example.ts'] };
 
 describe('development v2 result boundary', () => {
+  it('preserves repaired failures visibly while accepting only the successful final revision', () => {
+    const value = { ...report(), prior_attempts: [{ command: 'npm run check', exit_code: 2 }, { command: 'npm run check', exit_code: 1 }],
+      tests: [{ command: 'npm run check', exit_code: 0 }, { command: 'npm run build', exit_code: 0 }, { command: 'bash scripts/codex/smoke.sh', exit_code: 0 }], change: { kind: 'patch', patch } } as DevelopmentReport;
+    const body = renderDevelopmentResult(value, '타입 오류를 수정하고 같은 명령으로 재검증했습니다.');
+    const c = comment(body + `\n\n [View task →](${task})`);
+    expect(parseDevelopmentResult(c, repair).report).toEqual(value);
+    expect(body.slice(0, body.indexOf('<details>'))).toContain('개발 중 실패·재검증');
+    expect(body.slice(0, body.indexOf('<details>'))).toContain('종료 코드 2');
+    expect(body.slice(0, body.indexOf('<details>'))).toContain('최종 수정본 재검증 통과');
+    expect(planConnectedResult({ ...snapshot(), comments: [c] }, repair)).toMatchObject({ action: 'commit', expected_head_sha: A, merge_authorized: false });
+    expect(() => parseDevelopmentResult(comment(body.replace('종료 코드 2', '종료 코드 0') + `\n\n [View task →](${task})`), repair)).toThrow('inconsistent_result_summary');
+  });
+  it('rejects the observed duplicate-command failure instead of reinterpreting its missing patch as success', () => {
+    const value = { ...report(), outcome: 'failed', tests: [{ command: 'npm run check', exit_code: 2 }, { command: 'npm run check', exit_code: 0 }], blocker: { code: 'initial_check_failed', summary: '초기 실패 뒤 수정했습니다.' } };
+    expect(() => parseDevelopmentResult(comment(wrap(JSON.stringify(value))), repair)).toThrow('invalid_test');
+  });
+  it('requires an exact successful final rerun for every prior failed command', () => {
+    const value = { ...report(), prior_attempts: [{ command: 'bash scripts/codex/smoke.sh', exit_code: 1 }], change: { kind: 'patch', patch } };
+    const c = comment(wrap(JSON.stringify(value)));
+    expect(() => parseDevelopmentResult(c, repair)).toThrow('unresolved_prior_failure');
+    expect(planConnectedResult({ ...snapshot(), comments: [c] }, repair)).toEqual({ action: 'blocked', reason: 'unresolved_prior_failure' });
+  });
+  it('still refuses a failing final revision even when another command was repaired', () => {
+    const value = { ...report(), prior_attempts: [{ command: 'npm run check', exit_code: 2 }], tests: [{ command: 'npm run check', exit_code: 0 }, { command: 'bash scripts/codex/smoke.sh', exit_code: 1 }], change: { kind: 'patch', patch } };
+    expect(() => parseDevelopmentResult(comment(wrap(JSON.stringify(value))), repair)).toThrow('unproven_success');
+  });
+  it.each([
+    null, {}, Array.from({ length: 17 }, () => ({ command: 'npm run check', exit_code: 1 })),
+    [{ command: 'npm run check', exit_code: 0 }], [{ command: 'npm run check', exit_code: -1 }],
+    [{ command: 'npm run check', exit_code: 256 }], [{ command: 'npm run check', exit_code: 1.5 }],
+    [{ command: 'npm run check; echo extra', exit_code: 1 }], [{ command: 'npm run check', exit_code: 1, hidden: true }],
+  ])('rejects malformed or unsafe prior attempts: %j', prior_attempts => {
+    expect(() => parseDevelopmentResult(comment(wrap(JSON.stringify({ ...report(), prior_attempts }))), request)).toThrow();
+  });
+  it('keeps blocked outcomes and failed final patches blocked with prior history present', () => {
+    const prior_attempts = [{ command: 'npm run check', exit_code: 2 }];
+    const blocked = { ...report(), prior_attempts, outcome: 'blocked', tests: [], blocker: { code: 'execution_unavailable', summary: '최종 재검증을 실행하지 못했습니다.' } };
+    expect(parseDevelopmentResult(comment(wrap(JSON.stringify(blocked))), request).report.outcome).toBe('blocked');
+    const failed = { ...blocked, outcome: 'failed', tests: [{ command: 'npm run check', exit_code: 1 }], change: { kind: 'patch', patch } };
+    expect(() => parseDevelopmentResult(comment(wrap(JSON.stringify(failed))), repair)).toThrow('unexpected_patch');
+  });
   it.each(['failed', 'blocked'] as const)('does not treat a %s report with a patch as an applicable result', outcome => {
     const value = { ...report(), outcome, tests: [{ command: 'npm run check', exit_code: 0 }, { command: 'npm run test:smoke', exit_code: 1 }], change: { kind: 'patch', patch }, blocker: { code: 'electron_runtime_dependency_missing', summary: 'Electron 실행 라이브러리가 없어 smoke를 시작하지 못했습니다.' } };
     const c = comment(wrap(JSON.stringify(value)));
@@ -204,6 +245,8 @@ describe('connected GitHub handoff planner', () => {
     expect(body).toContain(`<!-- ais-development-request-v2:${KEY} -->`);
     expect(body).toContain('GitHub API·gh 인증·댓글·push·머지는 연결된 GitHub 담당의 일');
     expect(body).toContain('failed/blocked는 비민감 code·summary 이유를 반드시');
+    expect(body).toContain('prior_attempts');
+    expect(body).toContain('동일 명령을 다시 실행하고 그 최종 결과를 tests에 포함');
     expect(() => buildDevelopmentRequest({ ...request, token: 'synthetic-secret' })).toThrow('invalid_fields');
     expect(() => buildDevelopmentRequest({ ...repair, allowed_paths: ['harness/event-loop.md'] })).toThrow();
   });
