@@ -1578,9 +1578,9 @@
       "pr": 96,
       "title": "PR 인증 분리와 native CI 완료 재개",
       "path": "archive/2026-10-25/pr-auth-local.md",
-      "head_sha": "b0f4bf21d0fccc8d4ac0480ba85a1caca3e5ac62",
+      "head_sha": "083757aebf3b3a462ba61fdf0624e485bbccef90",
       "base_sha": "69e1951a58397c0772d78978663059f4a1507abe",
-      "unit": 654,
+      "unit": 656,
       "review_policy": 41,
       "source_smoke": 3,
       "limitations": [

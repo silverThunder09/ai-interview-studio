@@ -29,7 +29,7 @@
 
 ## 여기서 말하는 테스트
 
-[PR 인증 분리·기본 CI 재개](archive/2026-10-25/pr-auth-local.md): 최종 구현의 단위654·정책41·기존 제품 build/Electron3 성공. 저장소 한정 App credential/역할 경계와 CI 선완료·본문 검사 지연·승인 대기 재개·합성 A→B를 확인했으며 실제 App 등록·무인 운영 인수는 미완료다.
+[PR 인증 분리·기본 CI 재개](archive/2026-10-25/pr-auth-local.md): 최종 구현의 단위656·정책41·기존 제품 build/Electron3 성공. 저장소 한정 App credential/역할 경계와 CI 선완료·본문 검사 지연·승인 대기 재개·main 갱신·합성 A→B를 확인했으며 실제 App 등록·무인 운영 인수는 미완료다.
 
 자동화 회귀의 당시 성공 기록: [2026-10-21 · PR #68의 CI 대상 커밋 검증과 A 작업 연결 관측](archive/2026-10-21/pr-68-automation.md). 단위464·정책41·Windows smoke 각9의 PR 검증과 이후 A의 실제465개 검증을 구분해 기록했다. 전체 A→B 완료는 미검증이며 앱의 최신 기준을 교체하지 않는다. 색인의 `scope: automation` 항목으로 검색할 수 있다.
 
