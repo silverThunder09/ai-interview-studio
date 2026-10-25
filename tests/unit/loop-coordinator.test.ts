@@ -516,6 +516,22 @@ function nativeFixture() {
   return { f, runs, options: { ...f.options(), sleep: async () => {}, config: { ...config, pr_auth: 'github-app' }, writer }, approval: (value: boolean) => { approval = value; }, pending: (value: boolean) => { pendingAfterEdit = value; if (!value) policyPending = false; }, registerPolicy: (value: boolean) => { registerPolicy = value; } };
 }
 describe('native CI automatic continuation', () => {
+  it('uses issue state when the open collection briefly retains a closed finding, without ignoring actual open findings', async () => {
+    for (const state of ['closed','open']) {
+      const f = new FixtureAPI(); await runLoop(f.options()); f.respond(false); await runLoop(f.options()); f.ciDone = true; await runLoop(f.options()); f.respond(true);
+      const original = f.request.bind(f);
+      f.request = async (method,url,body) => url.startsWith('/issues?state=open') ? [{ number:97,state,title:'[Review] fixed finding',labels:[] }] : original(method,url,body);
+      const options = { ...f.options(), verifyMerge:gatherMergeEvidence };
+      if(state==='closed') expect((await runLoop(options)).state).toBe('waiting-main-ci');
+      else await expect(runLoop(options)).rejects.toThrow('merge_policy_denied');
+      expect(f.merges).toEqual(state==='closed'?[56]:[]);
+    }
+  });
+  it('rejects a missing issue state rather than assuming that an unknown finding is closed', async () => {
+    const f = new FixtureAPI(); await runLoop(f.options()); f.respond(false); await runLoop(f.options()); f.ciDone = true; await runLoop(f.options()); f.respond(true);
+    const original = f.request.bind(f); f.request=async(method,url,body)=>url.startsWith('/issues?state=open')?[{number:97,title:'[Review] unknown',labels:[]}]:original(method,url,body);
+    await expect(runLoop({...f.options(),verifyMerge:gatherMergeEvidence})).rejects.toThrow('missing_issue_state'); expect(f.merges).toEqual([]);
+  });
   it('turns an ended REST-native finding into one scoped repair request, not indefinite waiting or a merge', async () => {
     const { f, options } = nativeFixture();
     await runLoop(options); f.respond(false); await runLoop(options); f.ciDone = true; await runLoop(options);

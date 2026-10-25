@@ -371,7 +371,9 @@ export async function gatherMergeEvidence(api, definition, task, policy, nativeC
   ensure(review && review.comment_id === task.review.comment_id && (!native || review.summary_id === task.review.summary_id), 'missing_current_ai_review');
   const unresolved = await threadCount(api, task.pr);
   const issues = await allPages(api, '/issues?state=open');
-  const openFindings = issues.filter(i => !i.pull_request && (i.labels?.some(l => ['review', 'bug'].includes(l.name)) || /^\[Review\]/.test(i.title))).length;
+  ensure(issues.every(i => ['open', 'closed'].includes(i.state)), 'missing_issue_state');
+  // GitHub can briefly retain an already-closed object in the open collection.
+  const openFindings = issues.filter(i => i.state === 'open' && !i.pull_request && (i.labels?.some(l => ['review', 'bug'].includes(l.name)) || /^\[Review\]/.test(i.title))).length;
   const nativeStatus = nativeCI ? await nativeCIStatus(api, task, policy) : null;
   ensure(!nativeStatus?.waiting, 'native_ci_not_ready');
   const checks = nativeStatus?.checks ?? await allChecks(api, pr.head.sha), evidence = [];
