@@ -57,6 +57,11 @@ export function createAIHandlers(credentials: AICredentials, cancel: () => void)
   };
 }
 const schema = { type: 'object', properties: { text: { type: 'string' }, evidenceId: { type: ['string', 'null'] } }, required: ['text', 'evidenceId'], additionalProperties: false };
+function responseSchema(payload: AIQuestionPayload) {
+  if (!payload.data.speakerId) return schema;
+  return { ...schema, properties: { ...schema.properties, speakerId: { type: 'string', enum: [payload.data.speakerId] } },
+    required: [...schema.required, 'speakerId'] };
+}
 function object(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new AIQuestionError('INVALID_RESPONSE');
   return value as Record<string, unknown>;
@@ -87,7 +92,7 @@ async function boundedJSON(response: Response, signal: AbortSignal): Promise<unk
 }
 export function createExternalTransport(provider: AIProvider, model: string, key: string, request: typeof fetch = fetch): AIQuestionTransport {
   return async (payload: AIQuestionPayload, signal): Promise<AITransportResult> => {
-    const data = JSON.stringify(payload.data);
+    const data = JSON.stringify(payload.data), outputSchema = responseSchema(payload);
     const headers: Record<string, string> = { 'content-type': 'application/json' };
     let url = AI_ENDPOINTS[provider];
     let body: unknown;
@@ -95,15 +100,15 @@ export function createExternalTransport(provider: AIProvider, model: string, key
       headers.authorization = `Bearer ${key}`;
       body = { model, store: false, stream: false, max_completion_tokens: payload.maxOutputTokens,
         messages: [{ role: 'system', content: payload.instructions }, { role: 'user', content: data }],
-        response_format: { type: 'json_schema', json_schema: { name: 'interview_question', strict: true, schema } } };
+        response_format: { type: 'json_schema', json_schema: { name: 'interview_question', strict: true, schema: outputSchema } } };
     } else if (provider === 'claude') {
       headers['x-api-key'] = key; headers['anthropic-version'] = '2023-06-01';
-      body = { model, stream: false, max_tokens: payload.maxOutputTokens, system: payload.instructions, output_config: { format: { type: 'json_schema', schema } },
+      body = { model, stream: false, max_tokens: payload.maxOutputTokens, system: payload.instructions, output_config: { format: { type: 'json_schema', schema: outputSchema } },
         messages: [{ role: 'user', content: data }] };
     } else {
       headers['x-goog-api-key'] = key; url += `${encodeURIComponent(model)}:generateContent`;
       body = { systemInstruction: { parts: [{ text: payload.instructions }] }, contents: [{ role: 'user', parts: [{ text: data }] }],
-        generationConfig: { maxOutputTokens: payload.maxOutputTokens, responseFormat: { text: { mimeType: 'APPLICATION_JSON', schema } } } };
+        generationConfig: { maxOutputTokens: payload.maxOutputTokens, responseFormat: { text: { mimeType: 'APPLICATION_JSON', schema: outputSchema } } } };
     }
     const response = await request(url, { method: 'POST', headers, body: JSON.stringify(body), signal, redirect: 'error', credentials: 'omit', cache: 'no-store' });
     if (!response.ok) {
@@ -152,6 +157,7 @@ export class InterviewProviderRouter implements AsyncInterviewProvider {
     };
     return new AIQuestionProvider(transport).next({ questionNumber: number,
       evidence: number === 1 ? [{ origin: 'reviewed', location: '사용자 선택 구절', text: config.quote }] : [],
-      answer: number % 2 === 0 ? previous.at(-1)?.answer : null }, signal);
+      answer: number % 2 === 0 ? previous.at(-1)?.answer : null,
+      ...(config.provider === 'gemini' ? { speakerId: number <= 2 ? 'b' as const : 'a' as const } : {}) }, signal);
   }
 }

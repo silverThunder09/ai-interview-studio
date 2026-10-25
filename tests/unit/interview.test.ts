@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { InterviewStore } from '../../src/main/interview-store';
 import { LocalQuestionProvider, type QuestionProvider } from '../../src/main/questions';
 import { createInterviewHandlers } from '../../src/main/interview-handlers';
-import { INTERVIEW_LIMITS, isDeleteAllInterviewsRequest, isDeleteInterviewRequest, isStartInterviewRequest, isSubmitAnswerRequest, type InterviewSession } from '../../src/shared/interview';
+import { INTERVIEW_LIMITS, isDeleteAllInterviewsRequest, isDeleteInterviewRequest, isInterviewQuestion, isStartInterviewRequest, isSubmitAnswerRequest, type InterviewSession } from '../../src/shared/interview';
 import { startFixture } from '../fixtures/interview';
 
 const stores: InterviewStore[] = [], directories: string[] = [];
@@ -22,6 +22,12 @@ function storage(file = path(), provider?: QuestionProvider) {
 function questionId(session: InterviewSession) { return session.turns.at(-1)!.question.id; }
 
 describe('interview IPC input and consent', () => {
+  it('accepts legacy questions without a speaker and validates optional speaker IDs strictly', () => {
+    const question = { id: randomUUID(), number: 1, kind: 'experience', text: '합성 질문', evidence: null };
+    expect(isInterviewQuestion(question)).toBe(true);
+    expect(isInterviewQuestion({ ...question, speakerId: 'b' })).toBe(true);
+    for (const speakerId of ['c', '', null, 1]) expect(isInterviewQuestion({ ...question, speakerId })).toBe(false);
+  });
   it('accepts the bounded explicit storage request only', () => {
     const input = startFixture();
     expect(isStartInterviewRequest(input)).toBe(true);
