@@ -36,6 +36,8 @@ describe('development v2 result boundary', () => {
     expect(parseDevelopmentResult(comment(body + `\n\n [View task →](${task})`), repair).report).toEqual(value);
     expect(parseDevelopmentResult(comment(body.replace(json, JSON.stringify(value)) + `\n\n [View task →](${task})`), repair).report).toEqual(value);
     expect(parseDevelopmentResult(comment(wrap(JSON.stringify(value))), repair).report).toEqual(value);
+    expect(buildDevelopmentRequest(repair)).toContain(`execFileSync('git', ${JSON.stringify(['diff', '--no-ext-diff', '--unified=3', A, '--', ...repair.allowed_paths])}`);
+    expect(buildDevelopmentRequest(request)).not.toContain("execFileSync('git'");
   });
   it('keeps duplicate and escaped ASCII keys invalid in the Unicode-safe spelling', () => {
     const value = { ...report(), change: { kind: 'patch', patch: patch.replace('+updated', '+한국어') } } as DevelopmentReport;
