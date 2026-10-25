@@ -30,7 +30,7 @@ export async function startReviewRepair({ api, task, definition, report, reviews
 async function threads(api, pr) {
   let cursor = null; const nodes = [];
   for (let page = 0; page < 100; page++) {
-    const result = await api.graphql('query($pr:Int!,$after:String){repository(owner:"silverThunder09",name:"ai-interview-studio"){pullRequest(number:$pr){reviewThreads(first:100,after:$after){nodes{id isResolved isOutdated comments(first:100){nodes{databaseId body author{login __typename}}pageInfo{hasNextPage}}}pageInfo{hasNextPage endCursor}}}}}', { pr, after: cursor });
+    const result = await api.graphql('query($pr:Int!,$after:String){repository(owner:"silverThunder09",name:"ai-interview-studio"){pullRequest(number:$pr){reviewThreads(first:100,after:$after){nodes{id isResolved isOutdated comments(first:100){nodes{url body author{login __typename}}pageInfo{hasNextPage}}}pageInfo{hasNextPage endCursor}}}}}', { pr, after: cursor });
     const t = result.data?.repository?.pullRequest?.reviewThreads; ensure(Array.isArray(t?.nodes), 'missing_repair_threads'); nodes.push(...t.nodes);
     if (t.pageInfo.hasNextPage === false) return nodes;
     ensure(typeof t.pageInfo.endCursor === 'string' && t.pageInfo.endCursor !== cursor, 'incomplete_repair_threads'); cursor = t.pageInfo.endCursor;
@@ -47,7 +47,7 @@ export async function finishReviewRepair({ api, task, review, update }) {
     ensure(Array.isArray(diff.files) && repair.issues.every(f => diff.files.some(c => c.filename === f.path && c.status === 'modified')), 'repair_file_not_changed');
   }
   for (const thread of await threads(api, task.pr)) {
-    if (thread.isResolved || !thread.comments?.nodes?.some(c => findings.some(f => f.id === c.databaseId))) continue;
+    if (thread.isResolved || !thread.comments?.nodes?.some(c => findings.some(f => f.url === c.url))) continue;
     ensure(botOnly(thread), 'human_or_current_thread_blocks_repair');
     const resolved = await api.graphql('mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}', { id: thread.id });
     ensure(resolved.data?.resolveReviewThread?.thread?.isResolved === true, 'repair_thread_resolve_failed');

@@ -3,12 +3,12 @@ import { startReviewRepair, finishReviewRepair } from '../../scripts/review/revi
 
 const head = '1'.repeat(40), base = '2'.repeat(40), fixed = '3'.repeat(40), path = 'tests/smoke/gemini.spec.ts';
 type Issue = { number: number; body: string; state: string };
-function fixture() {
-  const finding = { id: 21, path, line: 80, severity: 'P1', body: 'Restore the removed failure scenarios.\n<!-- codex-code-review-finding:v1 -->', url: 'https://github.com/silverThunder09/ai-interview-studio/pull/95#discussion_r21' };
+function fixture(id = 21) {
+  const finding = { id, path, line: 80, severity: 'P1', body: 'Restore the removed failure scenarios.\n<!-- codex-code-review-finding:v1 -->', url: `https://github.com/silverThunder09/ai-interview-studio/pull/95#discussion_r${id}` };
   const report = { head_sha: head, base_sha: base, receipt_id: 11, summary_id: 10, findings: [finding] };
   const task: Record<string, unknown> & { head: string; cycles: number; repairs?: Record<string, unknown>[]; repair_findings?: unknown } = { id: 'approved', pr: 95, head, base, phase: 'review', cycles: 0, request: { request_key: 'a'.repeat(64) }, delivery: { id: 9 }, review: null };
   const issues: Issue[] = [], writes: string[] = [];
-  const thread = { id: 'thread21', isResolved: false, isOutdated: true, comments: { nodes: [{ databaseId: 21, body: finding.body, author: { login: 'chatgpt-codex-connector', __typename: 'Bot' } }], pageInfo: { hasNextPage: false } } };
+  const thread = { id: 'thread21', isResolved: false, isOutdated: true, comments: { nodes: [{ url: finding.url, body: finding.body, author: { login: 'chatgpt-codex-connector', __typename: 'Bot' } }], pageInfo: { hasNextPage: false } } };
   let changed = true, race = false;
   const api = {
     request: async (method: string, url: string, data?: Record<string, unknown>) => {
@@ -26,7 +26,7 @@ function fixture() {
       writes.push(query);
       if (query.includes('unresolveReviewThread')) { thread.isResolved = false; return {}; }
       thread.isResolved = true;
-      if (race) thread.comments.nodes.push({ databaseId: 22, body: 'human comment', author: { login: 'human', __typename: 'User' } });
+      if (race) thread.comments.nodes.push({ url: 'human-comment', body: 'human comment', author: { login: 'human', __typename: 'User' } });
       return { data: { resolveReviewThread: { thread: { isResolved: true } } } };
     },
   };
@@ -63,9 +63,13 @@ describe('bounded official AI finding repair', () => {
     expect(f.thread.isResolved).toBe(true); expect(f.issues[0]!.state).toBe('closed'); expect(f.task.repair_findings).toBeNull(); expect(f.task.repairs![0]).toHaveProperty('verified_head', fixed);
     const count = f.writes.length; await f.finish(); expect(f.writes).toHaveLength(count);
   });
+  it('matches the actual 64-bit REST comment ID through its URL without depending on GraphQL Int databaseId', async () => {
+    const f = fixture(4369904494); await f.start(); f.prepareFixed(); await f.finish();
+    expect(f.thread.isResolved).toBe(true); expect(f.issues[0]!.state).toBe('closed');
+  });
   it.each(['human', 'current', 'truncated'])('keeps a %s thread unresolved', async kind => {
     const f = fixture(); await f.start(); f.prepareFixed();
-    if (kind === 'human') f.thread.comments.nodes.push({ databaseId: 22, body: 'human', author: { login: 'human', __typename: 'User' } });
+    if (kind === 'human') f.thread.comments.nodes.push({ url: 'human-comment', body: 'human', author: { login: 'human', __typename: 'User' } });
     if (kind === 'current') f.thread.isOutdated = false; if (kind === 'truncated') f.thread.comments.pageInfo.hasNextPage = true;
     await expect(f.finish()).rejects.toThrow('human_or_current_thread_blocks_repair'); expect(f.thread.isResolved).toBe(false); expect(f.issues[0]!.state).toBe('open');
   });
