@@ -1587,6 +1587,23 @@
         "App credential lifecycle and A→B use synthetic fixtures; actual installation not verified",
         "Windows evidence is tracked on PR96; no actual user device or paid API test"
       ]
+    },
+    {
+      "id": "tests-2026-10-25-native-review-repair",
+      "status": "archived",
+      "scope": "automation",
+      "date_kst": "2026-10-25",
+      "issue": 97,
+      "title": "REST 리뷰 수신과 승인 경로 내 결함 수정 재개",
+      "path": "archive/2026-10-25/native-review-repair-local.md",
+      "head_sha": "90c3d50e6377e78df2c04df9159e928aca95e6d1",
+      "base_sha": "d0d7d2c4ea6b6ca44aa7bbddd0267304a8c80eb4",
+      "unit": 683,
+      "review_policy": 41,
+      "limitations": [
+        "Real PR95 API replay; runtime App/Cloud validation pending on issue35",
+        "No new local product smoke; Windows validation on PR"
+      ]
     }
   ],
   "historical_main_verification": {
