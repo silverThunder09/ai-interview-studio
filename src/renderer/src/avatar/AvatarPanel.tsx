@@ -17,6 +17,7 @@ export function AvatarPanel({ active = 'a', waiting = false, answering = false, 
   const [paused, setPaused] = useState(false), [quality, setQuality] = useState<AvatarQuality>('low');
   const [qualityReady, setQualityReady] = useState(false), [qualitySaving, setQualitySaving] = useState(false), [qualityWarning, setQualityWarning] = useState('');
   const { settingsOpen } = useContext(ConnectionContext);
+  const stageActive = preview ? selected : active;
   useEffect(() => {
     let active = true;
     void window.studio!.getSnapshot().then(result => {
@@ -53,11 +54,11 @@ export function AvatarPanel({ active = 'a', waiting = false, answering = false, 
   }, []);
   useEffect(() => {
     if (!stage.current) return;
-    stage.current.state.active = preview ? selected : waiting || answering ? null : active;
+    stage.current.state.active = stageActive;
     stage.current.state.speaking = preview && !settingsOpen ? speaker : null;
     stage.current.state.paused = paused || settingsOpen;
     stage.current.setQuality(quality);
-  }, [active, waiting, answering, preview, selected, speaker, paused, quality, settingsOpen, ready]);
+  }, [stageActive, preview, speaker, paused, quality, settingsOpen, ready]);
   async function selectModel(slot: AvatarSlot) {
     if (busy || !stage.current) return;
     setBusy(true); setError('');
@@ -98,8 +99,8 @@ export function AvatarPanel({ active = 'a', waiting = false, answering = false, 
     finally { if (live.current) setQualitySaving(false); }
   }
   return <section className="avatar-panel" aria-label="3D 면접관">
-    <div className="avatar-heading"><div><p className="eyebrow">3D INTERVIEW ROOM</p><h2>두 명의 면접관</h2></div><span className="avatar-status">{waiting ? '질문 준비 중' : answering ? '답변을 듣는 중' : preview ? '모델·동작 확인' : '현재 질문'}</span></div>
-    <div className="avatar-viewport"><canvas ref={canvas} aria-label="마우스나 키보드로 시점을 조작하는 두 3D 면접관" data-studio-ready={ready} data-speaking={speaker ?? 'none'} data-paused={paused || settingsOpen} data-fps={metrics?.fps ?? 0} tabIndex={0} onKeyDown={event => {
+    <div className="avatar-heading"><div><p className="eyebrow">3D INTERVIEW ROOM</p><h2>두 명의 면접관</h2></div><span className="avatar-status">{preview ? '모델·동작 확인' : active ? `${waiting ? '질문 준비 중' : answering ? '답변을 듣는 중' : '현재 질문'} · 현재 면접관 ${names[active]}` : '면접 완료'}</span></div>
+    <div className="avatar-viewport"><canvas ref={canvas} aria-label="마우스나 키보드로 시점을 조작하는 두 3D 면접관" data-studio-ready={ready} data-active={stageActive ?? 'none'} data-speaking={speaker ?? 'none'} data-paused={paused || settingsOpen} data-fps={metrics?.fps ?? 0} tabIndex={0} onKeyDown={event => {
       if (event.ctrlKey || event.metaKey || event.altKey || event.nativeEvent.isComposing) return;
       const action = event.key === 'ArrowLeft' ? () => stage.current?.rotate(-1)
         : event.key === 'ArrowRight' ? () => stage.current?.rotate(1)

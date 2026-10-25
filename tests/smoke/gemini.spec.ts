@@ -5,7 +5,7 @@ import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { docxFixture } from '../fixtures/resume';
 
-test('Gemini uses the REST MIME enum and distinguishes safe request/model/response failures without losing an answer', async () => {
+test('Gemini speaker roles drive the question UI and live WebGL interviewer without losing state', async () => {
   test.setTimeout(90_000);
   const directory = await mkdtemp(join(tmpdir(), 'studio-gemini-'));
   const profile = join(directory, 'profile'); await mkdir(profile);
@@ -32,10 +32,11 @@ test('Gemini uses the REST MIME enum and distinguishes safe request/model/respon
           return new Response('synthetic invalid REST enum', { status: 400 });
         }
         const data = JSON.parse(body.contents[0].parts[0].text);
-        if (data.speakerId !== 'b' || body.generationConfig.responseFormat.text.schema?.properties?.speakerId?.enum?.[0] !== 'b') {
+        const expectedSpeaker = data.questionNumber <= 2 ? 'b' : 'a';
+        if (data.speakerId !== expectedSpeaker || body.generationConfig.responseFormat.text.schema?.properties?.speakerId?.enum?.[0] !== expectedSpeaker) {
           return new Response('synthetic invalid speaker contract', { status: 400 });
         }
-        const value = { text: '합성 Gemini 질문입니다. 검증 방법을 설명해 주세요.', evidenceId: data.evidence[0].id, speakerId: data.speakerId };
+        const value = { text: `합성 Gemini ${data.questionNumber}번 ${data.speakerId.toUpperCase()} 질문입니다.`, evidenceId: data.evidence[0]?.id ?? null, speakerId: data.speakerId };
         return new Response(JSON.stringify({ candidates: [{ finishReason: 'STOP', content: { parts: [{ text: JSON.stringify(value) }] } }] }),
           { headers: { 'content-type': 'application/json' } });
       };
@@ -54,26 +55,43 @@ test('Gemini uses the REST MIME enum and distinguishes safe request/model/respon
     await page.getByLabel('선택 서비스·모델·구절과 과금·보존 가능성', { exact: false }).check();
     await page.getByLabel('이력서 검토 내용과 면접 기록의 로컬 저장에 동의합니다.').check();
     await page.getByRole('button', { name: '동의한 내용으로 AI 면접 시작', exact: true }).click();
-    await expect(page.getByRole('heading', { name: '질문 1', exact: true })).toBeVisible();
-    await expect(page.getByText('합성 Gemini 질문입니다. 검증 방법을 설명해 주세요.', { exact: true })).toBeVisible();
-    const answer = '서비스 실패 후에도 보존할 합성 답변';
-    await page.getByLabel('내 답변', { exact: true }).fill(answer);
-    for (const [status, expected] of [[400, 'HTTP 400'], [404, 'HTTP 404'], [200, 'AI 응답의 형식']] as const) {
-      await app.evaluate((_electron, status) => {
-        globalThis.fetch = async () => status === 200
-          ? new Response(JSON.stringify({ candidates: [{ finishReason: 'MAX_TOKENS' }] }), { headers: { 'content-type': 'application/json' } })
-          : new Response('synthetic-gemini-key-never-real and private synthetic error body', { status });
-      }, status);
+    const canvas = page.locator('.avatar-viewport canvas');
+    await expect(canvas).toHaveAttribute('data-studio-ready', 'true');
+    async function expectQuestion(number: number, speaker: 'a' | 'b') {
+      await expect(page.getByRole('heading', { name: `질문 ${number}`, exact: true })).toBeVisible();
+      await expect(page.getByText(`합성 Gemini ${number}번 ${speaker.toUpperCase()} 질문입니다.`, { exact: true })).toBeVisible();
+      await expect(page.locator('.avatar-status')).toContainText(`현재 면접관 ${speaker === 'a' ? 'A · 기술 면접관' : 'B · 경험·협업 면접관'}`);
+      await expect(canvas).toHaveAttribute('data-active', speaker);
+      expect(await canvas.evaluate(c => (c as HTMLCanvasElement).getContext('webgl2')?.isContextLost())).toBe(false);
+    }
+    for (const [number, speaker] of [[1, 'b'], [2, 'b'], [3, 'a']] as const) {
+      await expectQuestion(number, speaker);
+      await page.getByLabel('내 답변', { exact: true }).fill(`${number}번 합성 답변`);
       await page.getByLabel('위 전송 범위·비용 가능성을 확인했습니다.', { exact: false }).check();
       await page.getByRole('button', { name: '답변 저장하고 다음 질문', exact: true }).click();
-      await expect(page.getByRole('alert')).toContainText(expected);
-      await expect(page.getByRole('alert')).not.toContainText('synthetic-gemini-key-never-real');
-      await expect(page.getByRole('alert')).not.toContainText('private synthetic error body');
-      await expect(page.getByRole('heading', { name: '질문 1', exact: true })).toBeVisible();
-      await expect(page.getByLabel('내 답변', { exact: true })).toHaveValue(answer);
     }
+    await expectQuestion(4, 'a');
+    const answer = '잘못된 발언자 뒤에도 보존할 합성 답변';
+    await page.getByLabel('내 답변', { exact: true }).fill(answer);
+    await app.evaluate(() => {
+      globalThis.fetch = async (_url, init) => {
+        const body = JSON.parse(String(init?.body));
+        const data = JSON.parse(body.contents[0].parts[0].text);
+        const value = { text: '잘못된 발언자의 합성 질문', evidenceId: 'answer-previous', speakerId: data.speakerId === 'a' ? 'b' : 'a' };
+        return new Response(JSON.stringify({ candidates: [{ finishReason: 'STOP', content: { parts: [{ text: JSON.stringify(value) }] } }] }),
+          { headers: { 'content-type': 'application/json' } });
+      };
+    });
+    await page.getByLabel('위 전송 범위·비용 가능성을 확인했습니다.', { exact: false }).check();
+    await page.getByRole('button', { name: '답변 저장하고 다음 질문', exact: true }).click();
+    await expect(page.getByRole('alert')).toContainText('AI 응답의 형식');
+    await expect(page.getByLabel('내 답변', { exact: true })).toHaveValue(answer);
+    await expectQuestion(4, 'a');
+    await page.getByRole('button', { name: '저장된 기록 보기', exact: true }).click();
+    await page.getByRole('button', { name: '이어하기', exact: true }).click();
+    await expectQuestion(4, 'a');
     const status = await page.evaluate(() => window.studio!.getAIStatus());
-    expect(status).toMatchObject({ ok: true, value: { remainingRequests: 32 } }); // 1 success + 3 manual failures; no auto retry.
+    expect(status).toMatchObject({ ok: true, value: { remainingRequests: 31 } }); // 4 successes + one rejected response; no retry.
     expect(errors).toEqual([]);
   } finally { await app?.close(); await rm(directory, { recursive: true, force: true }); }
 });
