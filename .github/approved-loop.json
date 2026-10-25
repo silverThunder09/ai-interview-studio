@@ -1,5 +1,6 @@
 {
   "schema": 1,
+  "pr_auth": "github-app",
   "repository": "silverThunder09/ai-interview-studio",
   "enabled": true,
   "tasks": [

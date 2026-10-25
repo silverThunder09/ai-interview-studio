@@ -2,9 +2,9 @@
 
 ## 상태와 결정
 
-**설계 초안·미구현·미활성.** 2026-10-25 KST 사용자의 「설계하자」 요청에 따른다. 이 문서의 작성이나 머지는 App 등록, 새 키/권한, workflow 변경 또는 운영 활성화 승인이 아니다. 현재 실행은 main의 [작업 목록](../.github/approved-loop.json), [머지 정책](../.github/review-policy.json), [운영 기록 #35](https://github.com/silverThunder09/ai-interview-studio/issues/35)를 따른다.
+**구현·검증 중, 실제 App 설치·운영 인수는 미완료.** 2026-10-25 KST 사용자의 「설계하자」 후 「ㄱㄱ」「완전 무인 자동화를 만들어야돼」 요청으로 이 문서의 인증 분리·완료 이벤트 재개 구현, 작업 branch push·PR·CI·검증 후 머지를 진행한다. 기존 사용자 토큰 권한·허용 작성자·필수 검사·sandbox를 유지한다. App은 아래 저장소 한정 권한만 제안하며 실제 등록·키 저장은 사용자가 GitHub에서 수행한다. 후보 PR 자체를 새 권한의 근거로 삼지 않는다. 현재 실행은 main의 [작업 목록](../.github/approved-loop.json), [머지 정책](../.github/review-policy.json), [운영 기록 #35](https://github.com/silverThunder09/ai-interview-studio/issues/35)를 따른다.
 
-추천안은 **PR 작성자·Codex 요청은 기존 사용자 토큰으로 유지하고, 제품 브랜치 갱신·PR 메타데이터 변경만 저장소 전용 GitHub App으로 분리**하는 것이다. PR 생성/갱신에 대한 GitHub 기본 실행 승인 규칙을 해제하지 않고, 공식적으로 자동 CI를 발생시키는 인증 경로를 사용한다.
+구현안은 **PR 작성자·Codex 요청은 기존 사용자 토큰으로 유지하고, 제품 브랜치 갱신·PR 메타데이터 변경만 저장소 전용 GitHub App으로 분리**한다. PR 생성/갱신에 대한 GitHub 기본 실행 승인 규칙을 해제하지 않고, 공식적으로 자동 CI를 발생시키는 인증 경로를 사용한다. [writer 구현](../scripts/review/pr-writer.mjs)과 [조정자](../scripts/review/loop-coordinator.mjs)를 사용하며 `.github/approved-loop.json`의 `pr_auth=github-app`이 명시 전환 값이다. 이전 설정의 필드 누락/`workflow-token`만 기존 경로이며, App 모드 실패 시 자동 전환하지 않는다. 설치값과 CI 검증 전에는 이 전환을 main에 설치하지 않는다.
 
 | 항목 | 현재 | 제안 |
 | --- | --- | --- |
@@ -47,7 +47,7 @@ App으로 PR까지 생성하면 작성자가 App 봇이 되어 현재 `allowed_a
 
 ## GitHub App 설정 제안
 
-사용자가 별도 승인 후 직접 등록·설치한다. 설치 대상은 이 저장소 하나, 설치 가능 계정은 소유 계정으로 제한한다. Webhook 수신은 끈다. 기존 Actions 이벤트가 조정자를 깨우므로 새 서버·웹훅 URL·시간 예약은 필요 없다.
+사용자가 GitHub에서 직접 등록·설치한다. 설치 대상은 이 저장소 하나, 설치 가능 계정은 소유 계정으로 제한한다. Webhook 수신은 끈다. 기존 Actions 이벤트가 조정자를 깨우므로 새 서버·웹훅 URL·시간 예약은 필요 없다.
 
 | App 저장소 권한 | 범위·이유 |
 | --- | --- |
@@ -58,9 +58,20 @@ App으로 PR까지 생성하면 작성자가 App 봇이 되어 현재 `allowed_a
 
 App에는 보호 규칙 bypass를 주지 않는다. Contents 쓰기와 PR 쓰기는 GitHub 자체에서 branch나 특정 endpoint에만 한정되는 권한이 아니다. 토큰이 유출되면 wrapper보다 넓은 권한이 있으므로 이를 「main을 쓸 수 없는 토큰」이라고 표현하지 않는다. 기존 Ruleset/보호 규칙 상태를 설치 전 확인하고 유지하며, 미확인 상태를 보호 중이라고 가정하지 않는다. 추가 규칙 변경이 필요하면 별도 승인 대상이다.
 
-제안 설정 이름은 공개 식별자인 Actions 변수 `AIS_PR_WRITER_APP_ID`, `AIS_PR_WRITER_INSTALLATION_ID`와 Actions Secret `AIS_PR_WRITER_PRIVATE_KEY`다. 기존 `AIS_CODEX_COMMENT_TOKEN`은 그대로 둔다. 지금은 어떤 변수/Secret도 생성하지 않는다.
+설정 이름은 공개 식별자인 Actions 변수 `AIS_PR_WRITER_APP_ID`, `AIS_PR_WRITER_INSTALLATION_ID`와 Actions Secret `AIS_PR_WRITER_PRIVATE_KEY`다. 기존 `AIS_CODEX_COMMENT_TOKEN`은 그대로 둔다. 코드 작성으로 어떤 변수/Secret도 생성되지 않는다.
 
-실제 구현 시 저장소·작성자·승인 task/path를 확인한 뒤 필요한 writer 단계에서만 신뢰하는 main의 고정 Node 코드로 유효시간10분 이하의 App JWT를 만들고, 설치 토큰을 **이 저장소 ID 하나와 위 권한으로 축소**해 발급한다. 설치 대상 전체에 대한 기본 범위로 발급하지 않는다. 토큰은 보통1시간 만료이며 job 안에서만 사용하고 정상/실패 종료 시 폐기한다. 개인키·JWT·토큰은 마스킹하며 로그·캐시·artifact·Git·PR·Legacy·모델 입력으로 내보내지 않는다. PR checkout이나 npm/PR 스크립트를 토큰 보유 job에서 실행하지 않는다. 외부 토큰 발급 서비스나 새 npm 의존성을 전제로 하지 않는다. [토큰의 저장소/권한 축소와 만료](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-an-installation-access-token-for-a-github-app).
+### 처음 한 번의 GitHub 등록
+
+1. [GitHub App 생성](https://github.com/settings/apps/new)에서 소유 계정용 App 이름을 정하고 Homepage URL은 이 저장소 URL을 사용한다. 사용자 로그인/Callback·사용자 토큰 요청·Device flow는 사용하지 않고 Webhook의 Active를 끈다. 설치 가능 대상은 **Only on this account**로 지정한다.
+2. Repository permissions에서 위 표의 **Contents: Read and write**, **Pull requests: Read and write**만 선택한다. Metadata 읽기는 필수다. 이벤트 구독·Actions·Workflows·조직/계정 권한·보호 규칙 bypass를 추가하지 않는다.
+3. 생성 후 General 화면의 **App ID**를 확인한다. **Generate a private key**로 PEM 파일을 내려받는다. 키 내용은 채팅·Git·PR에 보내지 않는다.
+4. **Install App**에서 소유 계정 → **Only select repositories** → `ai-interview-studio` 하나만 선택한다. 설치 완료 주소의 `/installations/숫자`에서 Installation ID를 확인한다. 설치 페이지에서 다른 저장소를 선택하지 않는다.
+5. [이 저장소 Actions 변수](https://github.com/silverThunder09/ai-interview-studio/settings/variables/actions)에 `AIS_PR_WRITER_APP_ID`, `AIS_PR_WRITER_INSTALLATION_ID`를 각각 숫자로 저장한다. [Actions Secrets](https://github.com/silverThunder09/ai-interview-studio/settings/secrets/actions)에 `AIS_PR_WRITER_PRIVATE_KEY` 이름으로 PEM 전체를 저장한다. 기존 sender Secret은 변경하지 않는다.
+6. 등록 완료 사실만 채팅에 알린다. 이후 구현 PR의 최신 CI/리뷰 검증 후 머지·main 검증을 수행한다. 실제 App actor의 다음 승인 작업 PR CI가 `action_required` 없이 시작되는지 확인하고 #35에 근거를 남긴다. 합성 테스트 성공은 실제 설치 성공이 아니다.
+
+GitHub 설정은 이 채팅의 연결 도구에 편집 기능이 없으므로 등록만 사용자 조작이 필요하다. 이후 제품 작업마다 승인 버튼을 누르게 하는 방식으로 운영하지 않는다. App 키가 노출되면 GitHub에서 해당 키를 폐기하고 교체하며 키 값을 로그에 남기지 않는다.
+
+writer는 저장소·작성자·승인 task/path를 확인한 뒤 필요한 단계에서만 신뢰하는 main의 고정 Node 코드로 유효시간10분 이하의 App JWT를 만들고, 설치 토큰을 **이 저장소 ID 하나와 위 권한으로 축소**해 발급한다. 설치 대상 전체에 대한 기본 범위로 발급하지 않는다. 토큰은 보통1시간 만료이며 job 안에서만 사용하고 정상/실패 종료 시 폐기한다. 개인키·JWT·토큰은 마스킹하며 로그·캐시·artifact·Git·PR·Legacy·모델 입력으로 내보내지 않는다. PR checkout이나 npm/PR 스크립트를 토큰 보유 job에서 실행하지 않는다. 외부 토큰 발급 서비스나 새 npm 의존성을 사용하지 않는다. [토큰의 저장소/권한 축소와 만료](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-an-installation-access-token-for-a-github-app).
 
 App 키/설치/권한 검증 실패 시 App 모드를 보류하고 #35에 비민감 오류를 기록한다. 실패했다고 자동으로 기본 토큰으로 제품 branch를 갱신하거나 사용자 sender를 branch writer로 전환하지 않는다. 기존 sender의 만료·사용 한도도 사라지지 않으며, 현재 사용자 관리 원칙을 유지한다.
 

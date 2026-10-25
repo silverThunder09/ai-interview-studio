@@ -4,6 +4,7 @@ import { APIError } from '../../scripts/review/event-worker';
 import { emptyLoopState, parseLoopConfig, parseLoopState, runLoop, type LoopState, type LoopTask } from '../../scripts/review/loop-coordinator.mjs';
 import { plannedSeed, preparePlannedPR } from '../../scripts/review/loop-planner.mjs';
 import { isPendingWakeup } from '../../scripts/review/loop-waiter.mjs';
+import { ProductWriter } from '../../scripts/review/pr-writer.mjs';
 
 const repository = 'silverThunder09/ai-interview-studio', base = 'a'.repeat(40), seed = 'b'.repeat(40), tree = 'c'.repeat(40);
 const spec = 'approved product spec\n';
@@ -60,6 +61,17 @@ function preparation(api: API) {
 }
 
 describe('approved goal → next PR preparation', () => {
+  it('uses the App only for seed objects/ref, keeps Draft creation with the user sender and recovers without duplicates', async () => {
+    const api = new API(), { options } = preparation(api), appWrites: string[] = [], senderWrites: string[] = [];
+    const credentials = { client: async () => ({ request: async (method: string, path: string, body: unknown) => { appWrites.push(path); return api.request(method, path, body); } }) };
+    const writer = new ProductWriter({ api, credentials, config });
+    const sender = { request: async (method: string, path: string, body: unknown) => { senderWrites.push(path); return api.request(method, path, body); } };
+    const request = { ...options, writer, sender };
+    expect(await preparePlannedPR(request)).toMatchObject({ number: 80 });
+    expect(appWrites).toEqual(['/git/trees', '/git/commits', '/git/refs']); expect(senderWrites).toEqual(['/pulls']);
+    await preparePlannedPR(request); expect(appWrites).toHaveLength(3); expect(senderWrites).toHaveLength(1);
+    expect(api.pr!.user.login).toBe('silverThunder09');
+  });
   it('accepts unbound approved tasks but rejects absent approval, AC, spec hash and protected paths', () => {
     expect(parseLoopConfig(config).tasks).toHaveLength(2);
     for (const change of [{ approval: '' }, { acceptance: [] }, { spec: { ...definition.spec, sha256: 'bad' } }, { title: 'bad\ntitle' }, { allowed_paths: ['.github/workflows/x.yml'] }]) {
