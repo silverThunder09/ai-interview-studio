@@ -516,6 +516,28 @@ function nativeFixture() {
   return { f, runs, options: { ...f.options(), sleep: async () => {}, config: { ...config, pr_auth: 'github-app' }, writer }, approval: (value: boolean) => { approval = value; }, pending: (value: boolean) => { pendingAfterEdit = value; if (!value) policyPending = false; }, registerPolicy: (value: boolean) => { registerPolicy = value; } };
 }
 describe('native CI automatic continuation', () => {
+  it('waits for an active old-base review to finish, then normally merges main and rechecks CI without a duplicate Cloud task', async () => {
+    const { f, options } = nativeFixture();
+    await runLoop(options); f.respond(false); await runLoop(options); f.ciDone = true; await runLoop(options);
+    f.main = merged;
+    expect((await runLoop(options)).state).toBe('waiting-cloud'); expect(f.store.state.tasks[0]!.phase).toBe('review'); expect(f.sends).toHaveLength(2);
+    f.respond(true); const original = f.request.bind(f), nextHead = '6'.repeat(40);
+    f.request = async (method, path, body) => {
+      if (method === 'POST' && path === '/merges') { f.currentHead = nextHead; return { sha: nextHead }; }
+      return original(method, path, body);
+    };
+    expect((await runLoop(options)).state).toBe('waiting-ci');
+    expect(f.store.state.tasks[0]).toMatchObject({ phase: 'ci', head: nextHead, base: merged, cycles: 1, reason: null });
+    expect(f.store.state.tasks[0]!.base_updates).toHaveLength(1); expect(f.sends).toHaveLength(2); expect(f.dispatches).toEqual([]);
+    await runLoop(options); expect(f.sends).toHaveLength(2); expect(f.store.state.tasks[0]!.base_updates).toHaveLength(1);
+  });
+  it('does not merge an advanced main after the fix limit or while another writer changed the product head', async () => {
+    for (const kind of ['limit', 'head']) {
+      const { f, options } = nativeFixture(); await runLoop(options); f.respond(false); await runLoop(options); f.main = merged;
+      if (kind === 'limit') f.store.state.tasks[0]!.cycles = 3; else f.currentHead = '6'.repeat(40);
+      await expect(runLoop(options)).rejects.toThrow('main_sync_limit_or_changed_head'); expect(f.sends).toHaveLength(1); expect(f.merges).toEqual([]);
+    }
+  });
   it('rechecks real-shaped native run/job/Record stdout evidence after the body edit before merging', async () => {
     const { f, options } = nativeFixture(), current = { ...options, verifyMerge: gatherMergeEvidence };
     await runLoop(current); f.respond(false); await runLoop(current); f.ciDone = true; await runLoop(current); f.respond(true);

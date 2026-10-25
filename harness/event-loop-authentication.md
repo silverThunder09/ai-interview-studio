@@ -96,7 +96,9 @@ flowchart LR
 3. 본문 갱신이 새 PR policy를 시작하면 merge 단계에서 기다린다. 최신 `checks/package/pr-policy` 모두 GitHub Actions 출처로 성공하고, 성공 `Record tested head and base` 명령 stdout의 **마지막 유효** `AIS_CI_EVIDENCE`가 현재 repo/PR/run/head/base/checkout 및 실제 merge 부모와 일치해야 한다. PR_BODY echo나 댓글 문자열은 증거가 아니다.
 4. 매 판정에 모든 페이지의 원본 REST reviews·라벨·스레드·열린 review/bug 이슈를 전달한다. `countChangeRequests` 및 부정 테스트를 그대로 사용하며 COMMENTED/PENDING/DISMISSED로 다른 변경 요청을 지우지 않는다. strict `clean`, 미해결 finding0, exact-head AI COMMENT, expected-head squash와 실제 merged 재확인은 유지한다.
 5. merge는 기존 `GITHUB_TOKEN`으로 남기므로 main의 보통 push CI가 자동 발생한다고 가정하지 않는다. 기존 명시적 main dispatch와 완료 확인 경로를 유지한다. main 성공 전에 다음 작업을 요청하지 않는다.
-6. CI pending 또는 확인된 GitHub 실행 승인 대기는 `ci`/`merge` 단계의 명시적 기다림(`waiting_for`)으로 기록하고 새 개발/리뷰 요청 없이 해당 완료 이벤트에서 같은 정책을 재평가한다. 승인을 대신 누르는 endpoint는 추가하지 않는다. 일반 `paused`, 수동 중지, 차단 라벨, 사람의 변경 요청, 원인 불명·3회 상한 보류를 자동 해제하지 않는다. 기존 `paused/merge_policy_denied` 기록은 활성화 때 자동 초기화하지 않고 별도 검증된 인수인계로 처리한다.
+6. CI pending 또는 확인된 GitHub 실행 승인 대기는 `ci`/`merge` 단계의 명시적 기다림(`waiting`)으로 기록하고 새 개발/리뷰 요청 없이 해당 완료 이벤트에서 같은 정책을 재평가한다. 승인을 대신 누르는 endpoint는 추가하지 않는다. 일반 `paused`, 수동 중지, 차단 라벨, 사람의 변경 요청, 원인 불명·3회 상한 보류를 자동 해제하지 않는다. 기존 `paused/merge_policy_denied` 기록은 활성화 때 자동 초기화하지 않고 별도 검증된 인수인계로 처리한다.
+
+설치/다른 PR 머지로 main이 앞선 경우 App 모드의 `ci`/`merge`는 허용 branch에 일반 main merge를 수행하고 새 head/base로 CI·AI 리뷰를 다시 받는다. `review`에서 실제 Cloud 작업이 진행 중이면 그 정확한 요청의 종료 결과부터 기다린다. 종료를 확인하기 전에는 겹치는 모델 요청을 보내지 않는다. 옛 request/delivery/review/CI tuple은 `base_updates`에 보존하고 `sync_intent`로 쓰기 의도를 먼저 기록한다. 원래 task ID/기존 상태를 초기화하지 않으며 `cycles`를 증가시켜 기존 3회 상한을 지킨다. head가 별도로 바뀌었거나 스펙·허용 파일·라벨·기존 finding이 달라지면 자동 갱신하지 않고 보류한다. 이 일반 merge는 새 main을 실제로 반영하는 작업이며 과거 승인 대기를 지우려는 no-op commit/force-push가 아니다.
 
 ## 중복 방지·오류·롤백
 

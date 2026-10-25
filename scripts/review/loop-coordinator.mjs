@@ -91,6 +91,8 @@ export function parseLoopState(value, config) {
     if (t.delivery !== null) ensure(['sending', 'sent'].includes(t.delivery.phase) && HASH.test(t.delivery.hash) && typeof t.delivery.body === 'string' && hash(t.delivery.body) === t.delivery.hash && (t.delivery.id === null || number(t.delivery.id)), 'invalid_loop_delivery');
     if (t.policy_update !== undefined && t.policy_update !== null) ensure(number(t.policy_update.after_run) && HASH.test(t.policy_update.body_hash ?? ''), 'invalid_policy_update');
     if (t.waiting !== undefined && t.waiting !== null) ensure(['workflow_approval', 'ci_running', 'native_ci_registration', 'native_policy_registration', 'mergeability'].includes(t.waiting.reason) && t.waiting.head === t.head && t.waiting.base === t.base && SHA.test(t.waiting.head ?? '') && SHA.test(t.waiting.base ?? ''), 'invalid_loop_waiting');
+    if (t.sync_intent !== undefined && t.sync_intent !== null) ensure(['head', 'base', 'main'].every(k => SHA.test(t.sync_intent[k] ?? '')), 'invalid_sync_intent');
+    if (t.base_updates !== undefined) ensure(Array.isArray(t.base_updates) && t.base_updates.length <= 3 && t.base_updates.every(u => ['head', 'base', 'next_head', 'next_base'].every(k => SHA.test(u[k] ?? '')) && ['ci', 'review', 'merge'].includes(u.phase)), 'invalid_base_updates');
   });
   return v;
 }
@@ -480,6 +482,30 @@ export async function runLoop({ api, sender, store, config, policy, writer, now 
         await update(t => { t.phase = 'main-ci'; t.merged = identity(pr.merge_commit_sha); t.operation = null; }); continue;
       }
       if (task.phase !== 'main-ci') ensure(pr.state === 'open' && pr.merged === false, 'unexpected_closed_pr');
+      if (native && ['ci', 'review', 'merge'].includes(task.phase) && main !== task.base) {
+        ensure(pr.head.sha === task.head && task.cycles < policy.max_fix_cycles, 'main_sync_limit_or_changed_head');
+        // Never overlap a still-running review. Its old tuple must reach a known
+        // terminal result before current main can invalidate it and request another.
+        if (task.phase === 'review') {
+          if (task.delivery.phase === 'sending') ensure(task.delivery.attempted === false, 'ambiguous_request_delivery');
+          else {
+            const responses = await comments(api, task.pr), failed = nativeRequestFailure(responses, task);
+            ensure(!failed, failed?.conflicting_request_ids.length ? 'ambiguous_native_codex_failure' : 'native_codex_request_failed');
+            const candidates = responses.filter(c => c.body?.startsWith(`<!-- ais-code-review-result:${task.request.request_key} -->`));
+            ensure(candidates.length <= 1, 'ambiguous_cloud_result');
+            const review = candidates.length ? parseReviewResult(candidates[0], task.request) : parseNativeReviewResult(responses, task.request, { head_sha: task.head, base_sha: task.base, reviews: await readAllReviews(api, task.pr), review_comments: await allPages(api, `/pulls/${task.pr}/comments`) });
+            if (!review) return { state: 'waiting-cloud', changes };
+            ensure(review.findings.length === 0, 'ai_findings_require_repair');
+          }
+        }
+        await update(t => { t.sync_intent = { head: t.head, base: t.base, main }; });
+        const fresh = await synchronizedPR(api, task, definition, pr, main, sleep, product);
+        await update(t => {
+          (t.base_updates ??= []).push({ head: t.head, base: t.base, phase: t.phase, request: t.request, delivery: t.delivery, review: t.review, validated_ci: t.validated_ci, next_head: fresh.head.sha, next_base: main });
+          t.cycles++; t.phase = 'ci'; t.head = fresh.head.sha; t.base = main; t.branch = fresh.head.ref;
+          t.request = null; t.delivery = null; t.review = null; t.validated_ci = null; t.operation = null; t.checkout = null; t.policy_update = null; t.waiting = null; t.sync_intent = null;
+        }); continue;
+      }
       if (task.phase === 'queued') {
         const fresh = await synchronizedPR(api, task, definition, pr, main, sleep, product);
         const request = requestFor(task.pr, fresh.head.sha, main, 'repair', definition.allowed_paths, now);
