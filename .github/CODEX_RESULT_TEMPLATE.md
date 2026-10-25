@@ -27,6 +27,8 @@
 
 v2 JSON의 요청 식별자·head/base·최종 명령/종료 코드·patch와 선택 `prior_attempts`를 담는다. 기존 필드 없는 응답도 읽으며, 최종 실패 거절·파일 허용 범위·공식 작성자·작업 링크 검증은 유지한다. 접힌 내용도 판정 전에 전부 검증한다. 보이는 요약의 검사/실패 이력이 JSON과 다르면 거절한다.
 
+기계용 JSON은 `renderDevelopmentResult`가 Unicode 값을 ASCII `\uXXXX`로 직렬화한다. 터미널/응답의 다중 바이트 문자 분할로 패치 문맥이 손상되지 않도록 생성된 문자열을 그대로 사용한다. 파서는 기존 정규 UTF-8 JSON과 이 결정적 ASCII 표현만 읽고, ASCII 키의 임의 escape·중복 키·알 수 없는 필드·원본 문맥 불일치는 계속 거절한다. 같은 보고 객체의 표현만 바꾸며 96KiB 보고/64KiB patch 한도와 작성자·head/base·실패·CI 조건은 유지한다. 원래 패치를 사람이 다시 타이핑하거나 이미 게시된 공식 결과를 고치지 않는다.
+
 </details>
 
 기존 요청에 대한 JSON 전용 응답도 원래 검증 조건으로 계속 읽는다. 이미 게시된 공식 결과를 수정하거나 중복 요청을 보내지 않는다. GitHub 기본 `Codex Review Summary` 등 플랫폼이 직접 생성하는 댓글의 화면 양식은 이 저장소에서 제어하지 않는다. 사람용 AI 코드 리뷰는 [AI_REVIEW_TEMPLATE.md](AI_REVIEW_TEMPLATE.md)를 따른다.

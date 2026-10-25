@@ -21,6 +21,37 @@ const patch = 'diff --git a/src/example.ts b/src/example.ts\nindex aaaaaaa..bbbb
 const repair: DevelopmentRequest = { ...request, mode: 'repair', allowed_paths: ['src/example.ts'] };
 
 describe('development v2 result boundary', () => {
+  it('transports Korean and surrogate-pair patch values in deterministic ASCII without changing the exact patch', () => {
+    const unicodePatch = patch.replace(' first\n', ' 움직임 일시정지\n').replace('+updated', '+수정 완료 🙂');
+    const value = { ...report(), change: { kind: 'patch', patch: unicodePatch } } as DevelopmentReport;
+    const body = renderDevelopmentResult(value, '한국어 패치와 실제 검사 결과입니다.');
+    const json = body.match(/```json\n([\s\S]+)\n```/)![1]!;
+    expect([...json].every(char => char.charCodeAt(0) <= 127)).toBe(true);
+    const fragmented = Array.from(Buffer.from(json), byte => Buffer.from([byte]).toString('utf8')).join('');
+    expect(fragmented).toBe(json);
+    const result = parseDevelopmentResult(comment(wrap(fragmented)), repair).report;
+    expect(result).toEqual(value);
+    if (result.change.kind !== 'patch') throw new Error('Expected patch');
+    expect(applyDevelopmentPatch(result.change.patch, repair.allowed_paths, { 'src/example.ts': '움직임 일시정지\nsecond\nthird\n' })).toEqual([{ path: 'src/example.ts', content: '움직임 일시정지\n수정 완료 🙂\nthird\n' }]);
+    expect(parseDevelopmentResult(comment(body + `\n\n [View task →](${task})`), repair).report).toEqual(value);
+    expect(parseDevelopmentResult(comment(body.replace(json, JSON.stringify(value)) + `\n\n [View task →](${task})`), repair).report).toEqual(value);
+    expect(parseDevelopmentResult(comment(wrap(JSON.stringify(value))), repair).report).toEqual(value);
+  });
+  it('keeps duplicate and escaped ASCII keys invalid in the Unicode-safe spelling', () => {
+    const value = { ...report(), change: { kind: 'patch', patch: patch.replace('+updated', '+한국어') } } as DevelopmentReport;
+    const json = renderDevelopmentResult(value, '결과를 확인합니다.').match(/```json\n([\s\S]+)\n```/)![1]!;
+    for (const invalid of [json.replace('"schema":2', '"\\u0073chema":2'), json.replace('"outcome":"succeeded"', '"outcome":"blocked","outcome":"succeeded"')]) {
+      expect(() => parseDevelopmentResult(comment(wrap(invalid)), repair)).toThrow('noncanonical_result_json');
+    }
+  });
+  it('still refuses the observed replacement-character context rather than guessing its original spelling', () => {
+    const corrupt = patch.replace(' first\n', ' 움직임 일시정���\n');
+    const value = { ...report(), change: { kind: 'patch', patch: corrupt } } as DevelopmentReport;
+    const parsed = parseDevelopmentResult(comment(renderDevelopmentResult(value, '손상된 문맥 검증입니다.') + `\n\n [View task →](${task})`), repair).report;
+    if (parsed.change.kind !== 'patch') throw new Error('Expected patch');
+    const returnedPatch = parsed.change.patch;
+    expect(() => applyDevelopmentPatch(returnedPatch, repair.allowed_paths, { 'src/example.ts': '움직임 일시정지\nsecond\nthird\n' })).toThrow('patch_context_mismatch');
+  });
   it('preserves repaired failures visibly while accepting only the successful final revision', () => {
     const value = { ...report(), prior_attempts: [{ command: 'npm run check', exit_code: 2 }, { command: 'npm run check', exit_code: 1 }],
       tests: [{ command: 'npm run check', exit_code: 0 }, { command: 'npm run build', exit_code: 0 }, { command: 'bash scripts/codex/smoke.sh', exit_code: 0 }], change: { kind: 'patch', patch } } as DevelopmentReport;

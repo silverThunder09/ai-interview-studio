@@ -95,6 +95,12 @@ export interface DevelopmentReport {
 }
 export interface DevelopmentReceipt { comment_id: number; task_url: string; report: DevelopmentReport }
 
+// One deterministic ASCII spelling protects Unicode values across text chunks.
+// ASCII protocol keys retain their exact spelling, so escaped/duplicate keys still fail.
+function asciiResultJSON(value: unknown): string {
+  const json = JSON.stringify(value); requireValue(typeof json === 'string', 'invalid_result_json');
+  return json.replace(/[\u0080-\uffff]/g, char => `\\u${char.charCodeAt(0).toString(16).padStart(4, '0')}`);
+}
 /** Presentation only: the strict report and independent GitHub evidence still decide progress. */
 export function renderDevelopmentResult(report: DevelopmentReport, summary: string): string {
   requireValue(text(summary, 500) && summary === summary.trim() && !/[\r\n<>`[\]]/.test(summary) && ![...summary].some(c => c.codePointAt(0)! < 32), 'invalid_result_summary');
@@ -103,10 +109,10 @@ export function renderDevelopmentResult(report: DevelopmentReport, summary: stri
   const reason = (report.blocker?.summary ?? '사유를 확인해야 합니다.').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replace(/[\\`*_~[\]]/g, '\\$&');
   const state = report.outcome === 'succeeded' ? '로컬 작업 완료 — 원격 CI·코드 리뷰·머지는 별도 검증 대상입니다.' : `${report.outcome === 'failed' ? '작업 실패' : '작업 보류'} — ${reason}`;
   const next = report.outcome === 'succeeded' ? 'GitHub 담당이 변경 내용과 최신 CI·리뷰를 확인한 뒤 머지 여부를 판단합니다.' : '실패·보류 원인을 확인하고 재검증합니다. 이 결과만으로 머지하거나 다음 작업을 완료 처리하지 않습니다.';
-  return `<!-- ais-development-result-v2:${report.request_key} -->\n### 완료한 작업\n${summary}\n\n### 테스트 결과\n${tests}${prior}\n\n### 실패·남은 작업\n${state}\n\n### 다음 단계\n${next}\n\nCodex AI의 작업 보고입니다. 독립적인 사람의 승인이나 원격 CI 성공을 뜻하지 않습니다.\n\n<details>\n<summary>자동화용 상세 결과</summary>\n\n\`\`\`json\n${JSON.stringify(report)}\n\`\`\`\n\n</details>`;
+  return `<!-- ais-development-result-v2:${report.request_key} -->\n### 완료한 작업\n${summary}\n\n### 테스트 결과\n${tests}${prior}\n\n### 실패·남은 작업\n${state}\n\n### 다음 단계\n${next}\n\nCodex AI의 작업 보고입니다. 독립적인 사람의 승인이나 원격 CI 성공을 뜻하지 않습니다.\n\n<details>\n<summary>자동화용 상세 결과</summary>\n\n\`\`\`json\n${asciiResultJSON(report)}\n\`\`\`\n\n</details>`;
 }
 
-// Comparing JSON's compact spelling with JSON.stringify rejects duplicate/escaped keys too.
+// The two deterministic spellings reject duplicate/escaped ASCII protocol keys too.
 function compactJSON(value: string): string {
   let result = '', quoted = false, escaped = false;
   for (const char of value) {
@@ -131,7 +137,8 @@ export function parseDevelopmentResult(commentValue: unknown, requestValue: unkn
   requireValue(json && taskURL, 'invalid_result_envelope');
   let parsed: unknown;
   try { parsed = JSON.parse(json); } catch { throw new ControllerError('invalid_result_json'); }
-  requireValue(JSON.stringify(parsed) === compactJSON(json), 'noncanonical_result_json');
+  const compact = compactJSON(json);
+  requireValue(JSON.stringify(parsed) === compact || asciiResultJSON(parsed) === compact, 'noncanonical_result_json');
   const v = object(parsed);
   fields(v, ['schema', 'kind', 'repository', 'pr_number', 'request_key', 'checkout_sha', 'requested_base_sha', 'outcome', 'tests', 'change', 'blocker'], ['prior_attempts']);
   requireValue(v.schema === 2 && v.kind === 'development-result' && v.repository === REPOSITORY && v.pr_number === r.pr_number && v.request_key === r.request_key, 'wrong_result_identity');
@@ -169,7 +176,7 @@ export function parseDevelopmentResult(commentValue: unknown, requestValue: unkn
   }
   if (readable) {
     const start = body.lastIndexOf('\n```json\n') + '\n```json\n'.length, end = body.lastIndexOf('\n```\n\n</details>');
-    const normalized = body.slice(0, start) + JSON.stringify(v) + body.slice(end);
+    const normalized = body.slice(0, start) + asciiResultJSON(v) + body.slice(end);
     requireValue(normalized.trimEnd() === renderDevelopmentResult(v as unknown as DevelopmentReport, readable[1]!) + `\n\n [View task →](${taskURL})`, 'inconsistent_result_summary');
   }
   return { comment_id: comment.id, task_url: taskURL, report: v as unknown as DevelopmentReport };
