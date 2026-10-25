@@ -103,6 +103,29 @@ test('two WebGL interviewers, offline GLB/glTF import, motion, restoration and c
       await page.getByRole('button', { name: `${slot} 모델 불러오기`, exact: true }).click();
       await expect(page.locator('.avatar-models article').nth(slot === 'A' ? 0 : 1)).toContainText(`synthetic.${slot === 'A' ? 'glb' : 'gltf'}`);
     }
+    await page.getByLabel('움직임 일시정지').check();
+    const previousCanvas = await canvas.elementHandle();
+    expect(previousCanvas).not.toBeNull();
+    await canvas.evaluate(c => {
+      const gl = (c as HTMLCanvasElement).getContext('webgl2');
+      const extension = gl?.getExtension('WEBGL_lose_context');
+      if (!extension) throw new Error('WEBGL_lose_context is required for recovery smoke');
+      extension.loseContext();
+    });
+    await expect(page.getByRole('alert')).toContainText('3D 그래픽 연결을 잃었습니다');
+    await expect(page.getByRole('button', { name: '3D 화면 다시 시작', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: '3D 화면 다시 시작', exact: true }).click();
+    await expect(canvas).toHaveCount(1);
+    await expect(canvas).toHaveAttribute('data-studio-ready', 'true');
+    await expect(page.getByRole('status', { name: '' }).filter({ hasText: '모델 검증·복원 중입니다.' })).toHaveCount(0);
+    expect(await previousCanvas!.evaluate(c => !c.isConnected && (c as HTMLCanvasElement).getContext('webgl2')?.isContextLost())).toBe(true);
+    await expect(page.getByLabel('렌더링 품질')).toHaveValue('standard');
+    await expect(page.getByLabel('움직임 일시정지')).toBeChecked();
+    await expect(page.locator('.avatar-models article').first()).toContainText('synthetic.glb');
+    await expect(page.locator('.avatar-models article').last()).toContainText('synthetic.gltf');
+    const recovered = await visibleCharacters();
+    expect(recovered.left).toBeGreaterThan(5); expect(recovered.right).toBeGreaterThan(5);
+    await page.getByLabel('움직임 일시정지').uncheck();
     await app!.evaluate(({ dialog }, path) => { dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [path] }); }, invalid);
     await page.getByRole('button', { name: 'A 모델 불러오기', exact: true }).click();
     await expect(page.getByRole('alert')).toContainText('지원 범위를 벗어난 모델');

@@ -11,6 +11,7 @@ export function AvatarPanel({ active = 'a', waiting = false, answering = false, 
   const canvas = useRef<HTMLCanvasElement>(null), stage = useRef<AvatarStage | undefined>(undefined);
   const live = useRef(false), timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [error, setError] = useState(''), [ready, setReady] = useState(false), [busy, setBusy] = useState(true);
+  const [graphicsFailed, setGraphicsFailed] = useState(false), [canvasKey, setCanvasKey] = useState(0);
   const [metrics, setMetrics] = useState<StageMetrics>();
   const [models, setModels] = useState<Record<AvatarSlot, string>>({ a: '기본 3D 캐릭터 · 실사 에셋 아님', b: '기본 3D 캐릭터 · 실사 에셋 아님' });
   const [speaker, setSpeaker] = useState<AvatarSlot | null>(null), [selected, setSelected] = useState<AvatarSlot>('a');
@@ -31,10 +32,11 @@ export function AvatarPanel({ active = 'a', waiting = false, answering = false, 
   useEffect(() => {
     live.current = true;
     let instance: AvatarStage;
-    try { instance = new AvatarStage(canvas.current!, setMetrics, message => { if (live.current) setError(message); }); stage.current = instance; setReady(true); }
+    setReady(false); setBusy(true); setMetrics(undefined);
+    try { instance = new AvatarStage(canvas.current!, setMetrics, message => { if (live.current && stage.current === instance) { setError(message); setGraphicsFailed(true); setReady(false); } }); stage.current = instance; setReady(true); }
     catch (error) {
       console.error('3D 초기화:', error instanceof Error ? error.message.slice(0, 300) : '알 수 없는 초기화 오류');
-      setError('이 환경에서 WebGL 3D를 시작하지 못했습니다. 그래픽 드라이버를 확인하세요. 텍스트 면접은 계속 사용할 수 있습니다.'); setBusy(false); return () => { live.current = false; };
+      setError('이 환경에서 WebGL 3D를 시작하지 못했습니다. 그래픽 드라이버를 확인하세요. 텍스트 면접은 계속 사용할 수 있습니다.'); setGraphicsFailed(true); setBusy(false); return () => { live.current = false; };
     }
     void (async () => {
       for (const slot of AVATAR_SLOTS) {
@@ -51,7 +53,7 @@ export function AvatarPanel({ active = 'a', waiting = false, answering = false, 
       if (live.current && stage.current === instance) setBusy(false);
     })();
     return () => { live.current = false; clearTimeout(timer.current); instance.dispose(); if (stage.current === instance) stage.current = undefined; };
-  }, []);
+  }, [canvasKey]);
   useEffect(() => {
     if (!stage.current) return;
     stage.current.state.active = stageActive;
@@ -61,28 +63,30 @@ export function AvatarPanel({ active = 'a', waiting = false, answering = false, 
   }, [stageActive, preview, speaker, paused, quality, settingsOpen, ready]);
   async function selectModel(slot: AvatarSlot) {
     if (busy || !stage.current) return;
+    const instance = stage.current;
     setBusy(true); setError('');
     try {
       const result = await window.studio!.selectAvatar(slot);
-      if (!live.current) return;
+      if (!live.current || stage.current !== instance) return;
       if (!result.ok) { setError(result.error.message); return; }
       const asset = result.value; if (!asset) return;
-      const capability = await stage.current!.replace(slot, asset, async () => {
+      const capability = await instance.replace(slot, asset, async () => {
         const saved = await window.studio!.commitAvatar(slot, asset.token);
         if (!saved.ok) throw new Error('Save failed'); return true;
       });
-      if (live.current && capability) setModels(m => ({ ...m, [slot]: `${asset.name} · ${capability}` }));
-    } catch { if (live.current) setError('모델 로딩·저장에 실패했습니다. 기존 모델을 유지합니다. 텍스처·리깅·자기 포함 형식을 확인하세요.'); }
-    finally { if (live.current) setBusy(false); }
+      if (live.current && stage.current === instance && capability) setModels(m => ({ ...m, [slot]: `${asset.name} · ${capability}` }));
+    } catch { if (live.current && stage.current === instance) setError('모델 로딩·저장에 실패했습니다. 기존 모델을 유지합니다. 텍스처·리깅·자기 포함 형식을 확인하세요.'); }
+    finally { if (live.current && stage.current === instance) setBusy(false); }
   }
   async function reset(slot: AvatarSlot) {
-    if (busy || !stage.current) return; setBusy(true); setError('');
+    if (busy || !stage.current) return; const instance = stage.current; setBusy(true); setError('');
     try {
       const result = await window.studio!.resetAvatar(slot); if (!live.current) return;
       if (!result.ok) { setError(result.error.message); return; }
-      stage.current!.reset(slot); setModels(m => ({ ...m, [slot]: '기본 3D 캐릭터 · 실사 에셋 아님' }));
-    } catch { if (live.current) setError('모델 초기화에 실패했습니다. 다시 시도하세요.'); }
-    finally { if (live.current) setBusy(false); }
+      if (stage.current !== instance) return;
+      instance.reset(slot); setModels(m => ({ ...m, [slot]: '기본 3D 캐릭터 · 실사 에셋 아님' }));
+    } catch { if (live.current && stage.current === instance) setError('모델 초기화에 실패했습니다. 다시 시도하세요.'); }
+    finally { if (live.current && stage.current === instance) setBusy(false); }
   }
   function animate() {
     clearTimeout(timer.current); setSpeaker(selected);
@@ -100,7 +104,7 @@ export function AvatarPanel({ active = 'a', waiting = false, answering = false, 
   }
   return <section className="avatar-panel" aria-label="3D 면접관">
     <div className="avatar-heading"><div><p className="eyebrow">3D INTERVIEW ROOM</p><h2>두 명의 면접관</h2></div><span className="avatar-status">{preview ? '모델·동작 확인' : active ? `${waiting ? '질문 준비 중' : answering ? '답변을 듣는 중' : '현재 질문'} · 현재 면접관 ${names[active]}` : '면접 완료'}</span></div>
-    <div className="avatar-viewport"><canvas ref={canvas} aria-label="마우스나 키보드로 시점을 조작하는 두 3D 면접관" data-studio-ready={ready} data-active={stageActive ?? 'none'} data-speaking={speaker ?? 'none'} data-paused={paused || settingsOpen} data-fps={metrics?.fps ?? 0} tabIndex={0} onKeyDown={event => {
+    <div className="avatar-viewport"><canvas key={canvasKey} ref={canvas} aria-label="마우스나 키보드로 시점을 조작하는 두 3D 면접관" data-studio-ready={ready} data-active={stageActive ?? 'none'} data-speaking={speaker ?? 'none'} data-paused={paused || settingsOpen} data-fps={metrics?.fps ?? 0} tabIndex={0} onKeyDown={event => {
       if (event.ctrlKey || event.metaKey || event.altKey || event.nativeEvent.isComposing) return;
       const action = event.key === 'ArrowLeft' ? () => stage.current?.rotate(-1)
         : event.key === 'ArrowRight' ? () => stage.current?.rotate(1)
@@ -114,7 +118,7 @@ export function AvatarPanel({ active = 'a', waiting = false, answering = false, 
     <div className="avatar-tools"><button className="secondary" disabled={!ready} onClick={() => stage.current?.resetView()}>시점 초기화</button><button className="secondary" disabled={!ready} onClick={() => stage.current?.zoomIn()}>확대</button><button className="secondary" disabled={!ready} onClick={() => stage.current?.zoomOut()}>축소</button><button className="secondary" disabled={!ready} onClick={() => stage.current?.rotate(-1)}>왼쪽 시점</button><button className="secondary" disabled={!ready} onClick={() => stage.current?.rotate(1)}>오른쪽 시점</button><label>렌더링 품질 <select value={quality} disabled={!qualityReady || qualitySaving} onChange={e => void changeQuality(e.target.value === 'standard' ? 'standard' : 'low')}><option value="low">경량</option><option value="standard">표준</option></select></label><label><input type="checkbox" checked={paused} onChange={e => setPaused(e.target.checked)} /> 움직임 일시정지</label></div>
     {qualityWarning && <div><p className="error" role="alert">{qualityWarning}</p><button className="secondary" disabled={!qualityReady || qualitySaving} onClick={() => void changeQuality(quality)}>품질 저장 다시 시도</button></div>}
     <p className="hint">마우스 드래그·휠 또는 방향키로 시점을 바꿀 수 있습니다. 3D 화면을 선택한 뒤 +/=로 확대하고 -로 축소하며 Home으로 초기화합니다. 한 화면에서 두 모델을 렌더링합니다. {metrics && !paused && !settingsOpen ? `현재 측정 ${metrics.fps}FPS · 삼각형 ${metrics.triangles.toLocaleString()} · geometry ${metrics.geometries} · texture ${metrics.textures}` : '최대 30FPS · 경량 품질 기본'}</p>
-    {error && <p className="error" role="alert">{error}</p>}
+    {error && <div><p className="error" role="alert">{error}</p>{graphicsFailed && <button className="secondary" onClick={() => { setError(''); setGraphicsFailed(false); setCanvasKey(key => key + 1); }}>3D 화면 다시 시작</button>}</div>}
     <details className="avatar-config"><summary>면접관 모델 설정</summary><p className="hint">사용 권한이 있는 자기 포함 GLB/glTF 2.0만 선택하세요(20MB 이하). 외부 파일·URL·압축 확장은 지원하지 않습니다. 선택 모델은 이 PC에 복사해 재시작 후 복원하며 기본 모델로 변경하면 앱 사본만 삭제합니다. 원본 파일은 유지합니다.</p>
       <div className="avatar-models">{AVATAR_SLOTS.map(slot => <article key={slot}><h3>{names[slot]}</h3><p>{models[slot]}</p><button className="secondary" disabled={busy || !ready} onClick={() => void selectModel(slot)}>{slot.toUpperCase()} 모델 불러오기</button><button className="secondary" disabled={busy || !ready} onClick={() => void reset(slot)}>{slot.toUpperCase()} 기본 모델</button></article>)}</div>
     </details>
