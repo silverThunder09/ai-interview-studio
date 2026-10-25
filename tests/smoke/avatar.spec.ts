@@ -103,6 +103,8 @@ test('two WebGL interviewers, offline GLB/glTF import, motion, restoration and c
       await page.getByRole('button', { name: `${slot} 모델 불러오기`, exact: true }).click();
       await expect(page.locator('.avatar-models article').nth(slot === 'A' ? 0 : 1)).toContainText(`synthetic.${slot === 'A' ? 'glb' : 'gltf'}`);
     }
+    await page.getByRole('button', { name: '발언 동작 미리보기 (무음)', exact: true }).click();
+    await expect(canvas).toHaveAttribute('data-speaking', 'b');
     await page.getByLabel('움직임 일시정지').check();
     const previousCanvas = await canvas.elementHandle();
     expect(previousCanvas).not.toBeNull();
@@ -118,6 +120,7 @@ test('two WebGL interviewers, offline GLB/glTF import, motion, restoration and c
     await expect(canvas).toHaveCount(1);
     await expect(canvas).toHaveAttribute('data-studio-ready', 'true');
     await expect(page.getByRole('status', { name: '' }).filter({ hasText: '모델 검증·복원 중입니다.' })).toHaveCount(0);
+    await expect(canvas).toHaveAttribute('data-speaking', 'none');
     expect(await previousCanvas!.evaluate(c => !c.isConnected && (c as HTMLCanvasElement).getContext('webgl2')?.isContextLost())).toBe(true);
     await expect(page.getByLabel('렌더링 품질')).toHaveValue('standard');
     await expect(page.getByLabel('움직임 일시정지')).toBeChecked();
