@@ -11,6 +11,7 @@ import { countChangeRequests, evaluateMergeGate, validatePRBody } from './policy
 import { latestCheck, readAllReviews, readJobCIEvidence } from './ci-proof.mjs';
 import { parseNativeReviewResult } from './native-review.mjs';
 import { preparePlannedPR, verifyPlannedSeed, verifyPlannedSpec } from './loop-planner.mjs';
+import { AppCredentials, ProductWriter } from './pr-writer.mjs';
 
 export const REPO = 'silverThunder09/ai-interview-studio';
 export const LOOP_BRANCH = 'automation/approved-loop';
@@ -33,14 +34,19 @@ function compactJSON(value) {
 const identity = value => { ensure(typeof value === 'string' && SHA.test(value), 'invalid_sha'); return value; };
 export function acceptsLoopWakeup(event) {
   const run = event?.workflow_run;
+  const native = { '.github/workflows/ci.yml': 'Validation', '.github/workflows/windows-build.yml': 'Windows build', '.github/workflows/pr-policy.yml': 'PR policy' };
+  const nativeMatch = native[run?.path] && run.name === native[run.path] && run.event === 'pull_request';
+  const bridgeMatch = run?.path === '.github/workflows/review-wakeup.yml' && run.name === 'Review wake-up' ||
+    run?.path === '.github/workflows/loop-validation.yml' && /^Approved loop [a-f0-9]{64}$/.test(run.name ?? '');
   return event?.repository?.full_name === REPO && run?.head_repository?.full_name === REPO &&
     run.status === 'completed' && number(run.id) && SHA.test(run.head_sha ?? '') &&
-    ['.github/workflows/loop-validation.yml', '.github/workflows/review-wakeup.yml', '.github/workflows/pr-policy.yml'].includes(run.path);
+    Boolean(nativeMatch || bridgeMatch);
 }
 function protectedPath(path) { return /(^|\/)AGENTS\.md$/.test(path) || ['.github/', '.agents/', 'harness/', 'scripts/review/'].some(p => path.startsWith(p)) || /(^|\/)(package(-lock)?\.json|\.npmrc|\.node-version|.*\.lock)$/.test(path); }
 export function parseLoopConfig(value) {
   const c = obj(value);
   ensure(c.schema === 1 && c.repository === REPO && typeof c.enabled === 'boolean' && Array.isArray(c.tasks) && c.tasks.length <= 256, 'invalid_loop_config');
+  ensure(c.pr_auth === undefined || ['workflow-token', 'github-app'].includes(c.pr_auth), 'invalid_pr_auth_mode');
   if (c.next_decision !== undefined) ensure(typeof c.next_decision === 'string' && c.next_decision.length > 0 && c.next_decision.length <= 2000, 'invalid_next_decision');
   const ids = new Set(), prs = new Set();
   for (const t of c.tasks) {
@@ -83,6 +89,10 @@ export function parseLoopState(value, config) {
     else { ensure(!queued, 'out_of_order_task'); if (t.phase !== 'completed') { ensure(!active, 'overlapping_tasks'); active = true; } }
     if (t.request !== null) ensure(t.request.pr_number === t.pr && HASH.test(t.request.request_key) && SHA.test(t.request.head_sha) && SHA.test(t.request.base_sha), 'invalid_loop_request');
     if (t.delivery !== null) ensure(['sending', 'sent'].includes(t.delivery.phase) && HASH.test(t.delivery.hash) && typeof t.delivery.body === 'string' && hash(t.delivery.body) === t.delivery.hash && (t.delivery.id === null || number(t.delivery.id)), 'invalid_loop_delivery');
+    if (t.policy_update !== undefined && t.policy_update !== null) ensure(number(t.policy_update.after_run) && HASH.test(t.policy_update.body_hash ?? ''), 'invalid_policy_update');
+    if (t.waiting !== undefined && t.waiting !== null) ensure(['workflow_approval', 'ci_running', 'native_ci_registration', 'native_policy_registration', 'mergeability'].includes(t.waiting.reason) && t.waiting.head === t.head && t.waiting.base === t.base && SHA.test(t.waiting.head ?? '') && SHA.test(t.waiting.base ?? ''), 'invalid_loop_waiting');
+    if (t.sync_intent !== undefined && t.sync_intent !== null) ensure(['head', 'base', 'main'].every(k => SHA.test(t.sync_intent[k] ?? '')), 'invalid_sync_intent');
+    if (t.base_updates !== undefined) ensure(Array.isArray(t.base_updates) && t.base_updates.length <= 3 && t.base_updates.every(u => ['head', 'base', 'next_head', 'next_base'].every(k => SHA.test(u[k] ?? '')) && ['ci', 'review', 'merge'].includes(u.phase)), 'invalid_base_updates');
   });
   return v;
 }
@@ -267,6 +277,30 @@ async function allChecks(api, head) {
   }
   throw new Error('check_pagination_limit');
 }
+/** Native PR CI only: dispatch successes cannot conceal a blocked/older native run. */
+export async function nativeCIStatus(api, task, policy) {
+  const paths = { checks: '.github/workflows/ci.yml', package: '.github/workflows/windows-build.yml', 'pr-policy': '.github/workflows/pr-policy.yml' };
+  const runs = await api.pagesObject(`/actions/runs?event=pull_request&head_sha=${identity(task.head)}`, 'workflow_runs');
+  const checks = await allChecks(api, task.head), selected = [];
+  let waiting = null;
+  for (const context of policy.required_checks) {
+    const candidates = runs.filter(r => r.path === paths[context] && r.event === 'pull_request' && r.head_sha === task.head);
+    ensure(candidates.every(r => number(r.id) && number(r.run_attempt) && r.repository?.full_name === REPO && r.head_repository?.full_name === REPO), 'untrusted_native_ci');
+    const run = [...candidates].sort((a, b) => b.id - a.id)[0];
+    if (!run) { waiting ??= 'native_ci_registration'; continue; }
+    if (context === 'pr-policy' && task.policy_update && run.id <= task.policy_update.after_run) { waiting ??= 'native_policy_registration'; continue; }
+    if (run.conclusion === 'action_required') { waiting = 'workflow_approval'; continue; }
+    if (run.status !== 'completed') { waiting ??= 'ci_running'; continue; }
+    ensure(run.conclusion === 'success', 'native_ci_failed');
+    const matching = checks.filter(c => c.name === context && c.details_url?.startsWith(`https://github.com/${REPO}/actions/runs/${run.id}/job/`));
+    if (!matching.length) { waiting ??= 'native_ci_registration'; continue; }
+    const check = latestCheck(matching, context);
+    ensure(check.app?.slug === 'github-actions' && check.head_sha === task.head, 'untrusted_native_ci');
+    if (check.status !== 'completed') { waiting ??= 'ci_running'; continue; }
+    ensure(check.conclusion === 'success', 'native_ci_failed'); selected.push(check);
+  }
+  return { checks: selected, waiting };
+}
 async function jobEvidence(api, expected, checks) {
   const check = latestCheck(checks, expected.context), m = check.details_url?.match(/\/actions\/runs\/(\d+)\/job\/(\d+)$/); ensure(m, 'missing_run_identity');
   const run = await api.request('GET', `/actions/runs/${m[1]}`);
@@ -279,10 +313,10 @@ async function ready(api, pr) {
   const r = await api.graphql('mutation($id:ID!){markPullRequestReadyForReview(input:{pullRequestId:$id}){pullRequest{isDraft}}}', { id: pr.node_id });
   ensure(r.data?.markPullRequestReadyForReview?.pullRequest?.isDraft === false, 'ready_failed');
 }
-async function synchronizedPR(api, task, definition, pr, main, sleep) {
+async function synchronizedPR(api, task, definition, pr, main, sleep, product = api) {
   // A successful /merges response does not make the REST PR snapshot immediately current.
   // Commit once, then only read until the branch and reviewed PR identities agree.
-  const synced = await api.request('POST', '/merges', { base: pr.head.ref, head: main, commit_message: 'chore: merge current main before approved work' });
+  const synced = await product.request('POST', '/merges', { base: pr.head.ref, head: main, commit_message: 'chore: merge current main before approved work' });
   const initial = identity(pr.head.sha);
   const expected = synced === null
     ? identity((await api.request('GET', `/git/ref/heads/${pr.head.ref}`)).object.sha)
@@ -321,7 +355,7 @@ async function preparedMergeCheckout(api, task, definition, sleep) {
   }
   throw new Error('merge_checkout_pending');
 }
-export async function gatherMergeEvidence(api, definition, task, policy) {
+export async function gatherMergeEvidence(api, definition, task, policy, nativeCI = false) {
   const { pr, main, files } = await scope(api, task, definition);
   ensure(pr.head.sha === task.review.head_sha && main === task.review.base_sha && pr.base.sha === main, 'stale_current_review');
   const raw = await comments(api, task.pr), candidates = raw.filter(c => c.id === task.review.comment_id);
@@ -335,7 +369,9 @@ export async function gatherMergeEvidence(api, definition, task, policy) {
   const unresolved = await threadCount(api, task.pr);
   const issues = await allPages(api, '/issues?state=open');
   const openFindings = issues.filter(i => !i.pull_request && (i.labels?.some(l => ['review', 'bug'].includes(l.name)) || /^\[Review\]/.test(i.title))).length;
-  const checks = await allChecks(api, pr.head.sha), evidence = [];
+  const nativeStatus = nativeCI ? await nativeCIStatus(api, task, policy) : null;
+  ensure(!nativeStatus?.waiting, 'native_ci_not_ready');
+  const checks = nativeStatus?.checks ?? await allChecks(api, pr.head.sha), evidence = [];
   for (const context of policy.required_checks) evidence.push(await jobEvidence(api, { repository: REPO, pr_number: task.pr, context, head_sha: pr.head.sha, base_sha: main, checkout_sha: pr.merge_commit_sha }, checks));
   return { pr, reviews, checks, evidence, review: { source: 'current-run', head_sha: pr.head.sha, base_sha: main, outstanding_findings: review.findings.length, unresolved_threads: unresolved, open_review_issues: openFindings, change_requests: countChangeRequests(reviews), changed_paths: files.map(f => f.filename) }, authorization: { scope_approved: true, protected_change_explicitly_approved: false, source: definition.approval } };
 }
@@ -364,8 +400,15 @@ async function mainSuccess(api, task) {
 }
 
 /** Runs until the next external event is needed; only trusted-main approved work is selected. */
-export async function runLoop({ api, sender, store, config, policy, now = Date.now, sleep = pause, verifyMerge = gatherMergeEvidence, verifyMain = mainSuccess }) {
+export async function runLoop({ api, sender, store, config, policy, writer, now = Date.now, sleep = pause, verifyMerge = gatherMergeEvidence, verifyMain = mainSuccess }) {
   const c = parseLoopConfig(config); if (!c.enabled) return { state: 'disabled', changes: 0 };
+  const native = c.pr_auth === 'github-app';
+  ensure(!native || writer, 'missing_product_writer');
+  const nativeStatus = async task => {
+    let result = await nativeCIStatus(api, task, policy);
+    for (let attempt = 0; ['native_ci_registration', 'native_policy_registration'].includes(result.waiting) && attempt < 3; attempt++) { await sleep(1000); result = await nativeCIStatus(api, task, policy); }
+    return result;
+  };
   ensure(policy.repository === REPO && policy.max_prs_per_run <= 2 && policy.max_fix_cycles <= 3, 'invalid_loop_policy');
   ensure(c.tasks.every(t => t.allowed_paths.every(path => !policy.protected_paths.some(p => p.endsWith('/') ? path.startsWith(p) : path === p))), 'protected_task_path');
   let snap = await store.load(), changes = 0, currentTask = null;
@@ -429,17 +472,42 @@ export async function runLoop({ api, sender, store, config, policy, now = Date.n
           ensure(task.planning_ci.main === main, 'planned_main_changed');
           if (!await verifyMain(api, { merged: main, operation: { key: task.planning_ci.key } })) return { state: 'waiting-planning-ci', changes };
         }
-        const pr = await preparePlannedPR({ api, sender, task, definition, update });
+        const pr = await preparePlannedPR({ api, sender, task, definition, update, writer });
         await update(t => { t.pr = pr.number; }); continue;
       }
       const { pr, main } = await scope(api, task, definition);
+      const product = writer ? writer.bind({ task, definition, pr, main }) : api;
       if (task.phase === 'merge' && pr.merged === true) {
         ensure(task.operation?.merge_head === pr.head.sha && task.operation.merge_base === task.base && main === pr.merge_commit_sha, 'unconfirmed_merge_recovery');
         await update(t => { t.phase = 'main-ci'; t.merged = identity(pr.merge_commit_sha); t.operation = null; }); continue;
       }
       if (task.phase !== 'main-ci') ensure(pr.state === 'open' && pr.merged === false, 'unexpected_closed_pr');
+      if (native && ['ci', 'review', 'merge'].includes(task.phase) && main !== task.base) {
+        ensure(pr.head.sha === task.head && task.cycles < policy.max_fix_cycles, 'main_sync_limit_or_changed_head');
+        // Never overlap a still-running review. Its old tuple must reach a known
+        // terminal result before current main can invalidate it and request another.
+        if (task.phase === 'review') {
+          if (task.delivery.phase === 'sending') ensure(task.delivery.attempted === false, 'ambiguous_request_delivery');
+          else {
+            const responses = await comments(api, task.pr), failed = nativeRequestFailure(responses, task);
+            ensure(!failed, failed?.conflicting_request_ids.length ? 'ambiguous_native_codex_failure' : 'native_codex_request_failed');
+            const candidates = responses.filter(c => c.body?.startsWith(`<!-- ais-code-review-result:${task.request.request_key} -->`));
+            ensure(candidates.length <= 1, 'ambiguous_cloud_result');
+            const review = candidates.length ? parseReviewResult(candidates[0], task.request) : parseNativeReviewResult(responses, task.request, { head_sha: task.head, base_sha: task.base, reviews: await readAllReviews(api, task.pr), review_comments: await allPages(api, `/pulls/${task.pr}/comments`) });
+            if (!review) return { state: 'waiting-cloud', changes };
+            ensure(review.findings.length === 0, 'ai_findings_require_repair');
+          }
+        }
+        await update(t => { t.sync_intent = { head: t.head, base: t.base, main }; });
+        const fresh = await synchronizedPR(api, task, definition, pr, main, sleep, product);
+        await update(t => {
+          (t.base_updates ??= []).push({ head: t.head, base: t.base, phase: t.phase, request: t.request, delivery: t.delivery, review: t.review, validated_ci: t.validated_ci, next_head: fresh.head.sha, next_base: main });
+          t.cycles++; t.phase = 'ci'; t.head = fresh.head.sha; t.base = main; t.branch = fresh.head.ref;
+          t.request = null; t.delivery = null; t.review = null; t.validated_ci = null; t.operation = null; t.checkout = null; t.policy_update = null; t.waiting = null; t.sync_intent = null;
+        }); continue;
+      }
       if (task.phase === 'queued') {
-        const fresh = await synchronizedPR(api, task, definition, pr, main, sleep);
+        const fresh = await synchronizedPR(api, task, definition, pr, main, sleep, product);
         const request = requestFor(task.pr, fresh.head.sha, main, 'repair', definition.allowed_paths, now);
         const body = buildDevelopmentRequest(request) + '\n\n승인된 작업 내용(고정 main 기획):\n' + definition.goal +
           (definition.acceptance ? '\n완료 조건:\n' + definition.acceptance.map(a => `- ${a}`).join('\n') : '');
@@ -484,7 +552,16 @@ export async function runLoop({ api, sender, store, config, policy, now = Date.n
           if (!existing.length) await api.request('POST', `/pulls/${task.pr}/reviews`, { commit_id: task.head, event: 'COMMENT', body });
           else if (existing[0].body !== body) await api.request('PUT', `/pulls/${task.pr}/reviews/${existing[0].id}`, { body });
           const updatedBody = renderLoopPRBody(pr.body, task, review, definition.title ?? definition.goal);
-          if (updatedBody !== pr.body) await api.request('PATCH', `/pulls/${task.pr}`, { body: updatedBody });
+          if (updatedBody !== pr.body) {
+            if (native) {
+              const before = await nativeStatus({ ...task, policy_update: null });
+              if (before.waiting) return { state: before.waiting === 'workflow_approval' ? 'waiting-workflow-approval' : 'waiting-ci', changes };
+              const current = latestCheck(before.checks, 'pr-policy').details_url.match(/\/actions\/runs\/(\d+)\/job\//);
+              ensure(current, 'missing_policy_update_run');
+              await update(t => { t.policy_update = { after_run: Number(current[1]), body_hash: hash(updatedBody) }; });
+            }
+            await product.request('PATCH', `/pulls/${task.pr}`, { body: updatedBody });
+          }
           ensure(review.findings.length === 0, 'ai_findings_require_repair');
           await update(t => { t.phase = 'merge'; t.review = { ...review, request: task.request }; }); continue;
         }
@@ -502,53 +579,74 @@ export async function runLoop({ api, sender, store, config, policy, now = Date.n
         ensure(plan.action === 'commit' || plan.action === 'review', 'invalid_development_plan');
         ensure(definition.pr !== null || (plan.action === 'commit' && plan.files.some(f => f.path.startsWith('src/'))), 'planned_task_not_implemented');
         if (plan.action === 'commit') {
-          const nextTree = await api.request('POST', '/git/trees', { base_tree: plan.base_tree_sha, tree: plan.files.map(f => ({ path: f.path, mode: '100644', type: 'blob', content: f.content })) });
-          const nextCommit = await api.request('POST', '/git/commits', { message: `fix: ${definition.id}`, parents: [task.head], tree: identity(nextTree.sha) });
+          const nextTree = await product.request('POST', '/git/trees', { base_tree: plan.base_tree_sha, tree: plan.files.map(f => ({ path: f.path, mode: '100644', type: 'blob', content: f.content })) });
+          const nextCommit = await product.request('POST', '/git/commits', { message: `fix: ${definition.id}`, parents: [task.head], tree: identity(nextTree.sha) });
           await update(t => { t.phase = 'apply'; t.applied = { parent: task.head, sha: identity(nextCommit.sha), receipt: report.comment_id }; });
-        } else { await ready(api, pr); await update(t => { t.phase = 'ci'; t.operation = null; }); }
+        } else { await ready(product, pr); await update(t => { t.phase = 'ci'; t.operation = null; }); }
         continue;
       }
       if (task.phase === 'apply') {
         ensure(main === task.base && [task.applied.parent, task.applied.sha].includes(pr.head.sha), 'patch_head_changed');
         if (pr.head.sha === task.applied.parent) {
           const ref = await api.request('GET', `/git/ref/heads/${task.branch}`); ensure(ref.object.sha === task.applied.parent, 'patch_ref_changed');
-          await api.request('PATCH', `/git/refs/heads/${task.branch}`, { sha: task.applied.sha, force: false });
+          await product.request('PATCH', `/git/refs/heads/${task.branch}`, { sha: task.applied.sha, force: false });
         }
-        await ready(api, pr);
+        await ready(product, pr);
         await update(t => { t.phase = 'ci'; t.head = t.applied.sha; t.operation = null; }); continue;
       }
       if (task.phase === 'ci') {
         if (!task.operation) {
           const fresh = await preparedMergeCheckout(api, task, definition, sleep);
           const key = randomBytes(32).toString('hex');
-          await update(t => { t.operation = { key, dispatched: true }; t.checkout = fresh.merge_commit_sha; });
-          await dispatch(api, { ...task, checkout: fresh.merge_commit_sha, operation: { key } }, false);
-          return { state: 'waiting-ci', changes };
+          await update(t => { t.operation = { key, dispatched: !native, ci_mode: native ? 'native' : 'dispatch' }; t.checkout = fresh.merge_commit_sha; });
+          if (!native) { await dispatch(api, { ...task, checkout: fresh.merge_commit_sha, operation: { key } }, false); return { state: 'waiting-ci', changes }; }
+          // Native CI may already have completed while Cloud was running. Consume
+          // the current result now rather than wait forever for an event already sent.
+          continue;
         }
         ensure(pr.head.sha === task.head && main === task.base && pr.base.sha === main && pr.draft === false, 'stale_ci_snapshot');
         identity(pr.merge_commit_sha);
-        const checks = await allChecks(api, task.head);
+        const status = native ? await nativeStatus(task) : null;
+        if (status?.waiting) {
+          if (task.waiting?.reason !== status.waiting) await update(t => { t.waiting = { reason: status.waiting, head: t.head, base: t.base }; });
+          return { state: status.waiting === 'workflow_approval' ? 'waiting-workflow-approval' : 'waiting-ci', changes };
+        }
+        const checks = status?.checks ?? await allChecks(api, task.head);
         if (policy.required_checks.some(name => { try { return latestCheck(checks, name).status !== 'completed'; } catch { return true; } })) return { state: 'waiting-ci', changes };
         const proofs = [];
         for (const context of policy.required_checks) proofs.push(await jobEvidence(api, { repository: REPO, pr_number: task.pr, context, head_sha: task.head, base_sha: task.base, checkout_sha: pr.merge_commit_sha }, checks));
         const request = requestFor(task.pr, task.head, task.base, 'read-only', [], now), body = buildReviewRequest(request) + '\n\n승인된 작업 범위(진단 데이터):\n' + definition.goal +
           (definition.acceptance ? '\n완료 조건:\n' + definition.acceptance.map(a => `- ${a}`).join('\n') : '') + '\n허용 경로: ' + JSON.stringify(definition.allowed_paths);
-        await update(t => { t.phase = 'review'; t.validated_ci = proofs; t.request = request; t.delivery = { phase: 'sending', hash: hash(body), body, id: null, attempted: false }; }); continue;
+        await update(t => { t.phase = 'review'; t.waiting = null; t.validated_ci = proofs; t.request = request; t.delivery = { phase: 'sending', hash: hash(body), body, id: null, attempted: false }; }); continue;
       }
       if (task.phase === 'merge') {
         // Rendering the review record edits the body and starts a fresh PR policy
         // attempt. Pending CI is an external boundary, not a failed merge policy.
-        const checks = await allChecks(api, pr.head.sha);
+        const status = native ? await nativeStatus(task) : null;
+        if (status?.waiting) {
+          if (task.waiting?.reason !== status.waiting) await update(t => { t.waiting = { reason: status.waiting, head: t.head, base: t.base }; });
+          return { state: status.waiting === 'workflow_approval' ? 'waiting-workflow-approval' : 'waiting-ci', changes };
+        }
+        const checks = status?.checks ?? await allChecks(api, pr.head.sha);
         if (policy.required_checks.some(name => { try { return latestCheck(checks, name).status !== 'completed'; } catch { return true; } })) return { state: 'waiting-ci', changes };
-        const input = await verifyMerge(api, definition, task, policy), gate = evaluateMergeGate(input, policy); ensure(gate.allowed, 'merge_policy_denied');
+        let input = await verifyMerge(api, definition, task, policy, native), gate = evaluateMergeGate(input, policy);
+        // GitHub recomputes mergeability after CI/body updates. Wait, never relax clean.
+        for (let attempt = 0; !gate.allowed && gate.reasons.length === 1 && gate.reasons[0] === 'Mergeability is not clean' && input.pr.mergeable !== false && ['unknown', 'unstable'].includes(input.pr.mergeable_state) && attempt < 5; attempt++) {
+          await sleep(2000); input = await verifyMerge(api, definition, task, policy, native); gate = evaluateMergeGate(input, policy);
+        }
+        if (!gate.allowed && gate.reasons.length === 1 && gate.reasons[0] === 'Mergeability is not clean' && input.pr.mergeable !== false && ['unknown', 'unstable'].includes(input.pr.mergeable_state)) {
+          if (task.waiting?.reason !== 'mergeability') await update(t => { t.waiting = { reason: 'mergeability', head: t.head, base: t.base }; });
+          return { state: 'waiting-ci', changes };
+        }
+        ensure(gate.allowed, 'merge_policy_denied');
         // CI log downloads can take time. Re-read human reviews/threads/labels and current checks
         // as well as commit identities before the irreversible operation.
-        const final = await verifyMerge(api, definition, task, policy); ensure(evaluateMergeGate(final, policy).allowed, 'merge_policy_changed');
+        const final = await verifyMerge(api, definition, task, policy, native); ensure(evaluateMergeGate(final, policy).allowed, 'merge_policy_changed');
         const fresh = await scope(api, task, definition); ensure(fresh.pr.head.sha === gate.expected_head_sha && fresh.main === gate.expected_base_sha && fresh.pr.base.sha === fresh.main && fresh.pr.merge_commit_sha === input.pr.merge_commit_sha, 'merge_snapshot_changed');
         await update(t => { t.operation = { merge_head: gate.expected_head_sha, merge_base: gate.expected_base_sha }; });
         const result = await api.request('PUT', `/pulls/${task.pr}/merge`, { sha: gate.expected_head_sha, merge_method: 'squash' }); ensure(result.merged === true, 'merge_rejected');
         const actual = await api.request('GET', `/pulls/${task.pr}`); ensure(actual.merged === true && actual.merge_commit_sha === result.sha, 'merge_not_confirmed');
-        await update(t => { t.phase = 'main-ci'; t.merged = identity(result.sha); t.operation = null; }); continue;
+        await update(t => { t.phase = 'main-ci'; t.waiting = null; t.merged = identity(result.sha); t.operation = null; }); continue;
       }
       if (task.phase === 'main-ci') {
         ensure(pr.merged === true && pr.merge_commit_sha === task.merged && main === task.merged, 'main_changed_after_merge');
@@ -561,6 +659,7 @@ export async function runLoop({ api, sender, store, config, policy, now = Date.n
     throw new Error('transition_limit');
   } catch (error) {
     if (error.message === 'loop_control_paused') return { state: 'stopped', changes };
+    if (error.message === 'native_ci_not_ready' && native && currentTask !== null && ['ci', 'review', 'merge'].includes(snap.state.tasks[currentTask].phase)) return { state: 'waiting-ci', changes };
     const reason = error instanceof APIError ? `github_http_${error.status}` : /^[a-z0-9_]+$/.test(error.message ?? '') ? error.message : 'loop_failed';
     if (currentTask !== null) await save(s => { s.tasks[currentTask].phase = 'paused'; s.tasks[currentTask].reason = reason; });
     const issues = await allPages(api, '/issues/35/comments');
@@ -572,6 +671,10 @@ export async function runLoop({ api, sender, store, config, policy, now = Date.n
 
 class RuntimeAPI extends GitHub {
   constructor(token) { super(token); this.authorization = token; }
+  async repository() {
+    const r = await fetch(`https://api.github.com/repos/${REPO}`, { headers: { Authorization: `Bearer ${this.authorization}`, Accept: 'application/vnd.github+json' }, redirect: 'error', signal: AbortSignal.timeout(30000) });
+    ensure(r.ok, 'repository_identity_failed'); return r.json();
+  }
   async graphql(query, variables) {
     const r = await fetch('https://api.github.com/graphql', { method: 'POST', headers: { Authorization: `Bearer ${this.authorization}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ query, variables }), signal: AbortSignal.timeout(30000), redirect: 'error' });
     ensure(r.ok, 'graphql_http_error'); const data = await r.json(); ensure(!data.errors, 'graphql_error'); return data;
@@ -604,8 +707,21 @@ async function main() {
   const policy = JSON.parse(await readFile('.github/review-policy.json', 'utf8'));
   const store = new LoopStore(api, config);
   await store.appendApprovedTasks();
-  const result = await runLoop({ api, sender: new GitHub(process.env.AIS_CODEX_COMMENT_TOKEN), store, config, policy });
-  console.log(JSON.stringify({ repository: REPO, ...result }));
+  if (process.env.GITHUB_EVENT_NAME === 'workflow_run') {
+    const event = JSON.parse(await readFile(process.env.GITHUB_EVENT_PATH, 'utf8')), claimed = event.workflow_run;
+    const actual = await api.request('GET', `/actions/runs/${claimed.id}`);
+    ensure(acceptsLoopWakeup({ repository: { full_name: REPO }, workflow_run: actual }) && ['id', 'head_sha', 'path', 'name', 'run_attempt'].every(k => actual[k] === claimed[k]), 'stale_workflow_wakeup');
+    if (actual.event === 'pull_request') {
+      const snapshot = await store.load();
+      if (!snapshot.state.tasks.some(t => ['ci', 'review', 'merge'].includes(t.phase) && t.head === actual.head_sha)) { console.log('Unrelated PR completion; no requests changed.'); return; }
+    }
+  }
+  const credentials = new AppCredentials({ api, appId: process.env.AIS_PR_WRITER_APP_ID, installationId: process.env.AIS_PR_WRITER_INSTALLATION_ID, privateKey: process.env.AIS_PR_WRITER_PRIVATE_KEY });
+  try {
+    const writer = config.pr_auth === 'github-app' ? new ProductWriter({ api, credentials, config }) : undefined;
+    const result = await runLoop({ api, sender: new GitHub(process.env.AIS_CODEX_COMMENT_TOKEN), store, config, policy, writer });
+    console.log(JSON.stringify({ repository: REPO, ...result }));
+  } finally { await credentials.dispose(); }
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main().catch(error => {
   console.error(JSON.stringify(error instanceof APIError ? { error: `github_http_${error.status}`, operation: error.operation } : { error: /^[a-z0-9_]+$/.test(error.message ?? '') ? error.message : 'loop_failed' })); process.exitCode = 1;

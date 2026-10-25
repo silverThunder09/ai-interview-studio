@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createHash } from 'node:crypto';
-import { gatherMergeEvidence, acceptsLoopWakeup, isCurrentMergeCheckout, emptyLoopState, parseLoopConfig, parseLoopState, parseReviewResult, buildReviewRequest, renderLoopReview, renderLoopPRBody, runLoop, LoopStore, type LoopState } from '../../scripts/review/loop-coordinator.mjs';
+import { gatherMergeEvidence, nativeCIStatus, acceptsLoopWakeup, isCurrentMergeCheckout, emptyLoopState, parseLoopConfig, parseLoopState, parseReviewResult, buildReviewRequest, renderLoopReview, renderLoopPRBody, runLoop, LoopStore, type LoopState } from '../../scripts/review/loop-coordinator.mjs';
 import { readFileSync } from 'node:fs';
 import { GitHub } from '../../scripts/review/event-worker';
 
@@ -55,7 +55,7 @@ class FixtureAPI {
     throw new Error('unexpected_fixture_api');
   }
   async graphql() { return { data: { repository: { pullRequest: { reviewThreads: { nodes: [], pageInfo: { hasNextPage: false, endCursor: null } } } } } }; }
-  async pagesObject(path: string) { const id = Number(path.match(/runs\/(\d+)/)?.[1]), i = id - 100; return [{ id: 300 + i, run_id: id, run_attempt: 1, name: ['checks', 'package', 'pr-policy'][i], status: 'completed', conclusion: 'success', steps: [{ name: 'Record tested head and base', status: 'completed', conclusion: 'success', started_at: '2026-10-20T10:00:01Z', completed_at: '2026-10-20T10:00:02Z' }] }]; }
+  async pagesObject(path: string): Promise<unknown[]> { const id = Number(path.match(/runs\/(\d+)/)?.[1]), i = id - 100; return [{ id: 300 + i, run_id: id, run_attempt: 1, name: ['checks', 'package', 'pr-policy'][i], status: 'completed', conclusion: 'success', steps: [{ name: 'Record tested head and base', status: 'completed', conclusion: 'success', started_at: '2026-10-20T10:00:01Z', completed_at: '2026-10-20T10:00:02Z' }] }]; }
   async jobLog(id: number) { const i = id - 300, active = this.store.state.tasks.find(t => ['ci', 'merge'].includes(t.phase))!, proof = { repository, context: ['checks', 'package', 'pr-policy'][i], run_id: String(100 + i), pr_number: active.pr, head_sha: head, base_sha: this.main, checkout_sha: checkout }; return ['##[group]Run node scripts/review/ci-evidence.mjs', 'node scripts/review/ci-evidence.mjs', '##[endgroup]', `AIS_CI_EVIDENCE ${JSON.stringify(proof)}`].map(l => '2026-10-20T10:00:01.500Z ' + l).join('\n'); }
   sender = { request: async (method: string, path: string, value: { body: string }) => {
     expect(method).toBe('POST'); const pr = Number(path.match(/issues\/(\d+)/)?.[1]); this.sends.push({ pr, body: value.body });
@@ -72,7 +72,11 @@ describe('workflow completion wake-up', () => {
   it('accepts the actual dynamic CI name using its stable workflow path', () => {
     expect(acceptsLoopWakeup(event)).toBe(true);
     expect(acceptsLoopWakeup({ ...event, workflow_run: { ...event.workflow_run, name: 'Review wake-up', path: '.github/workflows/review-wakeup.yml' } })).toBe(true);
-    expect(acceptsLoopWakeup({ ...event, workflow_run: { ...event.workflow_run, name: 'PR policy', path: '.github/workflows/pr-policy.yml' } })).toBe(true);
+    for (const [name, path] of [['PR policy', '.github/workflows/pr-policy.yml'], ['Validation', '.github/workflows/ci.yml'], ['Windows build', '.github/workflows/windows-build.yml']]) {
+      expect(acceptsLoopWakeup({ ...event, workflow_run: { ...event.workflow_run, name, path, event: 'pull_request' } })).toBe(true);
+      expect(acceptsLoopWakeup({ ...event, workflow_run: { ...event.workflow_run, name: 'forged', path, event: 'pull_request' } })).toBe(false);
+      expect(acceptsLoopWakeup({ ...event, workflow_run: { ...event.workflow_run, name, path, event: 'push' } })).toBe(false);
+    }
   });
   it('rejects name spoofing, another repository, pending runs and self wake-ups', () => {
     for (const run of [
@@ -99,6 +103,16 @@ describe('approved task/config boundary', () => {
   });
   it('does not access credentials/state or APIs when disabled', async () => {
     expect(await runLoop({ config: { ...config, enabled: false } })).toEqual({ state: 'disabled', changes: 0 });
+  });
+  it('rejects unknown auth modes and malformed wait/policy checkpoints without changing the approved task hash', () => {
+    expect(() => parseLoopConfig({ ...config, pr_auth: 'automatic-fallback' })).toThrow('invalid_pr_auth_mode');
+    const state = emptyLoopState(config);
+    expect(emptyLoopState({ ...config, pr_auth: 'github-app' }).config_hash).toBe(state.config_hash);
+    state.tasks[0]!.policy_update = { after_run: 0, body_hash: 'a'.repeat(64) };
+    expect(() => parseLoopState(state, config)).toThrow('invalid_policy_update');
+    delete state.tasks[0]!.policy_update;
+    state.tasks[0]!.waiting = { reason: 'clear_human_review', head, base };
+    expect(() => parseLoopState(state, config)).toThrow('invalid_loop_waiting');
   });
 });
 describe('AI review identity and actual review envelope', () => {
@@ -474,6 +488,128 @@ describe('workflow privilege and storage boundaries', () => {
     const workflow = readFileSync('.github/workflows/approved-loop.yml', 'utf8');
     expect(workflow).toContain('ref: main'); expect(workflow).toContain('persist-credentials: false'); expect(workflow).not.toContain('schedule:'); expect(workflow).not.toContain('npm ci');
     const validation = readFileSync('.github/workflows/loop-validation.yml', 'utf8'); expect(validation).toContain('contents: read'); expect(validation).not.toContain('secrets.'); expect(validation).not.toContain('contents: write'); expect(validation).toContain('npm run test:smoke'); expect(validation).toContain('SMOKE_EXECUTABLE'); expect(validation).toContain('retention-days: 1'); expect(validation).not.toContain('Upload Windows download');
+  });
+});
+
+function nativeFixture() {
+  const f = new FixtureAPI(), original = f.pagesObject.bind(f);
+  let approval = false, policyPending = false, pendingAfterEdit = false, policyRun = 102, registerPolicy = true;
+  const originalRequest = f.request.bind(f);
+  f.request = async (method, path, body) => {
+    if (method === 'PATCH' && path === '/pulls/56') { if (registerPolicy) policyRun++; policyPending = pendingAfterEdit; }
+    const result = await originalRequest(method, path, body);
+    if (path.includes('/check-runs?')) {
+      const data = result as { check_runs: { name: string; details_url: string }[] };
+      data.check_runs = data.check_runs.map(c => c.name === 'pr-policy' ? { ...c, details_url: `https://github.com/${repository}/actions/runs/${policyRun}/job/302` } : c);
+    }
+    return result;
+  };
+  const runs = () => ['checks', 'package', 'pr-policy'].map((name, i) => ({ id: name === 'pr-policy' ? policyRun : 100 + i, run_attempt: 1, repository: { full_name: repository }, head_repository: { full_name: repository }, head_sha: head, event: 'pull_request', path: ['.github/workflows/ci.yml', '.github/workflows/windows-build.yml', '.github/workflows/pr-policy.yml'][i], status: f.ciDone && !(policyPending && name === 'pr-policy') ? 'completed' : 'in_progress', conclusion: approval ? 'action_required' : f.ciDone && !(policyPending && name === 'pr-policy') ? 'success' : null }));
+  f.pagesObject = async path => {
+    if (path.startsWith('/actions/runs?')) return runs();
+    if (path.startsWith(`/actions/runs/${policyRun}/`)) return (await original(path.replace(`/runs/${policyRun}/`, '/runs/102/')) as Record<string, unknown>[]).map(j => ({ ...j, run_id: policyRun }));
+    return original(path);
+  };
+  const originalLog = f.jobLog.bind(f);
+  f.jobLog = async id => (await originalLog(id)).replace('"run_id":"102"', `"run_id":"${policyRun}"`);
+  const writer = { bind: () => ({ request: f.request.bind(f), graphql: f.graphql.bind(f) }) };
+  return { f, runs, options: { ...f.options(), sleep: async () => {}, config: { ...config, pr_auth: 'github-app' }, writer }, approval: (value: boolean) => { approval = value; }, pending: (value: boolean) => { pendingAfterEdit = value; if (!value) policyPending = false; }, registerPolicy: (value: boolean) => { registerPolicy = value; } };
+}
+describe('native CI automatic continuation', () => {
+  it('waits for an active old-base review to finish, then normally merges main and rechecks CI without a duplicate Cloud task', async () => {
+    const { f, options } = nativeFixture();
+    await runLoop(options); f.respond(false); await runLoop(options); f.ciDone = true; await runLoop(options);
+    f.main = merged;
+    expect((await runLoop(options)).state).toBe('waiting-cloud'); expect(f.store.state.tasks[0]!.phase).toBe('review'); expect(f.sends).toHaveLength(2);
+    f.respond(true); const original = f.request.bind(f), nextHead = '6'.repeat(40);
+    f.request = async (method, path, body) => {
+      if (method === 'POST' && path === '/merges') { f.currentHead = nextHead; return { sha: nextHead }; }
+      return original(method, path, body);
+    };
+    expect((await runLoop(options)).state).toBe('waiting-ci');
+    expect(f.store.state.tasks[0]).toMatchObject({ phase: 'ci', head: nextHead, base: merged, cycles: 1, reason: null });
+    expect(f.store.state.tasks[0]!.base_updates).toHaveLength(1); expect(f.sends).toHaveLength(2); expect(f.dispatches).toEqual([]);
+    await runLoop(options); expect(f.sends).toHaveLength(2); expect(f.store.state.tasks[0]!.base_updates).toHaveLength(1);
+  });
+  it('does not merge an advanced main after the fix limit or while another writer changed the product head', async () => {
+    for (const kind of ['limit', 'head']) {
+      const { f, options } = nativeFixture(); await runLoop(options); f.respond(false); await runLoop(options); f.main = merged;
+      if (kind === 'limit') f.store.state.tasks[0]!.cycles = 3; else f.currentHead = '6'.repeat(40);
+      await expect(runLoop(options)).rejects.toThrow('main_sync_limit_or_changed_head'); expect(f.sends).toHaveLength(1); expect(f.merges).toEqual([]);
+    }
+  });
+  it('rechecks real-shaped native run/job/Record stdout evidence after the body edit before merging', async () => {
+    const { f, options } = nativeFixture(), current = { ...options, verifyMerge: gatherMergeEvidence };
+    await runLoop(current); f.respond(false); await runLoop(current); f.ciDone = true; await runLoop(current); f.respond(true);
+    expect((await runLoop(current)).state).toBe('waiting-main-ci'); expect(f.merges).toEqual([56]);
+    expect(f.reads).toContain('GET /actions/runs/103'); expect(f.sends).toHaveLength(2);
+  });
+  it('consumes CI which already completed before the Cloud result without depending on another completion event', async () => {
+    const { f, options } = nativeFixture();
+    await runLoop(options); f.ciDone = true; f.respond(false);
+    expect((await runLoop(options)).state).toBe('waiting-cloud');
+    expect(f.store.state.tasks[0]!.phase).toBe('review'); expect(f.sends).toHaveLength(2); expect(f.dispatches).toEqual([]);
+  });
+  it('keeps merge waiting if a new native CI starts during evidence gathering', async () => {
+    const { f, options } = nativeFixture();
+    await runLoop(options); f.respond(false); await runLoop(options); f.ciDone = true; await runLoop(options); f.respond(true);
+    const race = { ...options, verifyMerge: async () => { throw new Error('native_ci_not_ready'); } };
+    expect((await runLoop(race)).state).toBe('waiting-ci'); expect(f.store.state.tasks[0]!.phase).toBe('merge');
+    expect(f.sends).toHaveLength(2); expect(f.merges).toHaveLength(0);
+    expect((await runLoop(options)).state).toBe('waiting-main-ci'); expect(f.sends).toHaveLength(2);
+  });
+  it('uses native PR checks once and resumes merge/main/B without another development request or PR CI dispatch', async () => {
+    const { f, options } = nativeFixture();
+    await runLoop(options); f.respond(false); expect((await runLoop(options)).state).toBe('waiting-ci');
+    expect(f.dispatches).toEqual([]); expect(f.wakeups).toEqual([]);
+    await runLoop(options); expect(f.store.state.tasks[0]!.phase).toBe('ci');
+    f.ciDone = true; await runLoop(options); expect(f.sends).toHaveLength(2); f.respond(true);
+    expect((await runLoop(options)).state).toBe('waiting-main-ci'); expect(f.dispatches).toEqual([0]); expect(f.merges).toEqual([56]);
+    f.mainDone = true; expect((await runLoop(options)).state).toBe('waiting-cloud');
+    expect(f.store.state.tasks[0]!.phase).toBe('completed'); expect(f.sends.map(s => s.pr)).toEqual([56, 56, 57]);
+    await runLoop(options); expect(f.sends.map(s => s.pr)).toEqual([56, 56, 57]); expect(f.merges).toEqual([56]);
+  });
+  it('keeps action_required in CI and resumes from the same state after completion; never clears a manual pause', async () => {
+    const { f, options, approval } = nativeFixture();
+    await runLoop(options); f.respond(false); await runLoop(options); approval(true);
+    expect((await runLoop(options)).state).toBe('waiting-workflow-approval');
+    expect(f.store.state.tasks[0]!.phase).toBe('ci'); expect(f.store.state.tasks[0]!.reason).toBeNull(); expect(f.sends).toHaveLength(1);
+    approval(false); f.ciDone = true; expect((await runLoop(options)).state).toBe('waiting-cloud'); expect(f.sends).toHaveLength(2);
+    f.store.state.tasks[0]!.phase = 'paused'; f.store.state.tasks[0]!.reason = 'manual_stop';
+    expect((await runLoop(options)).state).toBe('paused'); expect(f.sends).toHaveLength(2);
+  });
+  it('waits for a native PR-policy body rerun and resumes merge without invoking Codex again', async () => {
+    const { f, options, pending } = nativeFixture();
+    await runLoop(options); f.respond(false); await runLoop(options); f.ciDone = true; await runLoop(options); f.respond(true);
+    pending(true); expect((await runLoop(options)).state).toBe('waiting-ci');
+    expect(f.store.state.tasks[0]!.phase).toBe('merge'); expect(f.sends).toHaveLength(2); expect(f.merges).toHaveLength(0);
+    pending(false); expect((await runLoop(options)).state).toBe('waiting-main-ci'); expect(f.sends).toHaveLength(2);
+  });
+  it('does not reuse a successful pre-edit PR policy while its replacement has not registered', async () => {
+    const { f, options, registerPolicy } = nativeFixture();
+    await runLoop(options); f.respond(false); await runLoop(options); f.ciDone = true; await runLoop(options); f.respond(true);
+    registerPolicy(false); expect((await runLoop(options)).state).toBe('waiting-ci');
+    expect(f.store.state.tasks[0]!.phase).toBe('merge'); expect(f.merges).toEqual([]); expect(f.sends).toHaveLength(2);
+    expect(f.store.state.tasks[0]!.waiting).toMatchObject({ reason: 'native_policy_registration' });
+  });
+  it('does not accept dispatch successes instead of missing native runs, or a failed/latest approval-required run', async () => {
+    const { f, runs, approval } = nativeFixture(); f.ciDone = true;
+    const task = { head }, original = f.pagesObject.bind(f);
+    f.pagesObject = async path => path.startsWith('/actions/runs?') ? [] : original(path);
+    expect((await nativeCIStatus(f, task, policy)).waiting).toBe('native_ci_registration');
+    f.pagesObject = async path => path.startsWith('/actions/runs?') ? [...runs(), { ...runs()[0]!, id: 1000, conclusion: 'action_required' }] : original(path);
+    expect((await nativeCIStatus(f, task, policy)).waiting).toBe('workflow_approval');
+    approval(false); f.pagesObject = async path => path.startsWith('/actions/runs?') ? runs().map(r => ({ ...r, conclusion: 'failure' })) : original(path);
+    await expect(nativeCIStatus(f, task, policy)).rejects.toThrow('native_ci_failed');
+  });
+  it('keeps clean mandatory while allowing the REST mergeability cache to catch up without a new Cloud request', async () => {
+    const f = new FixtureAPI(), original = f.options().verifyMerge;
+    let lag = 2;
+    const options = { ...f.options(), sleep: async () => {}, verifyMerge: async (...args: Parameters<typeof original>) => {
+      const result = await original(...args); if (lag-- > 0) result.pr.mergeable_state = 'unstable'; return result;
+    } };
+    await runLoop(options); f.respond(false); await runLoop(options); f.ciDone = true; await runLoop(options); f.respond(true);
+    expect((await runLoop(options)).state).toBe('waiting-main-ci'); expect(f.sends).toHaveLength(2); expect(f.merges).toEqual([56]);
   });
 });
 

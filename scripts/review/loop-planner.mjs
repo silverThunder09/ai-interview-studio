@@ -47,19 +47,20 @@ function checkPR(pr, definition, preparation) {
 }
 
 /** All writes are journaled before delivery. Unknown/failed reads never mean "absent". */
-export async function preparePlannedPR({ api, sender, task, definition, update }) {
+export async function preparePlannedPR({ api, sender, task, definition, update, writer }) {
   ensure(definition.pr === null && task.pr === null && task.phase === 'queued', 'invalid_planned_task');
   const base = sha((await api.request('GET', '/branches/main')).commit.sha);
   await verifyPlannedSpec(api, definition, base);
   const branch = `work/${definition.id}`, path = `.automation/requests/${definition.id}.md`;
+  const product = writer ? writer.bind({ definition, task, main: base }) : api;
   // update checkpoints replace the state snapshot, so retain a local copy of the intent too.
   let preparation = task.preparation;
   if (!preparation) {
     ensure(await optional(api, `/git/ref/heads/${branch}`) === null, 'planned_branch_already_exists');
     ensure(await optional(api, `/contents/${path}?ref=${base}`) === null, 'planned_seed_already_exists');
     const parent = await api.request('GET', `/git/commits/${base}`), tree = sha(parent.tree.sha);
-    const nextTree = await api.request('POST', '/git/trees', { base_tree: tree, tree: [{ path, mode: '100644', type: 'blob', content: plannedSeed(definition) }] });
-    const commit = await api.request('POST', '/git/commits', { message: `chore: ${definition.title}`, parents: [base], tree: sha(nextTree.sha) });
+    const nextTree = await product.request('POST', '/git/trees', { base_tree: tree, tree: [{ path, mode: '100644', type: 'blob', content: plannedSeed(definition) }] });
+    const commit = await product.request('POST', '/git/commits', { message: `chore: ${definition.title}`, parents: [base], tree: sha(nextTree.sha) });
     preparation = { base, tree: sha(nextTree.sha), commit: sha(commit.sha), branch, branch_attempted: false, pr_attempted: false };
     await update(t => { t.preparation = preparation; });
   }
@@ -73,7 +74,8 @@ export async function preparePlannedPR({ api, sender, task, definition, update }
     ensure(!preparation.branch_attempted, 'ambiguous_planned_branch');
     await update(t => { t.preparation.branch_attempted = true; }); preparation.branch_attempted = true;
     ensure((await api.request('GET', '/branches/main')).commit.sha === base, 'planned_main_changed');
-    const created = await api.request('POST', '/git/refs', { ref: `refs/heads/${branch}`, sha: preparation.commit });
+    const branchWriter = writer ? writer.bind({ definition, task: { ...task, preparation }, main: base }) : api;
+    const created = await branchWriter.request('POST', '/git/refs', { ref: `refs/heads/${branch}`, sha: preparation.commit });
     ensure(created.object.sha === preparation.commit, 'unconfirmed_planned_branch');
   }
   const matches = await allPages(api, `/pulls?state=all&base=main&head=silverThunder09%3A${encodeURIComponent(branch)}`);
