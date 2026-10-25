@@ -1569,6 +1569,41 @@
         "신규 root 컨테이너 설치 및 PR86 내부 실패 원인은 미검증",
         "Windows에서 Linux전용13개 제외; 원격 CI는 PR에서 확인"
       ]
+    },
+    {
+      "id": "tests-2026-10-25-pr96-auth-local",
+      "status": "archived",
+      "scope": "automation",
+      "date_kst": "2026-10-25",
+      "pr": 96,
+      "title": "PR 인증 분리와 native CI 완료 재개",
+      "path": "archive/2026-10-25/pr-auth-local.md",
+      "head_sha": "083757aebf3b3a462ba61fdf0624e485bbccef90",
+      "base_sha": "69e1951a58397c0772d78978663059f4a1507abe",
+      "unit": 656,
+      "review_policy": 41,
+      "source_smoke": 3,
+      "limitations": [
+        "App credential lifecycle and A→B use synthetic fixtures; actual installation not verified",
+        "Windows evidence is tracked on PR96; no actual user device or paid API test"
+      ]
+    },
+    {
+      "id": "tests-2026-10-25-native-review-repair",
+      "status": "archived",
+      "scope": "automation",
+      "date_kst": "2026-10-25",
+      "issue": 97,
+      "title": "REST 리뷰 수신과 승인 경로 내 결함 수정 재개",
+      "path": "archive/2026-10-25/native-review-repair-local.md",
+      "head_sha": "90c3d50e6377e78df2c04df9159e928aca95e6d1",
+      "base_sha": "d0d7d2c4ea6b6ca44aa7bbddd0267304a8c80eb4",
+      "unit": 683,
+      "review_policy": 41,
+      "limitations": [
+        "Real PR95 API replay; runtime App/Cloud validation pending on issue35",
+        "No new local product smoke; Windows validation on PR"
+      ]
     }
   ],
   "historical_main_verification": {

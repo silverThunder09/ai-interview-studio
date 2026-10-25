@@ -5,8 +5,10 @@ on:
     types: [created, edited]
   pull_request_target:
     types: [opened, reopened, synchronize, ready_for_review, closed, labeled, unlabeled]
+  pull_request_review:
+    types: [submitted, edited]
   workflow_run:
-    workflows: [Loop validation, 'Approved loop *', Review wake-up, PR policy]
+    workflows: [Loop validation, 'Approved loop *', Review wake-up, Validation, Windows build, PR policy]
     types: [completed]
   workflow_dispatch:
     inputs:
@@ -22,10 +24,16 @@ jobs:
   coordinate:
     if: >-
       github.repository == 'silverThunder09/ai-interview-studio' &&
+      (github.event_name != 'pull_request_review' ||
+       (github.event.review.user.login == 'chatgpt-codex-connector[bot]' &&
+        github.event.pull_request.head.repo.full_name == 'silverThunder09/ai-interview-studio' &&
+        github.event.pull_request.base.ref == 'main')) &&
       (github.event_name != 'workflow_run' ||
        (github.event.workflow_run.head_repository.full_name == 'silverThunder09/ai-interview-studio' &&
         (github.event.workflow_run.path == '.github/workflows/loop-validation.yml' ||
          github.event.workflow_run.path == '.github/workflows/review-wakeup.yml' ||
+         github.event.workflow_run.path == '.github/workflows/ci.yml' ||
+         github.event.workflow_run.path == '.github/workflows/windows-build.yml' ||
          github.event.workflow_run.path == '.github/workflows/pr-policy.yml'))) &&
       (github.event_name != 'issue_comment' ||
        (github.event.comment.user.login == 'chatgpt-codex-connector[bot]' &&
@@ -41,7 +49,7 @@ jobs:
       pull-requests: write
       issues: write
       checks: read
-      actions: write # Dispatch the read-only CI after GITHUB_TOKEN pushes/merges.
+      actions: write # Explicit main CI dispatch remains necessary after GITHUB_TOKEN squash.
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -55,6 +63,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           AIS_CODEX_COMMENT_TOKEN: ${{ secrets.AIS_CODEX_COMMENT_TOKEN }}
+          AIS_PR_WRITER_APP_ID: ${{ vars.AIS_PR_WRITER_APP_ID }}
+          AIS_PR_WRITER_INSTALLATION_ID: ${{ vars.AIS_PR_WRITER_INSTALLATION_ID }}
+          AIS_PR_WRITER_PRIVATE_KEY: ${{ secrets.AIS_PR_WRITER_PRIVATE_KEY }}
         run: |
           export AIS_CHECKOUT_SHA="$(git rev-parse HEAD)"
           node --experimental-strip-types scripts/review/loop-coordinator.mjs

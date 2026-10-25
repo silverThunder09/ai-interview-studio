@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseNativeReviewResult } from '../../scripts/review/native-review.mjs';
+import { parseNativeReviewResult, parseNativeRepairResult } from '../../scripts/review/native-review.mjs';
 
 const repository = 'silverThunder09/ai-interview-studio', head = '1'.repeat(40);
 const request = { schema: 2, mode: 'read-only', repository, pr_number: 58, request_key: 'a'.repeat(64), head_sha: head, base_sha: '2'.repeat(40), requested_at: '2026-10-21T07:37:16.477Z' };
@@ -14,6 +14,42 @@ function fixture() {
 describe('official GitHub native review evidence', () => {
   const apiEvidence = () => ({ head_sha: head, base_sha: request.base_sha, reviews: [], review_comments: [] });
   const unknownFixture = () => fixture().map(c => ({ ...c, body: c.body.replaceAll('"has_any_findings":false', '"has_any_findings":null').replaceAll('"has_unresolved_findings":false', '"has_unresolved_findings":null') }));
+  const rest = () => {
+    const [summary, receipt] = fixture();
+    const review = { ...receipt!, html_url: `https://github.com/${repository}/pull/58#pullrequestreview-11`, commit_id: head, state: 'COMMENTED', submitted_at: receipt!.created_at };
+    return { comments: [summary!], proof: { ...apiEvidence(), reviews: [review], review_comments: [] as unknown[] } };
+  };
+  it('accepts the real REST review receipt with full commit and submitted-at proof, including null flags', () => {
+    const f = rest(); expect(parseNativeReviewResult(f.comments, request, f.proof)).toMatchObject({ comment_id: 11, findings: [] });
+    f.comments[0]!.body = f.comments[0]!.body.replaceAll('"has_any_findings":false', '"has_any_findings":null').replaceAll('"has_unresolved_findings":false', '"has_unresolved_findings":null');
+    expect(parseNativeReviewResult(f.comments, request, f.proof)?.findings).toEqual([]);
+  });
+  it('uses current-head evidence for null flags while retaining older raw reviews for decision aggregation', () => {
+    const f = rest(); f.comments[0]!.body = f.comments[0]!.body.replaceAll('"has_any_findings":false', '"has_any_findings":null').replaceAll('"has_unresolved_findings":false', '"has_unresolved_findings":null');
+    f.proof.reviews.push({ ...f.proof.reviews[0]!, id: 12, commit_id: '3'.repeat(40), body: 'old finding', html_url: `https://github.com/${repository}/pull/58#pullrequestreview-12` });
+    expect(parseNativeReviewResult(f.comments, request, f.proof)?.findings).toEqual([]); expect(f.proof.reviews).toHaveLength(2);
+  });
+  it.each(['head', 'time', 'author', 'state', 'url', 'base'])('rejects a wrong REST receipt %s', kind => {
+    const f = rest(), r = f.proof.reviews[0]!;
+    if (kind === 'head') r.commit_id = '3'.repeat(40); if (kind === 'time') r.submitted_at = '2026-10-20T00:00:00Z';
+    if (kind === 'author') r.user.login = 'silverThunder09'; if (kind === 'state') r.state = 'DISMISSED';
+    if (kind === 'url') r.html_url = r.html_url.replace('/58#', '/59#'); if (kind === 'base') f.proof.base_sha = '3'.repeat(40);
+    if (kind === 'base') expect(() => parseNativeReviewResult(f.comments, request, f.proof)).toThrow();
+    else expect(parseNativeReviewResult(f.comments, request, f.proof)).toBeNull();
+  });
+  it('keeps findings blocking merge but exposes authenticated bounded repair data, never a successful review', () => {
+    const f = rest(); f.comments[0]!.body = f.comments[0]!.body.replaceAll('"has_any_findings":false', '"has_any_findings":true').replaceAll('"has_unresolved_findings":false', '"has_unresolved_findings":true');
+    f.proof.review_comments = [{ id: 21, user: { login: 'chatgpt-codex-connector[bot]', type: 'Bot' }, commit_id: head, html_url: `https://github.com/${repository}/pull/58#discussion_r21`, created_at: '2026-10-21T07:38:50Z', pull_request_review_id: 11, path: 'tests/smoke/gemini.spec.ts', original_line: 80, body: 'P1 Badge — reproduce failure\n<!-- codex-code-review-finding:v1 -->' }];
+    expect(() => parseNativeReviewResult(f.comments, request, f.proof)).toThrow('native_review_has_findings');
+    expect(parseNativeRepairResult(f.comments, request, f.proof)).toMatchObject({ receipt_id: 11, findings: [{ id: 21, path: 'tests/smoke/gemini.spec.ts', severity: 'P1' }] });
+    f.proof.review_comments = []; expect(() => parseNativeRepairResult(f.comments, request, f.proof)).toThrow('unactionable_native_findings');
+  });
+  it.each(['head','author','url','review','marker'])('rejects forged repair comment %s', kind => {
+    const f = rest(); f.comments[0]!.body = f.comments[0]!.body.replaceAll('"has_any_findings":false', '"has_any_findings":true').replaceAll('"has_unresolved_findings":false', '"has_unresolved_findings":true');
+    const c = { id: 21, user: { login: 'chatgpt-codex-connector[bot]', type: 'Bot' }, commit_id: head, html_url: `https://github.com/${repository}/pull/58#discussion_r21`, created_at: '2026-10-21T07:38:50Z', pull_request_review_id: 11, path: 'tests/x.ts', original_line: 1, body: 'P2 Badge\n<!-- codex-code-review-finding:v1 -->' };
+    if(kind==='head')c.commit_id='3'.repeat(40);if(kind==='author')c.user.login='human';if(kind==='url')c.html_url=c.html_url.replace('/58#','/59#');if(kind==='review')c.pull_request_review_id=12;if(kind==='marker')c.body='prose';
+    f.proof.review_comments=[c];expect(()=>parseNativeRepairResult(f.comments,request,f.proof)).toThrow('unactionable_native_findings');
+  });
   it('requires independent complete REST evidence when native finding flags are null', () => {
     const comments = unknownFixture();
     expect(parseNativeReviewResult(comments, request)).toBeNull();
