@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { GitHub } from '../../scripts/review/event-worker';
 import { startReviewRepair, finishReviewRepair } from '../../scripts/review/review-repair.mjs';
 
 const head = '1'.repeat(40), base = '2'.repeat(40), fixed = '3'.repeat(40), path = 'tests/smoke/gemini.spec.ts';
@@ -10,12 +11,15 @@ function fixture(id = 21) {
   const issues: Issue[] = [], writes: string[] = [];
   const thread = { id: 'thread21', isResolved: false, isOutdated: true, comments: { nodes: [{ url: finding.url, body: finding.body, author: { login: 'chatgpt-codex-connector', __typename: 'Bot' } }], pageInfo: { hasNextPage: false } } };
   let changed = true, race = false;
+  const parents = new Map<string, string>();
   const api = {
-    request: async (method: string, url: string, data?: Record<string, unknown>) => {
+    request: async (method: string, url: string, data?: Record<string, unknown>): Promise<unknown> => {
       if (method !== 'GET') writes.push(method + ' ' + url);
       if (url.startsWith('/issues?')) return issues;
       if (method === 'POST' && url === '/issues') { const issue = { number: 100 + issues.length, body: String(data!.body), state: 'open' }; issues.push(issue); return issue; }
-      if (url.startsWith('/compare/')) return { files: changed ? [{ filename: path, status: 'modified' }] : [] };
+      if (url.startsWith('/compare/')) throw new Error('comparison API must not be used');
+      if (url.startsWith('/git/commits/')) { const sha=url.split('/').pop()!; return { sha, parents:[{sha:parents.get(sha)??head}] }; }
+      if (url.startsWith('/commits/')) { const sha=url.split('/').pop()!; return { sha,parents:[{sha:parents.get(sha)??head}],files:changed?[{filename:path,status:'modified'}]:[] }; }
       if (method === 'GET' && url.startsWith('/issues/')) return issues.find(i => url === `/issues/${i.number}`);
       if (method === 'PATCH' && url.startsWith('/issues/')) { issues.find(i => url === `/issues/${i.number}`)!.state = String(data!.state); return null; }
       if (method === 'POST' && url.endsWith('/comments')) return { id: 50 };
@@ -34,7 +38,7 @@ function fixture(id = 21) {
   const start = (reviews: unknown[] = []) => startReviewRepair({ api, task, definition: { allowed_paths: [path] }, report, reviews, policy: { max_fix_cycles: 3 }, update });
   const prepareFixed = () => { task.head = fixed; task.applied = { parent: head, sha: fixed }; task.validated_ci = [{}, {}, {}]; };
   const finish = () => finishReviewRepair({ api, task, review: { head_sha: fixed, base_sha: base, findings: [] }, update });
-  return { task, issues, writes, report, thread, start, finish, prepareFixed, unchanged: () => { changed = false; }, humanRace: () => { race = true; } };
+  return { task, api, parents, issues, writes, report, thread, start, finish, prepareFixed, unchanged: () => { changed = false; }, humanRace: () => { race = true; } };
 }
 describe('bounded official AI finding repair', () => {
   it('creates a deduplicated issue, preserves the ended request, and queues one repair in the same task', async () => {
@@ -66,6 +70,37 @@ describe('bounded official AI finding repair', () => {
   it('matches the actual 64-bit REST comment ID through its URL without depending on GraphQL Int databaseId', async () => {
     const f = fixture(4369904494); await f.start(); f.prepareFixed(); await f.finish();
     expect(f.thread.isResolved).toBe(true); expect(f.issues[0]!.state).toBe('closed');
+  });
+  it('uses the real GitHub transport path guard and makes only SHA-addressed commit requests', async () => {
+    const f=fixture();await f.start();f.prepareFixed();const original=f.api.request.bind(f.api),paths:string[]=[];
+    vi.stubGlobal('fetch',async(url:string,input:RequestInit)=>{const p=new URL(url).pathname.replace('/repos/silverThunder09/ai-interview-studio','');paths.push(p);return new Response(JSON.stringify(await original(input.method!,p,input.body?JSON.parse(String(input.body)):undefined)));});
+    const github=new GitHub('synthetic-never-real');f.api.request=github.request.bind(github);
+    try{await f.finish();expect(paths).toContain(`/commits/${fixed}`);expect(paths.every(p=>!p.includes('..'))).toBe(true);expect(f.issues[0]!.state).toBe('closed');}finally{vi.unstubAllGlobals();}
+  });
+  it('reproduces compare rejection before any network call without weakening the existing guard', async () => {
+    const fetcher=vi.fn();vi.stubGlobal('fetch',fetcher);
+    try{await expect(new GitHub('synthetic').request('GET',`/compare/${head}...${fixed}`)).rejects.toThrow('Invalid API path');expect(fetcher).not.toHaveBeenCalled();}finally{vi.unstubAllGlobals();}
+  });
+  it('proves a recorded repair after a normal main merge and preserves older repair commits', async () => {
+    const f=fixture();await f.start();f.prepareFixed();const merged='4'.repeat(40);f.task.head=merged;f.parents.set(merged,fixed);
+    await finishReviewRepair({api:f.api,task:f.task,review:{head_sha:merged,base_sha:base,findings:[]},update:async(fn:(t:typeof f.task)=>void)=>fn(f.task)});
+    expect(f.thread.isResolved).toBe(true);expect(f.issues[0]!.state).toBe('closed');
+  });
+  it('does not close issues for an unrelated head or a moved apply parent', async () => {
+    const f=fixture();await f.start();f.prepareFixed();const unrelated='4'.repeat(40);f.task.head=unrelated;f.parents.set(unrelated,head);
+    await expect(finishReviewRepair({api:f.api,task:f.task,review:{head_sha:unrelated,base_sha:base,findings:[]},update:async()=>{}})).rejects.toThrow('repair_ancestry_unproven');expect(f.issues[0]!.state).toBe('open');
+    f.task.head=fixed;f.task.applied={parent:base,sha:fixed};await expect(f.finish()).rejects.toThrow('repair_file_not_changed');expect(f.thread.isResolved).toBe(false);
+  });
+  it('verifies each repair commit across multiple cycles rather than guessing from the latest patch', async () => {
+    const f=fixture();await f.start();f.prepareFixed();f.task.repairs![0]!.applied={sha:fixed,parent:head};
+    f.report.head_sha=fixed;f.report.findings[0]!.id=22;f.report.findings[0]!.body='Second distinct failure';await f.start();
+    const next='4'.repeat(40);f.parents.set(next,fixed);f.task.head=next;f.task.applied={sha:next,parent:fixed};f.task.repairs![1]!.applied={sha:next,parent:fixed};f.task.validated_ci=[{},{},{}];
+    await finishReviewRepair({api:f.api,task:f.task,review:{head_sha:next,base_sha:base,findings:[]},update:async(fn:(t:typeof f.task)=>void)=>fn(f.task)});
+    expect(f.issues.map(i=>i.state)).toEqual(['closed','closed']);expect(f.task.repairs!.every(r=>r.verified_head===next)).toBe(true);
+  });
+  it('refuses ambiguous old multi-cycle histories without individual apply journals', async () => {
+    const f=fixture();await f.start();f.task.phase='review';await f.start();f.prepareFixed();
+    await expect(f.finish()).rejects.toThrow('missing_repair_commit');expect(f.issues[0]!.state).toBe('open');expect(f.thread.isResolved).toBe(false);
   });
   it.each(['human', 'current', 'truncated'])('keeps a %s thread unresolved', async kind => {
     const f = fixture(); await f.start(); f.prepareFixed();
