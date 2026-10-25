@@ -1596,9 +1596,9 @@
       "issue": 97,
       "title": "REST 리뷰 수신과 승인 경로 내 결함 수정 재개",
       "path": "archive/2026-10-25/native-review-repair-local.md",
-      "head_sha": "34ec4db7ffecc27797716975592db536835d19aa",
+      "head_sha": "31d1aa9afe8511742a66291c43d3668a61aafe9a",
       "base_sha": "d0d7d2c4ea6b6ca44aa7bbddd0267304a8c80eb4",
-      "unit": 680,
+      "unit": 681,
       "review_policy": 41,
       "limitations": [
         "Real PR95 API replay; runtime App/Cloud validation pending on issue35",
