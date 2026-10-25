@@ -77,7 +77,7 @@ test('Gemini speaker roles drive the question UI and live WebGL interviewer with
       globalThis.fetch = async (_url, init) => {
         const body = JSON.parse(String(init?.body));
         const data = JSON.parse(body.contents[0].parts[0].text);
-        const value = { text: '잘못된 발언자의 합성 질문', evidenceId: 'answer-previous', speakerId: data.speakerId === 'a' ? 'b' : 'a' };
+        const value = { text: '잘못된 발언자의 합성 질문', evidenceId: null, speakerId: data.speakerId === 'a' ? 'b' : 'a' };
         return new Response(JSON.stringify({ candidates: [{ finishReason: 'STOP', content: { parts: [{ text: JSON.stringify(value) }] } }] }),
           { headers: { 'content-type': 'application/json' } });
       };
@@ -87,11 +87,25 @@ test('Gemini speaker roles drive the question UI and live WebGL interviewer with
     await expect(page.getByRole('alert')).toContainText('AI 응답의 형식');
     await expect(page.getByLabel('내 답변', { exact: true })).toHaveValue(answer);
     await expectQuestion(4, 'a');
+    for (const [responseStatus, expected] of [[400, 'HTTP 400'], [404, 'HTTP 404'], [200, 'AI 응답의 형식']] as const) {
+      await app.evaluate((_electron, status) => {
+        globalThis.fetch = async () => status === 200
+          ? new Response(JSON.stringify({ candidates: [{ finishReason: 'MAX_TOKENS' }] }), { headers: { 'content-type': 'application/json' } })
+          : new Response('synthetic-gemini-key-never-real and private synthetic error body', { status });
+      }, responseStatus);
+      await page.getByLabel('위 전송 범위·비용 가능성을 확인했습니다.', { exact: false }).check();
+      await page.getByRole('button', { name: '답변 저장하고 다음 질문', exact: true }).click();
+      await expect(page.getByRole('alert')).toContainText(expected);
+      await expect(page.getByRole('alert')).not.toContainText('synthetic-gemini-key-never-real');
+      await expect(page.getByRole('alert')).not.toContainText('private synthetic error body');
+      await expect(page.getByLabel('내 답변', { exact: true })).toHaveValue(answer);
+      await expectQuestion(4, 'a');
+    }
     await page.getByRole('button', { name: '저장된 기록 보기', exact: true }).click();
     await page.getByRole('button', { name: '이어하기', exact: true }).click();
     await expectQuestion(4, 'a');
     const status = await page.evaluate(() => window.studio!.getAIStatus());
-    expect(status).toMatchObject({ ok: true, value: { remainingRequests: 31 } }); // 4 successes + one rejected response; no retry.
+    expect(status).toMatchObject({ ok: true, value: { remainingRequests: 28 } }); // 4 successes + four rejected/failed responses; no retry.
     expect(errors).toEqual([]);
   } finally { await app?.close(); await rm(directory, { recursive: true, force: true }); }
 });
