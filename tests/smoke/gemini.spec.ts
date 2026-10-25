@@ -32,7 +32,10 @@ test('Gemini uses the REST MIME enum and distinguishes safe request/model/respon
           return new Response('synthetic invalid REST enum', { status: 400 });
         }
         const data = JSON.parse(body.contents[0].parts[0].text);
-        const value = { text: '합성 Gemini 질문입니다. 검증 방법을 설명해 주세요.', evidenceId: data.evidence[0].id };
+        if (data.speakerId !== 'b' || body.generationConfig.responseFormat.text.schema?.properties?.speakerId?.enum?.[0] !== 'b') {
+          return new Response('synthetic invalid speaker contract', { status: 400 });
+        }
+        const value = { text: '합성 Gemini 질문입니다. 검증 방법을 설명해 주세요.', evidenceId: data.evidence[0].id, speakerId: data.speakerId };
         return new Response(JSON.stringify({ candidates: [{ finishReason: 'STOP', content: { parts: [{ text: JSON.stringify(value) }] } }] }),
           { headers: { 'content-type': 'application/json' } });
       };

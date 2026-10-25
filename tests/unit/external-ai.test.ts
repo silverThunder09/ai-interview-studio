@@ -102,13 +102,15 @@ describe.each(AI_PROVIDERS)('%s REST adapter with synthetic fetch', provider => 
       const raw = String(init?.body); seen.push(raw);
       const body = JSON.parse(raw);
       const data = JSON.parse(provider === 'gemini' ? body.contents[0].parts[0].text : body.messages.at(-1).content);
-      return response(envelope(provider, { text: '합성 질문', evidenceId: data.kind === 'follow-up' ? 'answer-previous' : data.kind === 'technical' ? null : 'evidence-1' }));
+      return response(envelope(provider, { text: '합성 질문', evidenceId: data.kind === 'follow-up' ? 'answer-previous' : data.kind === 'technical' ? null : 'evidence-1',
+        ...(provider === 'gemini' ? { speakerId: data.speakerId } : {}) }));
     });
     const storage = store(), vault = new AICredentials(); vault.set(provider, key);
     const service = new InterviewService(() => storage, new InterviewProviderRouter(vault, request));
     const input = { ...startFixture(), reviewedText: startFixture().reviewedText + '\n개인 연락처 synthetic@example.invalid', ai: config(provider) };
     const first = await service.start(input);
     expect(first.mode).toBe('external-ai'); expect(first.ai).toEqual(config(provider));
+    expect(first.turns[0]!.question.speakerId).toBe(provider === 'gemini' ? 'b' : undefined);
     expect(seen[0]).not.toContain('synthetic@example.invalid'); expect(seen[0]).not.toContain('sourceSections');
     expect(await service.start(input)).toEqual(first); expect(request).toHaveBeenCalledTimes(1);
     await expect(service.start({ ...input, ai: { ...input.ai, model: 'changed' } })).rejects.toThrow('같은 시작 요청');
@@ -117,11 +119,13 @@ describe.each(AI_PROVIDERS)('%s REST adapter with synthetic fetch', provider => 
     await expect(service.answer({ ...submit, answer: 'a'.repeat(2001), transmissionConsent: true })).rejects.toThrow('2,000');
     expect(request).toHaveBeenCalledTimes(1);
     const second = await service.answer({ ...submit, transmissionConsent: true });
+    expect(second.turns[1]!.question.speakerId).toBe(provider === 'gemini' ? 'b' : undefined);
     expect(seen[1]).toContain('합성 답변'); expect(seen[1]).not.toContain(input.ai.quote);
     expect(await service.answer({ ...submit, transmissionConsent: true })).toEqual(second); expect(request).toHaveBeenCalledTimes(2);
     const third = await service.answer({ sessionId: second.id, questionId: second.turns[1]!.question.id, answer: '후속 비공개 답변', transmissionConsent: true });
     expect(seen[2]).not.toContain('후속 비공개 답변'); expect(seen[2]).not.toContain('합성 답변');
     expect(third.turns.at(-1)?.question.evidence).toBeNull();
+    expect(third.turns.at(-1)?.question.speakerId).toBe(provider === 'gemini' ? 'a' : undefined);
     const restored = store(storage.path); expect(restored.get(first.id)).toEqual(third);
     expect(restored.history().sessions[0]?.mode).toBe('external-ai');
     expect(readFileSync(storage.path).includes(Buffer.from(key))).toBe(false);
@@ -166,6 +170,19 @@ it('accepts Gemini output only after a strict synthetic REST endpoint accepts th
   const result = await provider.next({ questionNumber: 1, evidence: [{ origin: 'reviewed', location: '합성 구절', text: '합성 경험' }], answer: null });
   expect(result.text).toBe(answer.text);
   expect(request).toHaveBeenCalledTimes(1);
+});
+it('binds Gemini response schema and output to the requested speaker', async () => {
+  const request = vi.fn<typeof fetch>().mockImplementation(async (_url, init) => {
+    const body = JSON.parse(String(init?.body));
+    expect(body.generationConfig.responseFormat.text.schema).toMatchObject({
+      required: ['text', 'evidenceId', 'speakerId'], properties: { speakerId: { enum: ['b'] } }, additionalProperties: false,
+    });
+    const data = JSON.parse(body.contents[0].parts[0].text);
+    return response(envelope('gemini', { ...answer, speakerId: data.speakerId }));
+  });
+  const result = await new AIQuestionProvider(createExternalTransport('gemini', 'synthetic-model', key, request))
+    .next({ questionNumber: 1, evidence: [{ origin: 'reviewed', location: '사용자 선택 구절', text: '합성 구절' }], answer: null, speakerId: 'b' });
+  expect(result.speakerId).toBe('b');
 });
 it.each([[400, 'HTTP 400'], [404, 'HTTP 404'], [200, 'AI 응답의 형식']] as const)(
   'returns a safe IPC error for HTTP %i without persisting a failed first question', async (status, message) => {

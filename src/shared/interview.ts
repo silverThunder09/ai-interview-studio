@@ -16,7 +16,7 @@ export interface DeleteAllInterviewsRequest { confirm: 'DELETE_ALL_INTERVIEWS' }
 export interface EvidenceQuote { origin: 'source' | 'reviewed' | 'answer'; location: string; text: string }
 export interface InterviewQuestion {
   id: string; number: number; kind: 'experience' | 'technical' | 'follow-up';
-  text: string; evidence: EvidenceQuote | null;
+  text: string; evidence: EvidenceQuote | null; speakerId?: 'a' | 'b';
 }
 export interface InterviewTurn { question: InterviewQuestion; answer: string | null }
 export interface InterviewSession {
@@ -69,9 +69,12 @@ export function isDeleteAllInterviewsRequest(value: unknown): value is DeleteAll
 }
 
 export function isInterviewQuestion(value: unknown): value is InterviewQuestion {
-  if (!record(value, ['id', 'number', 'kind', 'text', 'evidence']) || !isInterviewId(value.id) ||
+  const keys = ['id', 'number', 'kind', 'text', 'evidence'];
+  if (typeof value === 'object' && value !== null && Object.hasOwn(value, 'speakerId')) keys.push('speakerId');
+  if (!record(value, keys) || !isInterviewId(value.id) ||
     !Number.isInteger(value.number) || Number(value.number) < 1 || Number(value.number) > INTERVIEW_LIMITS.turns ||
-    typeof value.kind !== 'string' || !['experience', 'technical', 'follow-up'].includes(value.kind) || !text(value.text, 4_000)) return false;
+    typeof value.kind !== 'string' || !['experience', 'technical', 'follow-up'].includes(value.kind) || !text(value.text, 4_000) ||
+    (Object.hasOwn(value, 'speakerId') && !['a', 'b'].includes(value.speakerId as string))) return false;
   const evidence = value.evidence;
   return evidence === null || (record(evidence, ['origin', 'location', 'text']) &&
     typeof evidence.origin === 'string' && ['source', 'reviewed', 'answer'].includes(evidence.origin) && text(evidence.location, 64) && text(evidence.text, 180));

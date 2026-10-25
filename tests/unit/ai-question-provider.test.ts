@@ -46,6 +46,20 @@ describe('selected AI context and citation binding', () => {
     expect(result).toEqual({ kind: 'technical', text: '인덱스의 쓰기 비용을 설명해 주세요.', evidence: null });
     expect(transport.mock.calls[0]![0].data.evidence).toEqual([]);
   });
+  it.each([['b', 1], ['b', 2], ['a', 3], ['a', 4]] as const)('requires requested Gemini speaker %s for question %i', async (speakerId, questionNumber) => {
+    const answer = questionNumber % 2 === 0 ? '합성 답변' : null;
+    const evidence = questionNumber === 1 ? input().evidence : [];
+    const result = await new AIQuestionProvider(async payload => ({ ok: true, value: {
+      text: '합성 질문', evidenceId: payload.data.kind === 'follow-up' ? 'answer-previous' : payload.data.kind === 'experience' ? 'evidence-1' : null,
+      speakerId,
+    } })).next({ questionNumber, evidence, answer, speakerId });
+    expect(result.speakerId).toBe(speakerId);
+  });
+  it.each([undefined, 'a', 'unknown'])('rejects a missing or mismatched requested speaker (%s)', async speakerId => {
+    await expect(new AIQuestionProvider(async () => ({ ok: true, value: {
+      text: '합성 질문', evidenceId: 'evidence-1', ...(speakerId === undefined ? {} : { speakerId }),
+    } })).next({ ...input(), speakerId: 'b' })).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
+  });
   it.each([
     null, {}, { ...input(), questionNumber: 0 }, { ...input(), questionNumber: 13 }, { ...input(), questionNumber: 1.5 },
     { ...input(), evidence: Array.from({ length: 9 }, () => input().evidence[0]) },
