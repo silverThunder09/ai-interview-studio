@@ -1604,6 +1604,23 @@
         "Real PR95 API replay; runtime App/Cloud validation pending on issue35",
         "No new local product smoke; Windows validation on PR"
       ]
+    },
+    {
+      "id": "tests-2026-10-25-repair-commit-proof",
+      "status": "archived",
+      "scope": "automation",
+      "date_kst": "2026-10-25",
+      "issue": 60,
+      "title": "수정 commit 검증의 실제 transport 회귀",
+      "path": "archive/2026-10-25/repair-commit-proof-local.md",
+      "head_sha": "b19782a5444a743631b55643093a392e3f4c27c6",
+      "base_sha": "6400682fb3e625b51a26534fd5ccdb2b5c2c3914",
+      "unit": 689,
+      "review_policy": 41,
+      "limitations": [
+        "Live deployment and qualified review recovery pending on issue35",
+        "Product code unchanged; Windows verification on PR"
+      ]
     }
   ],
   "historical_main_verification": {

@@ -5,6 +5,7 @@ import { allPages } from './event-worker.ts';
 import { countChangeRequests } from './policy.mjs';
 const ensure = (value, code) => { if (!value) throw new Error(code); };
 const BOT = 'chatgpt-codex-connector';
+const SHA = /^[a-f0-9]{40}$/;
 const marker = (pr, f) => `<!-- ais-repair-issue:${pr}:${createHash('sha256').update(f.path + '\n' + f.body.split('\n')[0]).digest('hex')} -->`;
 export async function startReviewRepair({ api, task, definition, report, reviews, policy, update }) {
   ensure(countChangeRequests(reviews) === 0, 'human_changes_block_repair');
@@ -38,13 +39,30 @@ async function threads(api, pr) {
   throw new Error('repair_thread_limit');
 }
 const botOnly = t => t.isOutdated === true && t.comments?.pageInfo?.hasNextPage === false && Array.isArray(t.comments.nodes) && t.comments.nodes.length > 0 && t.comments.nodes.every(c => c.author?.login === BOT && c.author.__typename === 'Bot');
+async function proveFirstParent(api, head, wanted) {
+  const seen = new Set(); let cursor = head;
+  for (let step = 0; step < 16; step++) {
+    ensure(SHA.test(cursor ?? '') && SHA.test(wanted ?? '') && !seen.has(cursor), 'repair_ancestry_unproven');
+    if (cursor === wanted) return;
+    seen.add(cursor);
+    const commit = await api.request('GET', `/git/commits/${cursor}`);
+    ensure(commit.sha === cursor && Array.isArray(commit.parents) && commit.parents.length > 0 && commit.parents.length <= 2 && SHA.test(commit.parents[0]?.sha ?? ''), 'repair_ancestry_unproven');
+    cursor = commit.parents[0].sha;
+  }
+  throw new Error('repair_ancestry_unproven');
+}
 export async function finishReviewRepair({ api, task, review, update }) {
   if (!task.repair_findings?.length) return;
-  ensure(review.findings.length === 0 && review.head_sha === task.head && review.base_sha === task.base && task.validated_ci?.length === 3 && task.applied?.sha === task.head, 'unverified_repair');
+  ensure(review.findings.length === 0 && review.head_sha === task.head && review.base_sha === task.base && task.validated_ci?.length === 3 && SHA.test(task.applied?.sha ?? ''), 'unverified_repair');
   const pending = task.repairs.filter(r => !r.verified_head), findings = pending.flatMap(r => r.issues);
   for (const repair of pending) {
-    const diff = await api.request('GET', `/compare/${repair.head}...${task.head}`);
-    ensure(Array.isArray(diff.files) && repair.issues.every(f => diff.files.some(c => c.filename === f.path && c.status === 'modified')), 'repair_file_not_changed');
+    // One legacy in-flight repair can use its existing authenticated apply journal.
+    // Future cycles retain their own apply commit; do not guess across old cycles.
+    const applied = repair.applied ?? (pending.length === 1 ? task.applied : null);
+    ensure(SHA.test(applied?.sha ?? '') && SHA.test(applied?.parent ?? ''), 'missing_repair_commit');
+    await proveFirstParent(api, task.head, applied.sha);
+    const commit = await api.request('GET', `/commits/${applied.sha}`);
+    ensure(commit.sha === applied.sha && commit.parents?.length === 1 && commit.parents[0].sha === applied.parent && Array.isArray(commit.files) && repair.issues.every(f => commit.files.some(c => c.filename === f.path && c.status === 'modified')), 'repair_file_not_changed');
   }
   for (const thread of await threads(api, task.pr)) {
     if (thread.isResolved || !thread.comments?.nodes?.some(c => findings.some(f => f.url === c.url))) continue;
