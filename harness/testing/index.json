@@ -1621,6 +1621,26 @@
         "Live deployment and qualified review recovery pending on issue35",
         "Product code unchanged; Windows verification on PR"
       ]
+    },
+    {
+      "id": "tests-2026-10-26-avatar-paused",
+      "status": "archived",
+      "scope": "application",
+      "date_kst": "2026-10-26",
+      "issue": 102,
+      "pr": 103,
+      "title": "일시정지 중 3D 모델 교체·복원 픽셀 회귀",
+      "path": "archive/2026-10-26/avatar-paused-local.md",
+      "head_sha": "9ac8fd907fcb0260179edd0c9e3e17458b3e8af6",
+      "base_sha": "573107e694030c6ce7a0b011a2e9fa97df89362d",
+      "unit": 689,
+      "review_policy": 41,
+      "local_electron": 3,
+      "windows_run_id": 40201376678,
+      "limitations": [
+        "Linux SwiftShader; real Windows laptop and realistic assets unverified",
+        "Subsequent renderer/slot recovery features are separate work"
+      ]
     }
   ],
   "historical_main_verification": {
