@@ -44,7 +44,7 @@ export function InterviewHistory({ onOpen, onDeleted }: { onOpen: (session: Inte
   return <section className="interview-history" aria-labelledby="history-title">
     <p className="eyebrow">MY PRACTICE</p><h1 id="history-title">면접 기록</h1>
     <p className="muted">중단한 연습을 이어가거나 저장한 답변을 다시 읽을 수 있습니다. 이력서 검토 내용과 답변은 이 PC의 암호화되지 않은 로컬 파일에 저장됩니다.</p>
-    <div className="history-actions"><button className="secondary" disabled={busy} onClick={() => void refresh()}>새로 고침</button><button className="secondary danger" disabled={busy || !history?.sessions.length} onClick={() => setDeleting('all')}>전체 기록 삭제</button></div>
+    <div className="history-actions"><button className="secondary" disabled={busy} onClick={() => void refresh()}>새로 고침</button><button className="secondary danger" disabled={busy || !history} onClick={() => setDeleting('all')}>전체 기록 삭제</button></div>
     {busy && <p role="status">기록을 처리하는 중입니다.</p>}
     {error && <div className="error" role="alert">{error} <button disabled={busy} onClick={() => void refresh()}>다시 시도</button></div>}
     {notice && <p role="status">{notice}</p>}
