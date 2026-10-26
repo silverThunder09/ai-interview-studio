@@ -180,3 +180,10 @@ renderer는 main bytes를 `audio/mpeg` Blob URL로만 재생한다. CSP는 `medi
 모델 선택은 pending token으로 준비하며 renderer parser 성공 후 같은 slot/token만 commit한다. 사용자 profile의 avatar-models 고정 슬롯에 이름/형식/해시와 bytes를 독점 임시 파일→rename으로 저장한다. 복원 시 제한 읽기·SHA-256·형식을 다시 확인하고 손상을 자동 덮어쓰지 않는다. reset은 앱 사본만 삭제하고 원본 경로/이력서/기록은 건드리지 않는다. 이는 개인정보 DB 암호화나 모델의 안전성/사용권 보증이 아니다.
 
 한 WebGL context, 제한 DPR/30FPS, 숨김 시 정지, 모델 교체/이탈 시 mixer·geometry/material/texture/bitmap·controls·RAF·observer·GPU context 정리를 적용한다. 실제 Windows GPU/CPU/RAM 실측과 실사 모델 품질은 테스트 결과와 구분한다.
+
+
+### 2026-10-26 KST — 승인된 Phase 2 후속의 한정 활성화
+
+현재 채팅의 사용자 “ㄱㄱ”는 제품 스펙3.2 E→F→G→H의 사용량 ledger·공유 문맥 미리보기/별도 동의·제한된 Gemini 턴 조정·열거형 성격 프리셋과 문서/승인 큐 등록·구현/검증/머지를 승인한다. 기존 한 구절/직전 답변 동의를 최근 대화로 승계하지 않으며, 실제 앱의 새 동의 전 공유 history를 보내지 않는다. main이 선택구절180자·최근완료QA2개(질문500/답변1000자)·이번답변2000자와 실제 역할/프로필 snapshot을 만들고 canonical history4000자/data8000자 상한·preview hash를 전송 직전에 대조한다. 원문전체/연락처/경로/음성/영상·숨은 요약/캐시 호출은 포함하지 않는다.
+
+사용량은 알려진 Gemini 토큰 필드와 비민감 시도 ID만 로컬 SQLite에 보존하고 누락/취소/오류 토큰은 unknown으로 남긴다. 보존형 schema2→3 migration/rollback·3600행 한도·세션/전체 명시 삭제 연계를 검증하며 기존 기록을 자동 삭제하지 않는다. 성격은 A strict/balanced·B calm/supportive의 enum과 세션 snapshot뿐이며 자유명령/평가 규칙 확장·키 보호 변경은 없다. 실제 유료/개인 자료 개발 호출·로컬 음성·장치·리포트·모델 다운로드·새 권한/endpoint는 여전히 미활성이다.

@@ -1,21 +1,21 @@
 # 실사형 3D Gemini 면접관 — 최종 제품 설계안
 
-**상태: 최종 제품 설계 / Phase 1 3D 기반 구현·검증 중.** PR #72는 문서만 머지했다. 이후 사용자 “일단 진행해 봐” 승인으로 Phase 1의 실제 3D 화면·로컬 모델 교체/보존·기본 움직임·관련 테스트/PR을 진행한다. 2026-10-24 KST 사용자 승인으로 아래 3.1의 Gemini 역할·발언자 연결만 구현 범위에 추가했다. 로컬 음성·웹캠·리포트와 공유 문맥 확대는 후속 요구사항이다. 과거 [MVP 1](mvp-01.md)·[MVP 2](mvp-02.md)의 기록을 보존하며 승인·단계 상태는 [architecture](../architecture.md)가 소유한다.
+**상태: 최종 제품 설계 / Phase 1 기반·복구 및 Gemini 역할/발언자 연결 구현, Phase 2 후속 네 작업 승인.** PR #72는 문서만 머지했다. 이후 승인으로 Phase 1 기반과 3.1의 역할·발언자를 구현했고 PR #105·#110의 복구 흐름까지 main 검증을 마쳤다. 2026-10-26 KST에는 3.2의 사용량·공유 문맥·턴 조정·성격 프리셋을 승인했다. 로컬 음성·웹캠·리포트·실사 에셋은 후속 요구사항이다. 과거 [MVP 1](mvp-01.md)·[MVP 2](mvp-02.md)의 기록을 보존하며 승인·단계 상태는 [architecture](../architecture.md)가 소유한다.
 
 ## 1. 목표와 현재 차이
 
 Windows 독립 실행형 Electron/React/TypeScript/SQLite 앱에서 PDF/DOCX 이력서를 검토하고, 한국인 스타일의 성인 남성·여성 실사형 3D 면접관 두 명과 음성으로 대화한다. Gemini는 질문·꼬리질문과 면접 종료 후 답변 근거 기반 분석 리포트를 맡는다. 음성 입출력·3D·기본 영상 관찰은 무료 로컬 기술을 우선 사용하고 별도 서버·추가 OpenAI/Claude 유료 키를 필수로 요구하지 않는다. 기존 프로젝트/기록을 삭제하거나 처음부터 다시 쓰지 않는다.
 
-| 현재 main f908ca4의 실제 구현 | 유지·확장할 부분 |
+| 현재 main 5041a3cc의 실제 구현 | 유지·확장할 부분 |
 | --- | --- |
 | native dialog → 제한 읽기 → sandbox worker PDF/DOCX 추출·검토·근거 | 재사용, 이력서 전체 자동 전송/OCR 추가 아님 |
-| main의 OpenAI/Claude/Gemini REST·AIQuestionProvider 근거 snapshot·30초/취소 | Gemini 두 역할·speaker·공유 대화·사용량/피드백 추가 |
+| main의 고정 REST·근거 snapshot·30초/취소, Gemini 두 역할·검증 speakerId·3D/UI 연결 | 공유 대화·사용량·턴 조정·성격 프리셋은 이번 Phase 2, 피드백은 후속 |
 | InterviewService의 DB 밖 비동기 대기·중복 promise·늦은 응답 폐기 | 턴 상태/장치·음성 자원 소유 확장 |
-| InterviewStore schema 2·12답변·100세션·복원/rollback/삭제 | profile/speaker/usage/report의 보존형 migration 필요 |
+| InterviewStore schema 2·12답변·100세션·speakerId 질문 JSON·복원/rollback/삭제 | usage의 보존형 migration과 profile snapshot은 이번 Phase 2, report는 후속 |
 | VoiceService OpenAI 전사·SpeechService MP3, 수동 검토/적용/제출 | 로컬 TTS/STT와 실제 립싱크·상태 화면은 미구현 |
-| main/preload/renderer/shared, OS 보호 키·설정, 한시적 audio-only 허가 | 기반 재사용; 3D/GLB/glTF·카메라/MediaPipe는 미구현 |
+| main/preload/renderer/shared, OS 보호 키·설정, 공유 WebGL의 3D/GLB/glTF·교체/보존·시점/품질·그래픽/슬롯별 복구 | 기존 3D·키를 보존; 실사 에셋·카메라/MediaPipe는 미구현 |
 
-Three/R3F·모델 loader·로컬 음성·3D/카메라 UI를 현재 앱 기능으로 표시하지 않는다. PR #72의 제품 코드·테스트·의존성·workflow 변경은 0이었다. 현재 Phase 1 기반 구현은 해당 코드/테스트와 Three.js 의존성만 추가하며 workflow·권한·CI 정책은 변경하지 않는다. 실물 장치·서비스 계정/Tier 1·실제 Gemini 권한/요금은 조회하거나 검증하지 않았다.
+Three.js 기반의 실제 WebGL·모델 loader·3D UI는 구현됐고, R3F/VRM·로컬 음성·카메라 UI는 미구현이다. PR #72는 문서만 바꿨고 이후 승인된 PR에서 제품 기반을 추가했다. 이번 등록은 Phase 2 명세·큐·보존 회귀 검증이며 workflow·권한·CI 정책을 바꾸지 않는다. 실물 장치·실사 에셋·서비스 계정/Tier 1·실제 Gemini 권한/요금은 조회하거나 검증하지 않았다.
 
 ### 사용자 확정 사항 — 2026-10-22 KST
 
@@ -65,6 +65,36 @@ Three/R3F·모델 loader·로컬 음성·3D/카메라 UI를 현재 앱 기능으
 - 로컬 TTS·립싱크·카메라·실사 에셋을 구현하거나 동작한다고 표시하지 않는다. 기존 Gemini 키 하나만 재사용하고 추가 전송/요청/토큰/권한을 만들지 않는다.
 
 각 작업은 npm run check, npm run build, 관련 Gemini/avatar/desktop Electron 검사 및 Windows source/packaged CI를 실제로 확인한다. 실행 제한은 도구가 제공하는 정식 승인 경로로 해결하며 승인 불가 시 blocked를 반환하고 보안 설정을 해제하지 않는다. 과거 실패 receipt를 성공으로 덮어쓰지 않는다.
+
+### 3.2 승인된 Phase 2 후속 네 작업
+
+2026-10-26 KST 사용자는 사용량 → 공유 문맥 미리보기/동의 → A/B 턴 조정 → 성격 설정의 순서와 문서 현행화·승인 큐 등록 제안에 “ㄱㄱ”로 승인했다. 각 작업은 코드·테스트·PR·최신 CI/AI 검토·조건부 머지/main 검증 뒤 다음 작업으로 이어진다. 이전 9개 정의/완료 이력은 바꾸지 않는다. 새 workflow·권한·의존성·모델 API/키·실제 유료 개발 호출·로컬 음성·웹캠·리포트·에셋 다운로드는 이 범위에 없다.
+
+**작업 E — Gemini 사용량 기록·복원·표시**
+- Gemini generateContent 응답의 usageMetadata 중 promptTokenCount, candidatesTokenCount, cachedContentTokenCount, thoughtsTokenCount, totalTokenCount만 비음수 안전 정수 또는 unknown으로 정규화한다. 없는/잘못된 수치를 0으로 만들거나 합성 total을 실제값처럼 표시하지 않는다. 캐시/thinking을 중복 합산하지 않고 금액/실제 청구액을 추정하지 않는다. 원문 응답·키·질문/답변을 사용량 ledger에 복사하지 않는다.
+- 실제 요청 시도별 독립 ID로 중복 기록을 막고, 동일 in-flight promise 재사용은 1회, 실제 수동 재시도는 별도 시도로 센다. 실패/취소/timeout도 기존 실행당36요청 한도에 포함하며 제공되지 않은 토큰은 unknown이다. 한도를 재시작 시 유지하는 새 과금 정책으로 바꾸지 않는다.
+- 로컬 SQLite의 보존형 schema2→3 migration과 rollback/미래 버전 거절을 검증한다. 초기 질문 실패는 session 생성 성공으로 가장하지 않고 비민감 요청 ID에 귀속한 제한된 usage 이력으로 구분한다. 세션 연결 전 이력을 포함한 ledger는 최대3600행이며 저장 한도/권한 실패를 숨기지 않는다. 세션 삭제는 연결 사용량을, 명시적인 전체 기록 삭제는 미연결 사용량도 함께 정리한다. 자동 이력 삭제는 하지 않는다.
+- 기록 재열기에서 세션의 실제 제공분·누락 여부·시도 수를 한국어로 표시한다. 과거 schema1/2·usage 없는 기록과 다른 공급자는 보존하고 unknown을 무료/0토큰/비용 보장으로 표시하지 않는다.
+
+**작업 F — 제한된 공유 문맥의 실제 미리보기·동의 계약**
+- main이 현재 DB/질문/입력에서 선택 구절 최대180자·최근 완료 QA 최대2개(각 질문500자/답변1000자)·이번 답변 최대2000자로만 후보를 만든다. raw 이력서/연락처/경로/음성/영상·사용자가 고르지 않은 sourceSections 전체는 자동 포함하지 않는다. 오래된 항목은 명시적으로 제외하고 각 발췌 제한을 안내한다.
+- 이 제한은 이력서의 연락처/파일 경로 같은 별도 필드를 추가 수집하지 않는다는 뜻이며, 사용자가 답변 본문에 직접 적은 개인정보를 완벽히 탐지/익명화한다는 보장은 아니다. 전송 후보의 원문 발췌를 보여주고 민감한 내용은 답변 수정·공유 미선택으로 제외할 수 있음을 안내한다.
+- 공유 history의 canonical JSON은4000자, 최종 data JSON은8000자(UTF-16 길이) 이내다. 초과/잘못된 구조는 조용히 추가 전송하거나 숨겨 자르지 않고 preview 단계에서 거절한다. 새 요약/캐시/분류 모델 호출은0이다.
+- 좁은 preview IPC는 전송을 하지 않는다. 표시한 실제 canonical payload hash와 세션/현재 질문/입력/역할 snapshot을 결합하고, 제출 직전 main이 다시 만들어 일치 여부를 검증한다. renderer가 보내는 대화 목록/해시 주장만 신뢰하지 않는다.
+- 별도 체크는 기본 해제이며 저장/앱 재시작/기록 재열기로 동의를 복원하지 않는다. 입력·질문·세션·프로필/전송 내용 변경 시 기존 동의는 무효다. 작업 F에서는 미리보기 계약만 만들고 공유 전송 활성화는 G에서 연결한다. 그 전 UI는 전송 활성화로 오인시키지 않는다. 기존 선택 구절/직전 답변 경로는 계속 동작한다.
+
+**작업 G — Gemini 공유 문맥·교대/꼬리질문·중복 제어 연결**
+- F의 검증된 payload와 별도 동의가 있을 때만 기존 Gemini 단일 요청에 제한된 history를 연결한다. 옵트아웃/과거/다른 공급자의 전송 범위는 유지한다. 최초 질문은 기존 선택 구절·동의 경계이고, 문맥은 본인 세션의 최근 완료 QA만 사용한다. 동의 hash가 바뀌면 HTTP0회로 거절한다.
+- 기본 역할 쌍은 B 경험→같은 B 후속→A 기술→같은 A 후속을 반복한다. 고정12문항에서 B/B/A/A/B/B/A/A/B/B/A/A가 되며 A는 technical, B는 experience, 후속은 follow-up으로 검증한다. main의 역할/kind와 응답 speakerId·허용 근거를 함께 검증한다. 과거 기록과 OpenAI/Claude/로컬 경로는 기존 계약을 유지한다.
+- 로컬의 제한된 이전 질문과 정규화 후 완전히 같은 새 질문은 INVALID_RESPONSE로 거절하고 입력·기록을 보존한다. 의미 중복 전체를 판정했다고 주장하지 않는다. 자동 재생성·추가 유료 호출·공급자 대체는 하지 않으며 사용자가 재시도할 때만 새 요청 시도를 기록한다.
+- 기존12문항·실행당36요청·질문1500자·출력600토큰·30초·중복/취소/rollback을 유지한다. 공유 입력의8000자 상한을 넘기지 않고 실제 전송과 preview를 동일 객체로 결합한다.
+
+**작업 H — A/B 성격 프리셋·로컬 보존**
+- A는 strict(엄격·논리)/balanced(균형), B는 calm(차분·근거)/supportive(친절·구체화) 두 선택씩만 제공한다. 자유 텍스트 명령/평가 rubric 편집/목소리/임의 모델 이름은 넣지 않는다. 고정 system 경계가 프리셋·문서 내용보다 우선한다.
+- 선택은 기존 비민감 로컬 설정의 버전 검증·기본값·저장 실패 안내로 보존하고 새 면접의 ai config에 snapshot을 저장한다. 과거 기록과 진행 중 세션의 snapshot을 전역 설정 변경으로 다시 쓰지 않는다. 기존 키 OS 보호·모델/품질 설정을 보존한다.
+- 선택한 프리셋이 새 Gemini payload와 한국어 표시·기록 재열기에서 일치하고 preview/hash가 그 실제 값을 포함한다. 설정을 바꿔도 전송 동의·마이크/카메라 동의를 저장하거나 복원하지 않는다.
+
+각 작업은 허용10파일/64KiB patch 안에서 기존 경로를 재사용한다. npm run check, npm run build, sandbox를 유지한 실제 Gemini/avatar/desktop smoke와 Windows source/packaged CI를 검증한다. 개발/CI에는 합성 응답·임시 DB/프로필·가짜 이력서만 사용하며 실제 Google 호출·비용·사용자 장치 성공은 미검증으로 둔다. 구현 제약으로 범위/한도를 조용히 축소하지 않고 구체적 blocker를 기록한다.
 
 ### 사용량과 비용
 

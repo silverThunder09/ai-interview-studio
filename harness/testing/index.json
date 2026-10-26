@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "repository": "silverThunder09/ai-interview-studio",
-  "recorded_at_kst": "2026-10-22",
+  "recorded_at_kst": "2026-10-26",
   "current_record_id": "tests-2026-10-22-phase1-local",
   "notes": [
     "Counts refer to each recorded SHA, not cumulative coverage.",
@@ -1657,6 +1657,22 @@
       "limitations": [
         "Actual corrupt receipt stays rejected; canonical commit replay is a local fixture only",
         "Deployment and new Cloud transport validation pending on issue35"
+      ]
+    },
+    {
+      "id": "tests-2026-10-26-phase2-queue",
+      "status": "archived",
+      "scope": "automation",
+      "date_kst": "2026-10-26",
+      "title": "Phase 2 후속 네 작업의 명세와 큐 보존 검증",
+      "path": "archive/2026-10-26/phase2-queue-plan.md",
+      "base_sha": "5041a3cc538ad59aebac4916670356c868de31c1",
+      "unit": 694,
+      "review_policy": 41,
+      "limitations": [
+        "Plan registration only; actual product work starts after trusted main installation",
+        "Existing nine completed receipts and bootstrap preserved; no policy/workflow/permission changes",
+        "Real paid APIs, assets and user hardware unverified"
       ]
     }
   ],
