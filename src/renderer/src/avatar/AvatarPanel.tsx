@@ -31,6 +31,7 @@ export function AvatarPanel({ active = 'a', waiting = false, answering = false, 
   }, []);
   useEffect(() => {
     live.current = true;
+    setModels({ a: '기본 3D 캐릭터 · 실사 에셋 아님', b: '기본 3D 캐릭터 · 실사 에셋 아님' });
     let instance: AvatarStage;
     setReady(false); setBusy(true); setMetrics(undefined);
     try { instance = new AvatarStage(canvas.current!, setMetrics, message => { if (live.current && stage.current === instance) { setError(message); setGraphicsFailed(true); setReady(false); } }); stage.current = instance; setReady(true); }
@@ -81,9 +82,8 @@ export function AvatarPanel({ active = 'a', waiting = false, answering = false, 
   async function reset(slot: AvatarSlot) {
     if (busy || !stage.current) return; const instance = stage.current; setBusy(true); setError('');
     try {
-      const result = await window.studio!.resetAvatar(slot); if (!live.current) return;
+      const result = await window.studio!.resetAvatar(slot); if (!live.current || stage.current !== instance) return;
       if (!result.ok) { setError(result.error.message); return; }
-      if (stage.current !== instance) return;
       instance.reset(slot); setModels(m => ({ ...m, [slot]: '기본 3D 캐릭터 · 실사 에셋 아님' }));
     } catch { if (live.current && stage.current === instance) setError('모델 초기화에 실패했습니다. 다시 시도하세요.'); }
     finally { if (live.current && stage.current === instance) setBusy(false); }

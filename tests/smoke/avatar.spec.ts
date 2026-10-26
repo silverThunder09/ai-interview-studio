@@ -55,6 +55,15 @@ test('two WebGL interviewers, offline GLB/glTF import, motion, restoration and c
         return { left: left.size, right: right.size, signature };
       });
     }
+    async function loseContext() {
+      await canvas.evaluate(c => {
+        const gl = (c as HTMLCanvasElement).getContext('webgl2');
+        const extension = gl?.getExtension('WEBGL_lose_context');
+        if (!extension) throw new Error('WEBGL_lose_context is required for recovery smoke');
+        extension.loseContext();
+      });
+      await expect(page.getByRole('alert')).toContainText('3D 그래픽 연결을 잃었습니다');
+    }
     const rendered = await visibleCharacters();
     expect(rendered.left).toBeGreaterThan(20); expect(rendered.right).toBeGreaterThan(20);
     const distance = async () => Number(await canvas.getAttribute('data-camera-distance'));
@@ -108,13 +117,7 @@ test('two WebGL interviewers, offline GLB/glTF import, motion, restoration and c
     await page.getByLabel('움직임 일시정지').check();
     const previousCanvas = await canvas.elementHandle();
     expect(previousCanvas).not.toBeNull();
-    await canvas.evaluate(c => {
-      const gl = (c as HTMLCanvasElement).getContext('webgl2');
-      const extension = gl?.getExtension('WEBGL_lose_context');
-      if (!extension) throw new Error('WEBGL_lose_context is required for recovery smoke');
-      extension.loseContext();
-    });
-    await expect(page.getByRole('alert')).toContainText('3D 그래픽 연결을 잃었습니다');
+    await loseContext();
     await expect(page.getByRole('button', { name: '3D 화면 다시 시작', exact: true })).toBeVisible();
     await page.getByRole('button', { name: '3D 화면 다시 시작', exact: true }).click();
     await expect(canvas).toHaveCount(1);
@@ -137,6 +140,19 @@ test('two WebGL interviewers, offline GLB/glTF import, motion, restoration and c
     await expect(canvas).toHaveAttribute('data-speaking', 'b');
     await page.getByRole('button', { name: '동작 미리보기 중지', exact: true }).click(); await expect(canvas).toHaveAttribute('data-speaking', 'none');
     await page.screenshot({ path: 'test-results/avatar-room-imported.png', fullPage: true });
+    await unlink(join(profile, 'avatar-models', 'a.avatar'));
+    const missingAvatarCanvas = await canvas.elementHandle();
+    expect(missingAvatarCanvas).not.toBeNull();
+    await loseContext();
+    await page.getByRole('button', { name: '3D 화면 다시 시작', exact: true }).click();
+    await expect(canvas).toHaveCount(1);
+    await expect(canvas).toHaveAttribute('data-studio-ready', 'true');
+    await expect(page.getByRole('status', { name: '' }).filter({ hasText: '모델 검증·복원 중입니다.' })).toHaveCount(0);
+    expect(await missingAvatarCanvas!.evaluate(c => !c.isConnected && (c as HTMLCanvasElement).getContext('webgl2')?.isContextLost())).toBe(true);
+    await expect(page.locator('.avatar-models article').first()).toContainText('기본 3D 캐릭터');
+    await expect(page.locator('.avatar-models article').last()).toContainText('synthetic.gltf');
+    const recoveredWithMissingAvatar = await visibleCharacters();
+    expect(recoveredWithMissingAvatar.left).toBeGreaterThan(5); expect(recoveredWithMissingAvatar.right).toBeGreaterThan(5);
     await canvas.evaluate(c => { c.addEventListener('webglcontextlost', () => Reflect.set(window, '__testAvatarContextReleased', true), { once: true }); });
     await page.getByRole('button', { name: '시작하기', exact: true }).click();
     await expect(canvas).toHaveCount(0);
@@ -144,7 +160,7 @@ test('two WebGL interviewers, offline GLB/glTF import, motion, restoration and c
     await app!.close(); app = undefined;
     page = await launch(); await page.getByText('면접관 모델 설정', { exact: true }).click();
     await expect(page.getByLabel('렌더링 품질')).toHaveValue('standard');
-    await expect(page.locator('.avatar-models article').first()).toContainText('synthetic.glb');
+    await expect(page.locator('.avatar-models article').first()).toContainText('기본 3D 캐릭터');
     await expect(page.locator('.avatar-models article').last()).toContainText('synthetic.gltf');
     await page.getByRole('button', { name: 'A 기본 모델', exact: true }).click();
     await expect(page.locator('.avatar-models article').first()).toContainText('기본 3D 캐릭터');
