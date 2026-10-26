@@ -549,6 +549,17 @@ describe('native CI automatic continuation', () => {
     expect(f.store.state.tasks[0]).toMatchObject({ phase: 'development', cycles: 1 }); expect(f.sends).toHaveLength(3); expect(f.sends[2]!.body).toContain('Fix this concrete failure'); expect(issues).toHaveLength(1); expect(f.merges).toEqual([]);
     await runLoop(options); expect(f.sends).toHaveLength(3); expect(issues).toHaveLength(1);
   });
+  it('sends the pending finding and its repair AC in the actual post-CI review request', async () => {
+    const { f, options } = nativeFixture();
+    await runLoop(options); f.respond(false); await runLoop(options); f.ciDone = true;
+    const finding = { id: 3001, issue: 100, path: 'tests/unit/probe.test.ts', line: 1, body: 'Reproduce the failed update and verify rollback.', url: `https://github.com/${repository}/pull/56#discussion_r3001`, marker: '<!-- ais-repair-issue:56:synthetic -->' };
+    Object.assign(f.store.state.tasks[0]!, { repairs: [{ head: '5'.repeat(40), base, issues: [finding] }], repair_findings: [finding] });
+    expect((await runLoop(options)).state).toBe('waiting-cloud');
+    const task = f.store.state.tasks[0]!, body = f.sends.at(-1)!.body;
+    expect(task.phase).toBe('review'); expect(body).toContain(`<!-- ais-repair-recheck:${(task.request as ReturnType<typeof reviewRequest>).request_key}:`);
+    expect(JSON.parse(body.split('\n').at(-1)!)[0]).toMatchObject({ id: finding.id, body: finding.body, url: finding.url, reported_head: '5'.repeat(40) });
+    expect((task.delivery as { hash: string }).hash).toBe(createHash('sha256').update(body).digest('hex')); expect(f.merges).toEqual([]);
+  });
   it('waits for an active old-base review to finish, then normally merges main and rechecks CI without a duplicate Cloud task', async () => {
     const { f, options } = nativeFixture();
     await runLoop(options); f.respond(false); await runLoop(options); f.ciDone = true; await runLoop(options);

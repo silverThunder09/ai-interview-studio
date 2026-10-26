@@ -12,7 +12,7 @@ import { latestCheck, readAllReviews, readJobCIEvidence } from './ci-proof.mjs';
 import { parseNativeReviewResult, parseNativeRepairResult } from './native-review.mjs';
 import { preparePlannedPR, verifyPlannedSeed, verifyPlannedSpec } from './loop-planner.mjs';
 import { AppCredentials, ProductWriter } from './pr-writer.mjs';
-import { startReviewRepair, finishReviewRepair } from './review-repair.mjs';
+import { startReviewRepair, finishReviewRepair, buildRepairReviewAddition } from './review-repair.mjs';
 
 export const REPO = 'silverThunder09/ai-interview-studio';
 export const LOOP_BRANCH = 'automation/approved-loop';
@@ -635,7 +635,7 @@ export async function runLoop({ api, sender, store, config, policy, writer, now 
         const proofs = [];
         for (const context of policy.required_checks) proofs.push(await jobEvidence(api, { repository: REPO, pr_number: task.pr, context, head_sha: task.head, base_sha: task.base, checkout_sha: pr.merge_commit_sha }, checks));
         const request = requestFor(task.pr, task.head, task.base, 'read-only', [], now), body = buildReviewRequest(request) + '\n\n승인된 작업 범위(진단 데이터):\n' + definition.goal +
-          (definition.acceptance ? '\n완료 조건:\n' + definition.acceptance.map(a => `- ${a}`).join('\n') : '') + '\n허용 경로: ' + JSON.stringify(definition.allowed_paths);
+          (definition.acceptance ? '\n완료 조건:\n' + definition.acceptance.map(a => `- ${a}`).join('\n') : '') + '\n허용 경로: ' + JSON.stringify(definition.allowed_paths) + buildRepairReviewAddition(task, request);
         await update(t => { t.phase = 'review'; t.waiting = null; t.validated_ci = proofs; t.request = request; t.delivery = { phase: 'sending', hash: hash(body), body, id: null, attempted: false }; }); continue;
       }
       if (task.phase === 'merge') {

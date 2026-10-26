@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
+import { createHash } from 'node:crypto';
 import { GitHub } from '../../scripts/review/event-worker';
-import { startReviewRepair, finishReviewRepair } from '../../scripts/review/review-repair.mjs';
+import { startReviewRepair, finishReviewRepair, buildRepairReviewAddition } from '../../scripts/review/review-repair.mjs';
 
 const head = '1'.repeat(40), base = '2'.repeat(40), fixed = '3'.repeat(40), path = 'tests/smoke/gemini.spec.ts';
 type Issue = { number: number; body: string; state: string };
@@ -10,6 +11,7 @@ function fixture(id = 21) {
   const task: Record<string, unknown> & { head: string; cycles: number; repairs?: Record<string, unknown>[]; repair_findings?: unknown } = { id: 'approved', pr: 95, head, base, phase: 'review', cycles: 0, request: { request_key: 'a'.repeat(64) }, delivery: { id: 9 }, review: null };
   const issues: Issue[] = [], writes: string[] = [];
   const thread = { id: 'thread21', isResolved: false, isOutdated: true, comments: { nodes: [{ url: finding.url, body: finding.body, author: { login: 'chatgpt-codex-connector', __typename: 'Bot' } }], pageInfo: { hasNextPage: false } } };
+  const threadList = [thread];
   let changed = true, race = false;
   const parents = new Map<string, string>();
   const api = {
@@ -26,7 +28,7 @@ function fixture(id = 21) {
       throw Error('unexpected_api');
     },
     graphql: async (query: string) => {
-      if (query.startsWith('query')) return { data: { repository: { pullRequest: { reviewThreads: { nodes: [thread], pageInfo: { hasNextPage: false } } } } } };
+      if (query.startsWith('query')) return { data: { repository: { pullRequest: { reviewThreads: { nodes: threadList, pageInfo: { hasNextPage: false } } } } } };
       writes.push(query);
       if (query.includes('unresolveReviewThread')) { thread.isResolved = false; return {}; }
       thread.isResolved = true;
@@ -37,8 +39,13 @@ function fixture(id = 21) {
   const update = async (fn: (t: typeof task) => void) => { fn(task); };
   const start = (reviews: unknown[] = []) => startReviewRepair({ api, task, definition: { allowed_paths: [path] }, report, reviews, policy: { max_fix_cycles: 3 }, update });
   const prepareFixed = () => { task.head = fixed; task.applied = { parent: head, sha: fixed }; task.validated_ci = [{}, {}, {}]; };
+  const recheck = () => {
+    task.request = { request_key: 'b'.repeat(64), mode: 'read-only', head_sha: task.head, base_sha: base };
+    const body = 'fresh exact-head review request' + buildRepairReviewAddition(task, task.request as Record<string, unknown>);
+    task.delivery = { phase: 'sent', id: 99, body, hash: createHash('sha256').update(body).digest('hex') };
+  };
   const finish = () => finishReviewRepair({ api, task, review: { head_sha: fixed, base_sha: base, findings: [] }, update });
-  return { task, api, parents, issues, writes, report, thread, start, finish, prepareFixed, unchanged: () => { changed = false; }, humanRace: () => { race = true; } };
+  return { task, api, parents, issues, writes, report, thread, threadList, start, finish, prepareFixed, recheck, unchanged: () => { changed = false; }, humanRace: () => { race = true; } };
 }
 describe('bounded official AI finding repair', () => {
   it('creates a deduplicated issue, preserves the ended request, and queues one repair in the same task', async () => {
@@ -111,5 +118,59 @@ describe('bounded official AI finding repair', () => {
   it('restores unresolved when a human comment arrives during the resolution race', async () => {
     const f = fixture(); await f.start(); f.prepareFixed(); f.humanRace();
     await expect(f.finish()).rejects.toThrow('repair_thread_changed'); expect(f.thread.isResolved).toBe(false); expect(f.issues[0]!.state).toBe('open');
+  });
+  it('resolves a historical bot finding still attached to current lines only after an explicit new-head recheck', async () => {
+    const f = fixture(); await f.start(); f.prepareFixed(); f.thread.isOutdated = false; f.recheck();
+    expect(JSON.parse((f.task.delivery as { body: string }).body.split('\n').at(-1)!)[0]).toMatchObject(f.report.findings[0]!);
+    await f.finish(); expect(f.thread.isResolved).toBe(true); expect(f.issues[0]!.state).toBe('closed');
+  });
+  it.each(['head', 'base', 'mode', 'key', 'hash', 'unsent', 'receipt', 'finding', 'same-head', 'extra-bot', 'spoofed-user', 'truncated', 'unbound-marker'])(
+    'keeps a current thread blocked when explicit recheck evidence is invalid: %s', async kind => {
+      const f = fixture(); await f.start(); f.prepareFixed(); f.thread.isOutdated = false; f.recheck();
+      const request = f.task.request as Record<string, unknown>, delivery = f.task.delivery as Record<string, unknown>;
+      if (kind === 'head') request.head_sha = head;
+      if (kind === 'base') request.base_sha = head;
+      if (kind === 'mode') request.mode = 'code-edit';
+      if (kind === 'key') request.request_key = 'c'.repeat(64);
+      if (kind === 'hash') delivery.hash = '0'.repeat(64);
+      if (kind === 'unsent') delivery.phase = 'sending';
+      if (kind === 'receipt') delivery.id = null;
+      if (kind === 'finding') f.thread.comments.nodes[0]!.body += '\nnew unresolved detail';
+      if (kind === 'same-head') { f.task.repairs![0]!.head = fixed; f.recheck(); }
+      if (kind === 'extra-bot') f.thread.comments.nodes.push({ ...f.thread.comments.nodes[0]!, url: 'untracked-bot-comment' });
+      if (kind === 'spoofed-user') f.thread.comments.nodes[0]!.author.__typename = 'User';
+      if (kind === 'truncated') f.thread.comments.pageInfo.hasNextPage = true;
+      if (kind === 'unbound-marker') { delivery.body = 'unrelated review\n<!-- ais-repair-recheck -->'; delivery.hash = createHash('sha256').update(String(delivery.body)).digest('hex'); }
+      const before = f.writes.length;
+      await expect(f.finish()).rejects.toThrow('human_or_current_thread_blocks_repair');
+      expect(f.thread.isResolved).toBe(false); expect(f.issues[0]!.state).toBe('open'); expect(f.writes).toHaveLength(before);
+    });
+  it('restores an explicitly rechecked current thread when a human comment races with resolve', async () => {
+    const f = fixture(); await f.start(); f.prepareFixed(); f.thread.isOutdated = false; f.recheck(); f.humanRace();
+    await expect(f.finish()).rejects.toThrow('repair_thread_changed');
+    expect(f.thread.isResolved).toBe(false); expect(f.issues[0]!.state).toBe('open');
+  });
+  it('does not spend another review request on already verified repairs and bounds recheck data', async () => {
+    const f = fixture(); expect(buildRepairReviewAddition(f.task, { request_key: 'b'.repeat(64) })).toBe('');
+    await f.start(); f.task.repairs![0]!.verified_head = fixed;
+    expect(buildRepairReviewAddition(f.task, { request_key: 'b'.repeat(64) })).toBe('');
+    delete f.task.repairs![0]!.verified_head; (f.task.repairs![0]!.issues as { body: string }[])[0]!.body = 'x'.repeat(49 * 1024);
+    expect(() => f.recheck()).toThrow('repair_recheck_limit');
+  });
+  it('preflights every tracked thread before resolving an earlier eligible one', async () => {
+    const f = fixture(); await f.start(); f.prepareFixed();
+    const other = { ...f.report.findings[0]!, id: 22, url: f.report.findings[0]!.url + '-other' };
+    (f.task.repairs![0]!.issues as unknown[]).push(other);
+    f.threadList.push({ ...f.thread, id: 'thread22', isOutdated: false, comments: { nodes: [{ ...f.thread.comments.nodes[0]!, url: other.url }], pageInfo: { hasNextPage: false } } });
+    const before = f.writes.length;
+    await expect(f.finish()).rejects.toThrow('human_or_current_thread_blocks_repair');
+    expect(f.threadList.every(t => !t.isResolved)).toBe(true); expect(f.writes).toHaveLength(before);
+  });
+  it.each(['ci', 'finding', 'head'])('does not resolve a rechecked thread with invalid final verification: %s', async kind => {
+    const f = fixture(); await f.start(); f.prepareFixed(); f.thread.isOutdated = false; f.recheck();
+    if (kind === 'ci') f.task.validated_ci = [{}, {}];
+    const before = f.writes.length;
+    await expect(finishReviewRepair({ api: f.api, task: f.task, review: { head_sha: kind === 'head' ? head : fixed, base_sha: base, findings: kind === 'finding' ? ['still broken'] : [] }, update: async () => {} })).rejects.toThrow('unverified_repair');
+    expect(f.thread.isResolved).toBe(false); expect(f.writes).toHaveLength(before);
   });
 });
