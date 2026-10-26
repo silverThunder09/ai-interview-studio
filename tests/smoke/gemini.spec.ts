@@ -22,7 +22,9 @@ test('Gemini speaker roles drive the question UI and live WebGL interviewer with
       args: [...(process.env.SMOKE_EXECUTABLE ? [] : ['.']), ...(process.env.STUDIO_SMOKE_HEADLESS === '1' ? ['--ozone-platform=headless', '--use-gl=angle', '--use-angle=swiftshader'] : []), `--user-data-dir=${profile}`] });
     // Strict synthetic REST endpoint; nothing reaches Google and there is no product test flag.
     await app.evaluate(() => {
+      (globalThis as typeof globalThis & { __geminiFetches: number }).__geminiFetches = 0;
       globalThis.fetch = async (url, init) => {
+        (globalThis as typeof globalThis & { __geminiFetches: number }).__geminiFetches++;
         const body = JSON.parse(String(init?.body));
         const headers = init?.headers as Record<string, string>;
         if (url !== 'https://generativelanguage.googleapis.com/v1beta/models/synthetic-gemini-model:generateContent'
@@ -68,6 +70,14 @@ test('Gemini speaker roles drive the question UI and live WebGL interviewer with
     for (const [number, speaker] of [[1, 'b'], [2, 'b'], [3, 'a']] as const) {
       await expectQuestion(number, speaker);
       await page.getByLabel('내 답변', { exact: true }).fill(`${number}번 합성 답변`);
+      const preview = page.getByRole('region', { name: '공유 문맥 미리보기', exact: true });
+      await expect(preview.locator('pre')).toContainText(`${number}번 합성 답변`);
+      expect(await app.evaluate(() => (globalThis as typeof globalThis & { __geminiFetches: number }).__geminiFetches)).toBe(number);
+      const localConsent = preview.getByRole('checkbox'); await expect(localConsent).not.toBeChecked();
+      await localConsent.check();
+      await page.getByLabel('내 답변', { exact: true }).fill(`${number}번 합성 답변 수정`);
+      await expect(preview.locator('pre')).toContainText(`${number}번 합성 답변 수정`);
+      await expect(localConsent).not.toBeChecked();
       await page.getByLabel('위 전송 범위·비용 가능성을 확인했습니다.', { exact: false }).check();
       await page.getByRole('button', { name: '답변 저장하고 다음 질문', exact: true }).click();
     }
@@ -108,6 +118,10 @@ test('Gemini speaker roles drive the question UI and live WebGL interviewer with
     await page.getByRole('button', { name: '저장된 기록 보기', exact: true }).click();
     await page.getByRole('button', { name: '이어하기', exact: true }).click();
     await expectQuestion(4, 'a');
+    await page.getByLabel('내 답변', { exact: true }).fill(answer);
+    const restoredPreview = page.getByRole('region', { name: '공유 문맥 미리보기', exact: true });
+    await expect(restoredPreview.locator('pre')).toContainText(answer);
+    await expect(restoredPreview.getByRole('checkbox')).not.toBeChecked();
     await expect(page.getByRole('region', { name: 'Gemini 사용량' })).toContainText('요청 시도 8회 · 일부 토큰 정보 미제공 8회');
     await expect(page.getByRole('region', { name: 'Gemini 사용량' })).toContainText('입력: 112 토큰 · 5/8회 제공 (부분 합계)');
     await page.screenshot({ path: 'test-results/gemini-usage-restored.png', fullPage: true });

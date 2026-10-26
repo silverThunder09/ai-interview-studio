@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { InterviewSession } from '../../shared/interview';
+import type { InterviewSession, SharedContextPreview } from '../../shared/interview';
 import { GEMINI_USAGE_FIELDS, INTERVIEW_LIMITS } from '../../shared/interview';
 import { AI_NAMES } from '../../shared/ai';
 import { AIConnectionSummary } from './AIOptions';
@@ -14,6 +14,10 @@ export function InterviewWorkspace({ session, onUpdate, onHistory }: {
   const [error, setError] = useState('');
   const [cancelling, setCancelling] = useState(false);
   const [transmissionConsent, setTransmissionConsent] = useState(false);
+  const [previewResult, setPreviewResult] = useState<{ snapshot: string; value: SharedContextPreview } | null>(null);
+  const [contextConsent, setContextConsent] = useState(false);
+  const [previewError, setPreviewError] = useState('');
+  const [previewBusy, setPreviewBusy] = useState(false);
   const [needsKey, setNeedsKey] = useState(false);
   const [notice, setNotice] = useState('');
   const [audioBusy, setAudioBusy] = useState(false);
@@ -30,6 +34,18 @@ export function InterviewWorkspace({ session, onUpdate, onHistory }: {
     ? current.question.speakerId ?? (current.question.kind === 'technical' ? 'a' : 'b')
     : null;
   const answered = session.turns.filter((turn) => turn.answer !== null).length;
+  const previewSnapshot = JSON.stringify([session.id, current?.question, session.ai, answer]);
+  const contextPreview = previewResult?.snapshot === previewSnapshot ? previewResult.value : null;
+  useEffect(() => {
+    setContextConsent(false); setPreviewResult(null); setPreviewError('');
+    if (session.ai?.provider !== 'gemini' || !current || !answer.trim()) { setPreviewBusy(false); return; }
+    let active = true; setPreviewBusy(true);
+    const timer = window.setTimeout(() => { void window.studio!.submitInterviewAnswer({ sessionId: session.id, questionId: current.question.id, answer, preview: true }).then(result => {
+      if (!active) return;
+      if (result.ok) setPreviewResult({ snapshot: previewSnapshot, value: result.value }); else setPreviewError(result.error.message);
+    }).catch(() => { if (active) setPreviewError('공유 문맥 미리보기를 만들지 못했습니다. 입력 범위를 확인해 주세요.'); }).finally(() => { if (active) setPreviewBusy(false); }); }, 150);
+    return () => { active = false; window.clearTimeout(timer); };
+  }, [session.id, session.ai?.provider, current, answer, previewSnapshot]);
   async function refreshUsage() {
     if (session.ai?.provider !== 'gemini') return;
     try {
@@ -41,7 +57,7 @@ export function InterviewWorkspace({ session, onUpdate, onHistory }: {
     if (!current || lock.current || audioBusy || !answer.trim() || (session.ai && !transmissionConsent)) return;
     lock.current = true; pendingId.current = current.question.id; setSaving(true); setError(''); setNotice('');
     try {
-      const result = await window.studio!.submitInterviewAnswer({ sessionId: session.id, questionId: current.question.id, answer, ...(session.ai ? { transmissionConsent: true } : {}) });
+      const result = await window.studio!.submitInterviewAnswer({ sessionId: session.id, questionId: current.question.id, answer, ...(session.ai ? { transmissionConsent: true } : {}), ...(contextPreview && contextConsent ? { contextPreview: { digest: contextPreview.digest, consent: true as const } } : {}) });
       // A save that completed just before navigation still updates the parent
       // snapshot, so returning to the session cannot show the old question.
       if (result.ok) { onUpdate(result.value); if (live.current) { setAnswer(''); setTransmissionConsent(false); } }
@@ -74,11 +90,18 @@ export function InterviewWorkspace({ session, onUpdate, onHistory }: {
       <span className="tag">{current.question.kind === 'technical' ? '일반 기술 질문' : current.question.kind === 'follow-up' ? '내 답변에 대한 후속 질문' : current.question.evidence ? '이력서 관련 질문' : '일반 경험 질문'}</span>
       <h2 id="current-question-title">질문 {current.question.number}</h2><p className="question-copy">{current.question.text}</p>
       {current.question.evidence && <blockquote><cite>{current.question.evidence.origin === 'source' ? '추출 원문' : current.question.evidence.origin === 'reviewed' ? '원문과 다를 수 있는 수정 내용' : '내가 입력한 답변'} · {current.question.evidence.location}</cite><p>{current.question.evidence.text}</p></blockquote>}
-      {!saving && <InterviewAudio key={current.question.id} sessionId={session.id} questionId={current.question.id} question={current.question.text} answer={answer} answerLimit={session.ai ? 2_000 : INTERVIEW_LIMITS.answerChars}
+      {!saving && <InterviewAudio key={current.question.id} sessionId={session.id} questionId={current.question.id} question={current.question.text} answer={answer} answerLimit={INTERVIEW_LIMITS.answerChars}
         onBusy={setAudioBusy} onApply={text => { setAnswer(text); setTransmissionConsent(false); }} onReviewAnswer={() => answerInput.current?.focus()} />}
-      <label htmlFor="interview-answer">내 답변</label><textarea ref={answerInput} id="interview-answer" value={answer} maxLength={session.ai ? 2_000 : INTERVIEW_LIMITS.answerChars} disabled={saving} onChange={(event) => { setAnswer(event.target.value); setTransmissionConsent(false); }} />
+      <label htmlFor="interview-answer">내 답변</label><textarea ref={answerInput} id="interview-answer" value={answer} maxLength={INTERVIEW_LIMITS.answerChars} disabled={saving} onChange={(event) => { setAnswer(event.target.value); setTransmissionConsent(false); setContextConsent(false); }} />
+      {session.ai?.provider === 'gemini' && <section className="transmission-preview" aria-label="공유 문맥 미리보기">
+        <h3>제한된 공유 문맥 미리보기</h3><p>전송 목적: 후속 질문에 사용할 후보 내용을 이 PC에서 확인합니다. 현재 공유 문맥 전송은 연결 전이며 아래 확인만으로 전송하지 않습니다.</p>
+        <p>선택 구절 최대 180자 · 최근 완료 질문·답변 2개(질문 500자·답변 1,000자 발췌) · 이번 답변 2,000자. 이전 항목은 제외하며 JSON 크기 초과는 거절합니다.</p>
+        {previewBusy && <p role="status">로컬 미리보기 준비 중…</p>}{previewError && <p role="alert">{previewError}</p>}
+        {contextPreview && <><p>최근 완료 {contextPreview.data.scope.includedCompleted}개 포함 · 오래된 {contextPreview.data.scope.omittedCompleted}개 제외</p><pre>{JSON.stringify(contextPreview.data, null, 2)}</pre></>}
+        <label className="consent"><input type="checkbox" checked={!!contextPreview && contextConsent} disabled={saving || !contextPreview} onChange={e => setContextConsent(e.target.checked)} /> 표시된 제한 문맥을 확인했습니다. (로컬 확인만, 저장하지 않음)</label>
+      </section>}
       {session.ai && <div className="transmission-preview"><h3>다음 요청 전송 미리보기</h3><p>{AI_NAMES[session.ai.provider]} · {session.ai.model}</p><pre>{current.question.number === 12 ? '외부 요청 없음. 마지막 답변을 이 PC에만 저장합니다.' : current.question.number % 2 === 1 ? answer || '직전 답변을 입력하세요.' : '개인 문맥 없이 질문 번호와 일반 기술 질문 생성 지시만 전송합니다.'}</pre><p>후속 질문에는 위 답변·처음 180자의 근거 인용·질문 번호·생성 지시만 보냅니다. 이력서 전체와 이전 대화는 보내지 않습니다. 요청당 최대 600토큰·30초, 자동 재시도 없음. 취소 전에 발생한 요금·전송은 되돌리지 못하며 서비스 보존 정책이 적용됩니다.</p><label className="consent"><input type="checkbox" checked={transmissionConsent} disabled={saving} onChange={e => setTransmissionConsent(e.target.checked)} /> 위 전송 범위·비용 가능성을 확인했습니다. (마지막 답변은 로컬 저장만)</label></div>}
-      <div className="answer-actions"><span className="hint">{answer.length.toLocaleString()} / {session.ai ? '2,000' : '10,000'}자</span><button className="primary" disabled={saving || audioBusy || !answer.trim() || (!!session.ai && !transmissionConsent)} onClick={() => void submit()}>{saving ? '저장 중…' : current.question.number === INTERVIEW_LIMITS.turns ? '답변 저장하고 완료' : '답변 저장하고 다음 질문'}</button></div>
+      <div className="answer-actions"><span className="hint">{answer.length.toLocaleString()} / 10,000자</span><button className="primary" disabled={saving || audioBusy || !answer.trim() || (!!session.ai && !transmissionConsent)} onClick={() => void submit()}>{saving ? '저장 중…' : current.question.number === INTERVIEW_LIMITS.turns ? '답변 저장하고 완료' : '답변 저장하고 다음 질문'}</button></div>
       {saving && <><button className="secondary" disabled={cancelling} onClick={() => void cancel()}>{cancelling ? '취소 요청 중…' : '질문 생성 취소'}</button><p className="hint">이미 완료된 저장은 취소되지 않습니다.</p></>}
       <p className="hint">저장한 답변은 기록에 남습니다. 아직 제출하지 않은 입력은 화면을 벗어나면 사라집니다.</p>
     </article> : <div className="settings-card" role="status"><h2>이번 연습을 완료했습니다</h2><p>질문과 답변은 이 PC에 저장되어 다시 읽을 수 있습니다. AI 점수나 평가는 생성하지 않았습니다.</p></div>}

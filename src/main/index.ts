@@ -76,6 +76,7 @@ async function start(): Promise<void> {
     [CHANNELS.resume, selectResume],
     [CHANNELS.interviewHistory, interview.history], [CHANNELS.interviewGet, interview.get],
     [CHANNELS.interviewStart, interview.start], [CHANNELS.interviewAnswer, interview.answer],
+    [CHANNELS.interviewContextPreview, interview.preview],
     [CHANNELS.interviewDelete, interview.delete], [CHANNELS.interviewDeleteAll, interview.deleteAll],
     [CHANNELS.interviewCancel, interview.cancel],
     [CHANNELS.aiStatus, ai.status], [CHANNELS.aiKey, ai.set], [CHANNELS.aiClear, ai.clear],

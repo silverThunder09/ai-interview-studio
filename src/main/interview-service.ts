@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { randomUUID } from 'node:crypto';
-import type { GeminiUsageTokens, InterviewSession, StartInterviewRequest, SubmitAnswerRequest } from '../shared/interview';
-import { INTERVIEW_LIMITS } from '../shared/interview';
+import type { GeminiUsageTokens, InterviewSession, SharedContextPreview, SharedContextPreviewRequest, StartInterviewRequest, SubmitAnswerRequest } from '../shared/interview';
+import { buildSharedContextData, isSharedContextPreviewRequest, INTERVIEW_LIMITS } from '../shared/interview';
 import { AIQuestionError, AI_QUESTION_LIMITS } from './ai-question-provider';
 import { InterviewStoreError, type InterviewStore } from './interview-store';
 import { LocalQuestionProvider, type QuestionDraft } from './questions';
@@ -66,10 +66,24 @@ export class InterviewService {
       return saved;
     });
   }
+  preview(value: SharedContextPreviewRequest): SharedContextPreview {
+    if (this.closed || !isSharedContextPreviewRequest(value)) throw new AIQuestionError('INVALID_INPUT');
+    const session = this.store().get(value.sessionId);
+    if (session.status !== 'active' || session.ai?.provider !== 'gemini') throw new AIQuestionError('INVALID_INPUT');
+    const current = session.turns.find(turn => turn.answer === null);
+    if (!current || current.question.id !== value.questionId) throw new AIQuestionError('INVALID_INPUT');
+    const role = { kind: current.question.kind, speakerId: current.question.speakerId ?? (current.question.kind === 'technical' ? 'a' : 'b') } as const;
+    let data;
+    try { data = buildSharedContextData(session.ai.quote, session.turns, value.answer); }
+    catch { throw new AIQuestionError('INVALID_INPUT'); }
+    const canonical = JSON.stringify({ sessionId: session.id, questionId: current.question.id, role, ai: session.ai, data });
+    return { sessionId: session.id, questionId: current.question.id, role, data, digest: createHash('sha256').update(canonical).digest('hex') };
+  }
   answer(value: SubmitAnswerRequest): Promise<InterviewSession> {
     const request = structuredClone(value);
     return this.run(request.questionId, request, request.sessionId, async (signal) => {
       const store = this.store();
+      if (request.contextPreview && this.preview({ sessionId: request.sessionId, questionId: request.questionId, answer: request.answer }).digest !== request.contextPreview.digest) throw new AIQuestionError('INVALID_INPUT');
       const { session, pending } = store.prepareAnswer(request);
       if (!pending) return session;
       session.turns.at(-1)!.answer = request.answer;

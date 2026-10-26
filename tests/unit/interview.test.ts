@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { InterviewStore } from '../../src/main/interview-store';
 import { LocalQuestionProvider, type QuestionProvider } from '../../src/main/questions';
 import { createInterviewHandlers } from '../../src/main/interview-handlers';
-import { INTERVIEW_LIMITS, isDeleteAllInterviewsRequest, isDeleteInterviewRequest, isInterviewQuestion, isStartInterviewRequest, isSubmitAnswerRequest, type InterviewSession } from '../../src/shared/interview';
+import { buildSharedContextData, INTERVIEW_LIMITS, isDeleteAllInterviewsRequest, isDeleteInterviewRequest, isInterviewQuestion, isSharedContextPreviewRequest, isStartInterviewRequest, isSubmitAnswerRequest, type InterviewSession } from '../../src/shared/interview';
 import { startFixture } from '../fixtures/interview';
 
 const stores: InterviewStore[] = [], directories: string[] = [];
@@ -22,6 +22,26 @@ function storage(file = path(), provider?: QuestionProvider) {
 function questionId(session: InterviewSession) { return session.turns.at(-1)!.question.id; }
 
 describe('interview IPC input and consent', () => {
+  it('builds only the last two bounded shared-context excerpts and rejects malformed or oversized input', () => {
+    const turns = [1, 2, 3].map(number => ({ question: { id: randomUUID(), number, kind: 'experience' as const, text: `${number}`.repeat(600), evidence: null }, answer: `${number}`.repeat(1_100) }));
+    const data = buildSharedContextData('q'.repeat(180), turns, '현재 답변');
+    expect(data.recentCompleted).toHaveLength(2);
+    expect(data.recentCompleted.map(turn => turn.question[0])).toEqual(['2', '3']);
+    expect(data.recentCompleted.every(turn => turn.question.length === 500 && turn.answer.length === 1_000)).toBe(true);
+    expect(data.scope).toEqual({ includedCompleted: 2, omittedCompleted: 1, excerpts: true });
+    expect(() => buildSharedContextData('q'.repeat(181), turns, '답변')).toThrow('INVALID_SHARED_CONTEXT');
+    expect(() => buildSharedContextData('구절', turns, '😀'.repeat(1_001))).toThrow('INVALID_SHARED_CONTEXT');
+    expect(() => buildSharedContextData('구절', [{ ...turns[0]!, answer: '\u0001'.repeat(1_000) }], '답변')).toThrow('SHARED_HISTORY_TOO_LARGE');
+    expect(() => buildSharedContextData('구절', [null] as never, '답변')).toThrow('INVALID_SHARED_CONTEXT');
+  });
+  it('validates the narrow preview request and optional consent digest exactly', () => {
+    const request = { sessionId: randomUUID(), questionId: randomUUID(), answer: '합성 답변' };
+    expect(isSharedContextPreviewRequest(request)).toBe(true);
+    expect(isSharedContextPreviewRequest({ ...request, answer: 'a'.repeat(2_001) })).toBe(false);
+    expect(isSharedContextPreviewRequest({ ...request, turns: [] })).toBe(false);
+    expect(isSubmitAnswerRequest({ ...request, transmissionConsent: true, contextPreview: { digest: 'a'.repeat(64), consent: true } })).toBe(true);
+    expect(isSubmitAnswerRequest({ ...request, contextPreview: { digest: 'a'.repeat(63), consent: true } })).toBe(false);
+  });
   it('accepts legacy questions without a speaker and validates optional speaker IDs strictly', () => {
     const question = { id: randomUUID(), number: 1, kind: 'experience', text: '합성 질문', evidence: null };
     expect(isInterviewQuestion(question)).toBe(true);

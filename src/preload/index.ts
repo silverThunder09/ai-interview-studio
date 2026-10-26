@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import { CHANNELS, type AvatarQuality, type DesktopAPI, type Settings } from '../shared/contracts';
-import type { DeleteAllInterviewsRequest, DeleteInterviewRequest, StartInterviewRequest, SubmitAnswerRequest } from '../shared/interview';
+import type { DeleteAllInterviewsRequest, DeleteInterviewRequest, SharedContextPreviewRequest, StartInterviewRequest, SubmitAnswerRequest } from '../shared/interview';
 import type { AIPreferences, AIKeyRequest, AIProvider } from '../shared/ai';
 import type { VoiceRequest, VoiceStart } from '../shared/voice';
 import type { SpeechRequest } from '../shared/speech';
@@ -18,7 +18,10 @@ const api: DesktopAPI = Object.freeze({
   getInterviewHistory: () => ipcRenderer.invoke(CHANNELS.interviewHistory),
   getInterview: (id: string) => ipcRenderer.invoke(CHANNELS.interviewGet, id),
   startInterview: (request: StartInterviewRequest) => ipcRenderer.invoke(CHANNELS.interviewStart, request),
-  submitInterviewAnswer: (request: SubmitAnswerRequest) => ipcRenderer.invoke(CHANNELS.interviewAnswer, request),
+  submitInterviewAnswer: (request: SubmitAnswerRequest | SharedContextPreviewRequest & { preview: true }) => Object.hasOwn(request, 'preview')
+    ? ipcRenderer.invoke(CHANNELS.interviewContextPreview, 'preview' in request && request.preview === true && Object.keys(request).length === 4
+      ? { sessionId: request.sessionId, questionId: request.questionId, answer: request.answer } : request)
+    : ipcRenderer.invoke(CHANNELS.interviewAnswer, request),
   cancelInterviewOperation: (id: string) => ipcRenderer.invoke(CHANNELS.interviewCancel, id),
   deleteInterview: (request: DeleteInterviewRequest) => ipcRenderer.invoke(CHANNELS.interviewDelete, request),
   deleteAllInterviews: (request: DeleteAllInterviewsRequest) => ipcRenderer.invoke(CHANNELS.interviewDeleteAll, request),

@@ -30,6 +30,23 @@ afterEach(() => {
 });
 
 describe('async generation and atomic storage', () => {
+  it('previews current stored Gemini context without provider calls and rejects stale or cross-session snapshots', async () => {
+    const next = vi.fn<AsyncInterviewProvider['next']>((resume, turns) => local.next(resume, turns));
+    const { store, service, handlers } = fixture({ next });
+    const base = startFixture(), ai = { provider: 'gemini' as const, model: 'synthetic-model', quote: base.reviewedText.slice(0, 180), transmissionConsent: true as const };
+    const first = store.start({ ...base, ai }, { ...local.next(base, [])!, speakerId: 'b' }), secondBase = startFixture(), second = store.start({ ...secondBase, ai }, { ...local.next(secondBase, [])!, speakerId: 'b' });
+    const request = { sessionId: first.id, questionId: first.turns[0]!.question.id, answer: '미리보기 답변' };
+    const preview = service.preview(request);
+    expect(preview.data).toMatchObject({ selectedQuote: ai.quote, currentAnswer: request.answer, recentCompleted: [] });
+    expect(preview.digest).toMatch(/^[0-9a-f]{64}$/); expect(next).not.toHaveBeenCalled();
+    await expect(service.answer({ ...request, answer: '변경한 답변', transmissionConsent: true, contextPreview: { digest: preview.digest, consent: true } })).rejects.toMatchObject({ code: 'INVALID_INPUT' });
+    expect(next).not.toHaveBeenCalled();
+    const saved = await service.answer({ ...request, transmissionConsent: true, contextPreview: { digest: preview.digest, consent: true } });
+    expect(saved.turns[0]!.answer).toBe(request.answer);
+    await expect(service.answer({ sessionId: second.id, questionId: second.turns[0]!.question.id, answer: request.answer, transmissionConsent: true, contextPreview: { digest: preview.digest, consent: true } })).rejects.toMatchObject({ code: 'INVALID_INPUT' });
+    expect(handlers.preview([{ ...request, questionId: randomUUID() }])).toMatchObject({ ok: false, error: { code: 'INVALID_REQUEST' } });
+    expect(next).toHaveBeenCalledOnce();
+  });
   it('rolls back a new interview when usage finalization fails and retries without a phantom session', async () => {
     const next = vi.fn<AsyncInterviewProvider['next']>(async (resume, previous, _signal, onDispatch) => {
       onDispatch?.();
