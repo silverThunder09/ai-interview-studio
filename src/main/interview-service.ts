@@ -83,9 +83,9 @@ export class InterviewService {
     const request = structuredClone(value);
     return this.run(request.questionId, request, request.sessionId, async (signal) => {
       const store = this.store();
-      if (request.contextPreview && this.preview({ sessionId: request.sessionId, questionId: request.questionId, answer: request.answer }).digest !== request.contextPreview.digest) throw new AIQuestionError('INVALID_INPUT');
       const { session, pending } = store.prepareAnswer(request);
       if (!pending) return session;
+      if (request.contextPreview && this.preview({ sessionId: request.sessionId, questionId: request.questionId, answer: request.answer }).digest !== request.contextPreview.digest) throw new AIQuestionError('INVALID_INPUT');
       session.turns.at(-1)!.answer = request.answer;
       const tracking = session.turns.length < INTERVIEW_LIMITS.turns && this.provider.tracksUsage?.(session) === true;
       if (tracking) store.checkUsageCapacity();

@@ -69,6 +69,7 @@ test('Gemini speaker roles drive the question UI and live WebGL interviewer with
     }
     for (const [number, speaker] of [[1, 'b'], [2, 'b'], [3, 'a']] as const) {
       await expectQuestion(number, speaker);
+      await expect(page.getByLabel('내 답변', { exact: true })).toHaveAttribute('maxlength', '2000');
       await page.getByLabel('내 답변', { exact: true }).fill(`${number}번 합성 답변`);
       const preview = page.getByRole('region', { name: '공유 문맥 미리보기', exact: true });
       await expect(preview.locator('pre')).toContainText(`${number}번 합성 답변`);

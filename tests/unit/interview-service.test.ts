@@ -43,6 +43,7 @@ describe('async generation and atomic storage', () => {
     expect(next).not.toHaveBeenCalled();
     const saved = await service.answer({ ...request, transmissionConsent: true, contextPreview: { digest: preview.digest, consent: true } });
     expect(saved.turns[0]!.answer).toBe(request.answer);
+    expect(await service.answer({ ...request, transmissionConsent: true, contextPreview: { digest: preview.digest, consent: true } })).toEqual(saved);
     await expect(service.answer({ sessionId: second.id, questionId: second.turns[0]!.question.id, answer: request.answer, transmissionConsent: true, contextPreview: { digest: preview.digest, consent: true } })).rejects.toMatchObject({ code: 'INVALID_INPUT' });
     expect(handlers.preview([{ ...request, questionId: randomUUID() }])).toMatchObject({ ok: false, error: { code: 'INVALID_REQUEST' } });
     expect(next).toHaveBeenCalledOnce();
