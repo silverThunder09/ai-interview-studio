@@ -1,4 +1,4 @@
-import { INTERVIEW_LIMITS, type EvidenceQuote, type GeminiUsageTokens } from '../shared/interview';
+import { INTERVIEW_LIMITS, normalizeGeminiUsage, type EvidenceQuote, type GeminiUsageTokens } from '../shared/interview';
 import type { QuestionDraft } from './questions';
 import { AI_CALL_LIMIT } from '../shared/ai';
 
@@ -20,7 +20,7 @@ export interface AIQuestionPayload {
     speakerId?: 'a' | 'b';
   };
 }
-export type AITransportResult = { ok: true; value: unknown; usage?: GeminiUsageTokens } | { ok: false; reason: 'rate-limit' | 'authentication' | 'bad-request' | 'not-found' | 'invalid-response' | 'unavailable' };
+export type AITransportResult = { ok: true; value: unknown; usage?: GeminiUsageTokens } | { ok: false; reason: 'rate-limit' | 'authentication' | 'bad-request' | 'not-found' | 'invalid-response' | 'unavailable'; usage?: GeminiUsageTokens };
 // No transport is installed by this module. Only an explicitly selected adapter
 // may implement this boundary; tests inject synthetic results without networking.
 export type AIQuestionTransport = (payload: AIQuestionPayload, signal: AbortSignal) => Promise<AITransportResult>;
@@ -41,8 +41,10 @@ const transportErrors = { 'rate-limit': 'RATE_LIMITED', authentication: 'AUTHENT
   'bad-request': 'BAD_REQUEST', 'not-found': 'MODEL_NOT_FOUND', 'invalid-response': 'INVALID_RESPONSE', unavailable: 'UNAVAILABLE' } as const;
 export class AIQuestionError extends Error {
   readonly retryable: boolean;
-  constructor(readonly code: ErrorCode) {
+  readonly usage: GeminiUsageTokens | undefined;
+  constructor(readonly code: ErrorCode, usage?: GeminiUsageTokens) {
     super(messages[code]);
+    this.usage = normalizeGeminiUsage(usage);
     this.retryable = ['INVALID_RESPONSE', 'TIMEOUT', 'RATE_LIMITED', 'UNAVAILABLE'].includes(code);
   }
 }
@@ -92,7 +94,7 @@ export class AIQuestionProvider {
   }
   async next(input: unknown, signal?: AbortSignal): Promise<QuestionDraft & { usage?: GeminiUsageTokens }> {
     const payload = prepare(input);
-    if (signal?.aborted) throw new AIQuestionError('CANCELLED');
+    if (signal?.aborted) throw new AIQuestionError(signal.reason instanceof AIQuestionError && signal.reason.code === 'TIMEOUT' ? 'TIMEOUT' : 'CANCELLED');
     // Keep a private snapshot for citation binding. An adapter cannot rewrite
     // the evidence it will later claim to have received.
     const citations = structuredClone(payload.data);
@@ -100,27 +102,31 @@ export class AIQuestionProvider {
     let timer: ReturnType<typeof setTimeout> | undefined;
     let onAbort = () => {};
     const stopped = new Promise<never>((_resolve, reject) => {
-      onAbort = () => { reject(new AIQuestionError('CANCELLED')); controller.abort(); };
+      onAbort = () => { const error = new AIQuestionError(signal?.reason instanceof AIQuestionError && signal.reason.code === 'TIMEOUT' ? 'TIMEOUT' : 'CANCELLED'); reject(error); controller.abort(error); };
       signal?.addEventListener('abort', onAbort, { once: true });
-      timer = setTimeout(() => { reject(new AIQuestionError('TIMEOUT')); controller.abort(); }, this.timeoutMs);
+      timer = setTimeout(() => { const error = new AIQuestionError('TIMEOUT'); reject(error); controller.abort(error); }, this.timeoutMs);
     });
+    let observedUsage: GeminiUsageTokens | undefined;
     try {
       const operation = Promise.resolve().then(() => {
         if (controller.signal.aborted) throw new AIQuestionError('CANCELLED');
         return this.transport(payload, controller.signal);
       }).catch(() => { throw new AIQuestionError('UNAVAILABLE'); });
       const result = await Promise.race([operation, stopped]);
-      const successKeys = result?.ok === true && typeof result === 'object' && result !== null && Object.hasOwn(result, 'usage') ? ['ok', 'value', 'usage'] : ['ok', 'value'];
-      if (!record(result, result?.ok === true ? successKeys : ['ok', 'reason'])) throw new AIQuestionError('INVALID_RESPONSE');
+      const keys = result?.ok === true ? ['ok', 'value'] : ['ok', 'reason'];
+      if (typeof result === 'object' && result !== null && Object.hasOwn(result, 'usage')) keys.push('usage');
+      if (!record(result, keys)) throw new AIQuestionError('INVALID_RESPONSE');
+      observedUsage = normalizeGeminiUsage(result.usage);
       if (result.ok !== true) {
         if (result.ok !== false || typeof result.reason !== 'string' || !Object.hasOwn(transportErrors, result.reason)) throw new AIQuestionError('INVALID_RESPONSE');
         const code = transportErrors[result.reason as keyof typeof transportErrors];
         throw new AIQuestionError(code);
       }
-      return { ...question(result.value, citations), ...(result.usage ? { usage: result.usage } : {}) };
+      return { ...question(result.value, citations), ...(observedUsage ? { usage: observedUsage } : {}) };
     } catch (error) {
       // Never propagate provider bodies, credentials, URLs or exception details.
-      throw error instanceof AIQuestionError ? error : new AIQuestionError('UNAVAILABLE');
+      const safe = error instanceof AIQuestionError ? error : new AIQuestionError('UNAVAILABLE');
+      throw new AIQuestionError(safe.code, observedUsage ?? safe.usage);
     } finally { clearTimeout(timer); signal?.removeEventListener('abort', onAbort); }
   }
 }

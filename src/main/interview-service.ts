@@ -7,7 +7,7 @@ import { InterviewStoreError, type InterviewStore } from './interview-store';
 import { LocalQuestionProvider, type QuestionDraft } from './questions';
 
 export interface AsyncInterviewProvider {
-  next(resume: Pick<StartInterviewRequest, 'reviewedText' | 'sourceSections' | 'ai'>, previous: InterviewSession['turns'], signal: AbortSignal): (QuestionDraft & { usage?: GeminiUsageTokens }) | null | Promise<(QuestionDraft & { usage?: GeminiUsageTokens }) | null>;
+  next(resume: Pick<StartInterviewRequest, 'reviewedText' | 'sourceSections' | 'ai'>, previous: InterviewSession['turns'], signal: AbortSignal, onDispatch?: () => void): (QuestionDraft & { usage?: GeminiUsageTokens }) | null | Promise<(QuestionDraft & { usage?: GeminiUsageTokens }) | null>;
   tracksUsage?(resume: Pick<StartInterviewRequest, 'reviewedText' | 'sourceSections' | 'ai'>): boolean;
 }
 interface Operation { id: string; signature: string; sessionId: string | null; controller: AbortController; promise: Promise<InterviewSession> }
@@ -33,7 +33,7 @@ export class InterviewService {
     const stopped = new Promise<never>((_resolve, reject) => { rejectStop = reject; });
     const onAbort = () => rejectStop(new AIQuestionError(reason));
     controller.signal.addEventListener('abort', onAbort, { once: true });
-    const timer = setTimeout(() => { reason = 'TIMEOUT'; controller.abort(); }, this.timeoutMs);
+    const timer = setTimeout(() => { reason = 'TIMEOUT'; controller.abort(new AIQuestionError('TIMEOUT')); }, this.timeoutMs);
     const operation = { id, signature, sessionId, controller } as Operation;
     operation.promise = Promise.race([Promise.resolve().then(() => {
       if (controller.signal.aborted || this.closed) throw new AIQuestionError('CANCELLED');
@@ -51,18 +51,19 @@ export class InterviewService {
       const store = this.store();
       const existing = store.findStart(request);
       if (existing) return existing;
-      const usage = this.provider.tracksUsage?.(request) === true ? randomUUID() : undefined;
-      if (usage) store.reserveUsage(usage, null);
+      const tracking = this.provider.tracksUsage?.(request) === true;
+      if (tracking) store.checkUsageCapacity();
+      let usage: string | undefined;
+      const onDispatch = tracking ? () => { const id = randomUUID(); store.reserveUsage(id, null); usage = id; } : undefined;
       let question;
-      try { question = await this.provider.next(structuredClone(request), [], signal); }
-      catch (error) { if (usage) store.finishUsage(usage, error instanceof AIQuestionError && error.code === 'CANCELLED' ? 'cancelled' : error instanceof AIQuestionError && error.code === 'TIMEOUT' ? 'timeout' : 'failed'); throw error; }
-      if (signal.aborted || this.closed) { if (usage) store.finishUsage(usage, 'cancelled'); throw new AIQuestionError('CANCELLED'); }
+      try { question = await this.provider.next(structuredClone(request), [], signal, onDispatch); }
+      catch (error) { if (usage) store.finishUsage(usage, error instanceof AIQuestionError && error.code === 'CANCELLED' ? 'cancelled' : error instanceof AIQuestionError && error.code === 'TIMEOUT' ? 'timeout' : 'failed', error instanceof AIQuestionError ? error.usage : undefined); throw error; }
+      if (signal.aborted || this.closed) { const error = signal.reason instanceof AIQuestionError ? signal.reason : new AIQuestionError('CANCELLED'); if (usage) store.finishUsage(usage, error.code === 'TIMEOUT' ? 'timeout' : 'cancelled', question?.usage); throw error; }
       if (!question) throw new Error('Missing first question');
       let saved;
-      try { saved = store.start(request, question); }
-      catch (error) { if (usage) store.finishUsage(usage, 'failed'); throw error; }
-      if (usage) store.finishUsage(usage, 'succeeded', question.usage, saved.id);
-      return store.get(saved.id);
+      try { saved = store.start(request, question, usage ? { attemptId: usage, ...(question.usage ? { tokens: question.usage } : {}) } : undefined); }
+      catch (error) { if (usage) store.finishUsage(usage, 'failed', question.usage); throw error; }
+      return saved;
     });
   }
   answer(value: SubmitAnswerRequest): Promise<InterviewSession> {
@@ -72,24 +73,25 @@ export class InterviewService {
       const { session, pending } = store.prepareAnswer(request);
       if (!pending) return session;
       session.turns.at(-1)!.answer = request.answer;
-      const usage = session.turns.length < INTERVIEW_LIMITS.turns && this.provider.tracksUsage?.(session) === true ? randomUUID() : undefined;
-      if (usage) store.reserveUsage(usage, session.id);
+      const tracking = session.turns.length < INTERVIEW_LIMITS.turns && this.provider.tracksUsage?.(session) === true;
+      if (tracking) store.checkUsageCapacity();
+      let usage: string | undefined;
+      const onDispatch = tracking ? () => { const id = randomUUID(); store.reserveUsage(id, session.id); usage = id; } : undefined;
       let next;
-      try { next = session.turns.length === INTERVIEW_LIMITS.turns ? null : await this.provider.next(structuredClone(session), structuredClone(session.turns), signal); }
-      catch (error) { if (usage) store.finishUsage(usage, error instanceof AIQuestionError && error.code === 'CANCELLED' ? 'cancelled' : error instanceof AIQuestionError && error.code === 'TIMEOUT' ? 'timeout' : 'failed'); throw error; }
-      if (signal.aborted || this.closed) { if (usage) store.finishUsage(usage, 'cancelled'); throw new AIQuestionError('CANCELLED'); }
+      try { next = session.turns.length === INTERVIEW_LIMITS.turns ? null : await this.provider.next(structuredClone(session), structuredClone(session.turns), signal, onDispatch); }
+      catch (error) { if (usage) store.finishUsage(usage, error instanceof AIQuestionError && error.code === 'CANCELLED' ? 'cancelled' : error instanceof AIQuestionError && error.code === 'TIMEOUT' ? 'timeout' : 'failed', error instanceof AIQuestionError ? error.usage : undefined); throw error; }
+      if (signal.aborted || this.closed) { const error = signal.reason instanceof AIQuestionError ? signal.reason : new AIQuestionError('CANCELLED'); if (usage) store.finishUsage(usage, error.code === 'TIMEOUT' ? 'timeout' : 'cancelled', next?.usage); throw error; }
       if (!next && session.turns.length < INTERVIEW_LIMITS.turns) throw new Error('Missing next question');
       let saved;
-      try { saved = store.answer(request, { next }); }
-      catch (error) { if (usage) store.finishUsage(usage, 'failed'); throw error; }
-      if (usage) store.finishUsage(usage, 'succeeded', next?.usage, session.id);
-      return store.get(saved.id);
+      try { saved = store.answer(request, { next }, usage ? { attemptId: usage, ...(next?.usage ? { tokens: next.usage } : {}) } : undefined); }
+      catch (error) { if (usage) store.finishUsage(usage, 'failed', next?.usage); throw error; }
+      return saved;
     });
   }
   cancel(id: string): boolean {
     if (!this.active || this.active.id !== id) return false;
     const operation = this.active;
-    this.active = undefined; operation.controller.abort();
+    this.active = undefined; operation.controller.abort(new AIQuestionError('CANCELLED'));
     return true;
   }
   cancelPending(): void { if (this.active) this.cancel(this.active.id); }

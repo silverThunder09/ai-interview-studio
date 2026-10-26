@@ -6,10 +6,20 @@ export const INTERVIEW_LIMITS = Object.freeze({ sessions: 100, answerChars: 10_0
 export const GEMINI_USAGE_FIELDS = ['promptTokenCount', 'candidatesTokenCount', 'cachedContentTokenCount', 'thoughtsTokenCount', 'totalTokenCount'] as const;
 export type GeminiUsageField = typeof GEMINI_USAGE_FIELDS[number];
 export type GeminiUsageTokens = Partial<Record<GeminiUsageField, number>>;
+export function normalizeGeminiUsage(value: unknown): GeminiUsageTokens | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const source = value as Record<string, unknown>, result: GeminiUsageTokens = {};
+  for (const field of GEMINI_USAGE_FIELDS) {
+    const count = Object.hasOwn(source, field) ? source[field] : undefined;
+    if (typeof count === 'number' && Number.isSafeInteger(count) && count >= 0) result[field] = count;
+  }
+  return Object.keys(result).length ? result : undefined;
+}
 export interface InterviewUsage {
   attempts: number;
   missingAttempts: number;
   tokens: GeminiUsageTokens;
+  providedAttempts: Partial<Record<GeminiUsageField, number>>;
 }
 export interface StartInterviewRequest {
   requestId: string;

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { InterviewSession } from '../../shared/interview';
-import { INTERVIEW_LIMITS } from '../../shared/interview';
+import { GEMINI_USAGE_FIELDS, INTERVIEW_LIMITS } from '../../shared/interview';
 import { AI_NAMES } from '../../shared/ai';
 import { AIConnectionSummary } from './AIOptions';
 import { InterviewAudio } from './InterviewAudio';
@@ -55,7 +55,11 @@ export function InterviewWorkspace({ session, onUpdate, onHistory }: {
     <p className="muted">{session.ai ? `${AI_NAMES[session.ai.provider]} · ${session.ai.model}에서 생성한 질문입니다. AI 문장은 사실 검증·채용 평가가 아닙니다. 답변 제출 때 전송 범위와 비용을 확인하세요. 재시작 후 키가 없거나 인증에 실패하면 API 연결 설정에서 키를 다시 등록할 수 있습니다.` : '기본 질문은 준비된 질문과 답변 인용이며 AI 분석·평가가 아닙니다. 별도로 선택하는 음성 입력·읽기는 OpenAI 전송과 비용이 발생할 수 있습니다.'}</p>
     <AvatarRoom active={activeInterviewer} waiting={saving} answering={answer.trim().length > 0} />
     <div className="session-progress"><span>{answered} / {INTERVIEW_LIMITS.turns}개 답변 저장</span><button className="secondary" disabled={saving} onClick={onHistory}>저장된 기록 보기</button></div>
-    {session.ai?.provider === 'gemini' && session.usage && <section className="settings-card" aria-label="Gemini 사용량"><h2>Gemini 요청 사용량</h2><p>요청 시도 {session.usage.attempts}회 · 토큰 정보 누락 {session.usage.missingAttempts}회</p><ul>{Object.entries(session.usage.tokens).map(([field, count]) => <li key={field}>{field}: {count?.toLocaleString()} 토큰</li>)}</ul><p className="hint">제공된 항목만 표시합니다. 캐시·thinking 토큰을 합산하거나 비용을 추정하지 않습니다.</p></section>}
+    {session.ai?.provider === 'gemini' && session.usage && <section className="settings-card" aria-label="Gemini 사용량"><h2>Gemini 요청 사용량</h2><p>요청 시도 {session.usage.attempts}회 · 일부 토큰 정보 미제공 {session.usage.missingAttempts}회</p><ul>{GEMINI_USAGE_FIELDS.map(field => {
+      const provided = session.usage!.providedAttempts[field] ?? 0, count = session.usage!.tokens[field];
+      const label = { promptTokenCount: '입력', candidatesTokenCount: '출력', cachedContentTokenCount: '캐시', thoughtsTokenCount: '추론', totalTokenCount: '전체' }[field];
+      return <li key={field}>{label}: {count === undefined ? '미확인' : `${count.toLocaleString()} 토큰`} · {provided}/{session.usage!.attempts}회 제공{provided < session.usage!.attempts && count !== undefined ? ' (부분 합계)' : ''}</li>;
+    })}</ul><p className="hint">제공되지 않았거나 계산할 수 없는 합계는 미확인입니다. 캐시·추론 토큰을 중복 합산하거나 비용을 추정하지 않습니다.</p></section>}
     {error && <p className="error" role="alert">{error}</p>}
     {notice && <p role="status">{notice}</p>}
     {needsKey && session.ai && <section aria-label="답변을 유지하며 API 키 재등록"><p>이 세션의 서비스는 {AI_NAMES[session.ai.provider]}입니다. 키를 다시 등록해도 답변을 자동 전송하지 않습니다.</p><AIConnectionSummary disabled={saving} fixedProvider={session.ai.provider} onConfigured={() => { setNeedsKey(false); setError(''); setNotice('키를 등록했습니다. 입력한 답변과 전송 범위를 확인하고 직접 다시 제출해 주세요.'); }} /></section>}

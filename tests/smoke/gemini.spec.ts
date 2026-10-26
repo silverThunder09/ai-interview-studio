@@ -105,8 +105,8 @@ test('Gemini speaker roles drive the question UI and live WebGL interviewer with
     await page.getByRole('button', { name: '저장된 기록 보기', exact: true }).click();
     await page.getByRole('button', { name: '이어하기', exact: true }).click();
     await expectQuestion(4, 'a');
-    await expect(page.getByRole('region', { name: 'Gemini 사용량' })).toContainText('요청 시도 8회 · 토큰 정보 누락 4회');
-    await expect(page.getByRole('region', { name: 'Gemini 사용량' })).toContainText('promptTokenCount: 100 토큰');
+    await expect(page.getByRole('region', { name: 'Gemini 사용량' })).toContainText('요청 시도 8회 · 일부 토큰 정보 미제공 8회');
+    await expect(page.getByRole('region', { name: 'Gemini 사용량' })).toContainText('입력: 100 토큰 · 4/8회 제공 (부분 합계)');
     await page.screenshot({ path: 'test-results/gemini-usage-restored.png', fullPage: true });
     const status = await page.evaluate(() => window.studio!.getAIStatus());
     expect(status).toMatchObject({ ok: true, value: { remainingRequests: 28 } }); // 4 successes + four rejected/failed responses; no retry.

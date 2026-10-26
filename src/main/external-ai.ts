@@ -5,7 +5,7 @@ import type { AIQuestionPayload, AIQuestionTransport, AITransportResult } from '
 import { AIQuestionError, AIQuestionProvider } from './ai-question-provider';
 import type { AsyncInterviewProvider } from './interview-service';
 import { LocalQuestionProvider } from './questions';
-import { GEMINI_USAGE_FIELDS, type GeminiUsageTokens } from '../shared/interview';
+import { normalizeGeminiUsage, type GeminiUsageTokens } from '../shared/interview';
 
 // Keys are write-only across IPC. Optional OS-encrypted persistence stays in main.
 export class AICredentials {
@@ -28,11 +28,14 @@ export class AICredentials {
     if (!key) throw new AIQuestionError('AUTHENTICATION');
     return key;
   }
-  acquire(provider: AIProvider): string {
+  preflight(provider: AIProvider): string {
     const key = this.#keys.get(provider);
     if (!key) throw new AIQuestionError('AUTHENTICATION');
     if (this.used >= AI_CALL_LIMIT) throw new AIQuestionError('BUDGET_EXHAUSTED');
-    this.used++; return key;
+    return key;
+  }
+  acquire(provider: AIProvider): string {
+    const key = this.preflight(provider); this.used++; return key;
   }
 }
 export function createAIHandlers(credentials: AICredentials, cancel: () => void) {
@@ -71,15 +74,6 @@ function items(value: unknown): unknown[] { if (!Array.isArray(value)) throw new
 function parseText(value: unknown): unknown {
   if (typeof value !== 'string' || value.length > 8_000) throw new AIQuestionError('INVALID_RESPONSE');
   return JSON.parse(value);
-}
-function geminiUsage(value: unknown): GeminiUsageTokens | undefined {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
-  const source = value as Record<string, unknown>, usage: GeminiUsageTokens = {};
-  for (const field of GEMINI_USAGE_FIELDS) {
-    const count = source[field];
-    if (typeof count === 'number' && Number.isSafeInteger(count) && count >= 0) usage[field] = count;
-  }
-  return Object.keys(usage).length ? usage : undefined;
 }
 async function boundedJSON(response: Response, signal: AbortSignal): Promise<unknown> {
   if (!response.headers.get('content-type')?.toLowerCase().includes('application/json') || !response.body) throw new AIQuestionError('INVALID_RESPONSE');
@@ -122,12 +116,17 @@ export function createExternalTransport(provider: AIProvider, model: string, key
     }
     const response = await request(url, { method: 'POST', headers, body: JSON.stringify(body), signal, redirect: 'error', credentials: 'omit', cache: 'no-store' });
     if (!response.ok) {
-      await response.body?.cancel().catch(() => {});
+      let usage: GeminiUsageTokens | undefined;
+      if (provider === 'gemini') {
+        try { usage = normalizeGeminiUsage(object(await boundedJSON(response, signal)).usageMetadata); } catch { /* No valid metadata was provided. */ }
+      } else await response.body?.cancel().catch(() => {});
       return { ok: false, reason: response.status === 429 ? 'rate-limit' : [401, 403].includes(response.status) ? 'authentication'
-        : response.status === 400 ? 'bad-request' : response.status === 404 ? 'not-found' : 'unavailable' };
+        : response.status === 400 ? 'bad-request' : response.status === 404 ? 'not-found' : 'unavailable', ...(usage ? { usage } : {}) };
     }
+    let usage: GeminiUsageTokens | undefined;
     try {
       const result = object(await boundedJSON(response, signal));
+      usage = provider === 'gemini' ? normalizeGeminiUsage(result.usageMetadata) : undefined;
       let value: unknown;
       if (provider === 'openai') {
         const choices = items(result.choices);
@@ -147,23 +146,25 @@ export function createExternalTransport(provider: AIProvider, model: string, key
         if (parts.length !== 1 || object(parts[0]).thought === true || typeof object(parts[0]).text !== 'string' || object(parts[0]).functionCall) throw new AIQuestionError('INVALID_RESPONSE');
         value = parseText(object(parts[0]).text);
       }
-      const usage = provider === 'gemini' ? geminiUsage(result.usageMetadata) : undefined;
       return { ok: true, value, ...(usage ? { usage } : {}) };
     } catch {
       // Fixed classification only: never forward response bodies, stream errors or secrets.
-      return { ok: false, reason: 'invalid-response' };
+      return { ok: false, reason: 'invalid-response', ...(usage ? { usage } : {}) };
     }
   };
 }
 export class InterviewProviderRouter implements AsyncInterviewProvider {
   constructor(private readonly credentials: AICredentials, private readonly request: typeof fetch = (...args) => fetch(...args)) {}
-  async next(resume: Parameters<AsyncInterviewProvider['next']>[0], previous: Parameters<AsyncInterviewProvider['next']>[1], signal: AbortSignal) {
+  async next(resume: Parameters<AsyncInterviewProvider['next']>[0], previous: Parameters<AsyncInterviewProvider['next']>[1], signal: AbortSignal, onDispatch?: () => void) {
     if (!resume.ai) return new LocalQuestionProvider().next(resume, previous);
     if (signal.aborted) throw new AIQuestionError('CANCELLED');
     const config = resume.ai, number = previous.length + 1;
-    const key = this.credentials.acquire(config.provider);
+    this.credentials.preflight(config.provider);
     const transport: AIQuestionTransport = (payload, abort) => {
       if (abort.aborted) throw new AIQuestionError('CANCELLED');
+      this.credentials.preflight(config.provider);
+      onDispatch?.();
+      const key = this.credentials.acquire(config.provider);
       return createExternalTransport(config.provider, config.model, key, this.request)(payload, abort);
     };
     return new AIQuestionProvider(transport).next({ questionNumber: number,

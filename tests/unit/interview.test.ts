@@ -144,12 +144,25 @@ describe('durable SQLite sessions and transitions', () => {
     const session = store.start(input, { kind: 'experience', text: '합성 질문', evidence: null, speakerId: 'b' });
     store.reserveUsage('00000000-0000-4000-8000-000000000002', session.id);
     store.finishUsage('00000000-0000-4000-8000-000000000002', 'succeeded', { promptTokenCount: 5, totalTokenCount: 8 });
-    expect(store.get(session.id).usage).toEqual({ attempts: 1, missingAttempts: 0, tokens: { promptTokenCount: 5, totalTokenCount: 8 } });
+    expect(store.get(session.id).usage).toEqual({ attempts: 1, missingAttempts: 1, tokens: { promptTokenCount: 5, totalTokenCount: 8 }, providedAttempts: { promptTokenCount: 1, totalTokenCount: 1 } });
     store.delete(session.id);
     const database = new DatabaseSync(store.path);
     expect(database.prepare('SELECT COUNT(*) AS count FROM usage_ledger').get()?.count).toBe(1);
     database.close(); store.deleteAll();
     const empty = new DatabaseSync(store.path); expect(empty.prepare('SELECT COUNT(*) AS count FROM usage_ledger').get()?.count).toBe(0); empty.close();
+  });
+  it('marks each partially provided usage field as a partial sum rather than complete billing', () => {
+    const store = storage(), base = startFixture();
+    const session = store.start({ ...base, ai: { provider: 'gemini' as const, model: 'synthetic-model', quote: base.reviewedText, transmissionConsent: true as const } }, { kind: 'experience', text: '합성 질문', evidence: null });
+    store.reserveUsage('first', session.id); store.finishUsage('first', 'succeeded', { promptTokenCount: 10, totalTokenCount: 15 });
+    store.reserveUsage('second', session.id); store.finishUsage('second', 'succeeded', { promptTokenCount: 20 });
+    expect(store.get(session.id).usage).toEqual({ attempts: 2, missingAttempts: 2, tokens: { promptTokenCount: 30, totalTokenCount: 15 }, providedAttempts: { promptTokenCount: 2, totalTokenCount: 1 } });
+  });
+  it('keeps an overflowing token sum unknown without losing the provided-attempt counts', () => {
+    const store = storage(), base = startFixture();
+    const session = store.start(base);
+    for (const id of ['first', 'second']) { store.reserveUsage(id, session.id); store.finishUsage(id, 'succeeded', { totalTokenCount: Number.MAX_SAFE_INTEGER }); }
+    expect(store.get(session.id).usage).toMatchObject({ attempts: 2, missingAttempts: 2, tokens: {}, providedAttempts: { totalTokenCount: 2 } });
   });
   it('refuses a future schema and corrupt database without automatically resetting their contents', () => {
     const file = path(), future = new DatabaseSync(file);
