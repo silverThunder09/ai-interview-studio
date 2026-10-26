@@ -3,6 +3,7 @@ import { RESUME_LIMITS } from './resume';
 import { isAIConfig, type AIInterviewConfig } from './ai';
 
 export const INTERVIEW_LIMITS = Object.freeze({ sessions: 100, answerChars: 10_000, turns: 12, usageRows: 3_600 });
+export const SHARED_CONTEXT_LIMITS = Object.freeze({ quoteChars: 180, questionChars: 500, answerChars: 1_000, currentAnswerChars: 2_000, turns: 2, historyJSONChars: 4_000, dataJSONChars: 8_000 });
 export const GEMINI_USAGE_FIELDS = ['promptTokenCount', 'candidatesTokenCount', 'cachedContentTokenCount', 'thoughtsTokenCount', 'totalTokenCount'] as const;
 export type GeminiUsageField = typeof GEMINI_USAGE_FIELDS[number];
 export type GeminiUsageTokens = Partial<Record<GeminiUsageField, number>>;
@@ -28,7 +29,17 @@ export interface StartInterviewRequest {
   storageConsent: true;
   ai?: AIInterviewConfig;
 }
-export interface SubmitAnswerRequest { sessionId: string; questionId: string; answer: string; transmissionConsent?: true }
+export interface SubmitAnswerRequest { sessionId: string; questionId: string; answer: string; transmissionConsent?: true; contextPreview?: { digest: string; consent: true } }
+export interface SharedContextPreviewRequest { sessionId: string; questionId: string; answer: string }
+export interface SharedContextTurn { question: string; answer: string }
+export interface SharedContextData {
+  selectedQuote: string; recentCompleted: SharedContextTurn[]; currentAnswer: string;
+  scope: { includedCompleted: number; omittedCompleted: number; excerpts: true };
+}
+export interface SharedContextPreview {
+  sessionId: string; questionId: string; role: { kind: InterviewQuestion['kind']; speakerId: 'a' | 'b' };
+  data: SharedContextData; digest: string;
+}
 export interface DeleteInterviewRequest { sessionId: string; confirm: true }
 export interface DeleteAllInterviewsRequest { confirm: 'DELETE_ALL_INTERVIEWS' }
 export interface EvidenceQuote { origin: 'source' | 'reviewed' | 'answer'; location: string; text: string }
@@ -75,9 +86,33 @@ export function isStartInterviewRequest(value: unknown): value is StartInterview
 }
 export function isSubmitAnswerRequest(value: unknown): value is SubmitAnswerRequest {
   const consent = typeof value === 'object' && value !== null && Object.hasOwn(value, 'transmissionConsent');
-  return record(value, consent ? ['sessionId', 'questionId', 'answer', 'transmissionConsent'] : ['sessionId', 'questionId', 'answer']) &&
+  const preview = typeof value === 'object' && value !== null && Object.hasOwn(value, 'contextPreview');
+  const keys = ['sessionId', 'questionId', 'answer']; if (consent) keys.push('transmissionConsent'); if (preview) keys.push('contextPreview');
+  return record(value, keys) &&
     (!consent || value.transmissionConsent === true) && isInterviewId(value.sessionId) &&
-    isInterviewId(value.questionId) && text(value.answer, INTERVIEW_LIMITS.answerChars);
+    isInterviewId(value.questionId) && text(value.answer, INTERVIEW_LIMITS.answerChars) && (!preview ||
+      record(value.contextPreview, ['digest', 'consent']) && value.contextPreview.consent === true && typeof value.contextPreview.digest === 'string' && /^[0-9a-f]{64}$/.test(value.contextPreview.digest));
+}
+export function isSharedContextPreviewRequest(value: unknown): value is SharedContextPreviewRequest {
+  return record(value, ['sessionId', 'questionId', 'answer']) && isInterviewId(value.sessionId) &&
+    isInterviewId(value.questionId) && text(value.answer, SHARED_CONTEXT_LIMITS.currentAnswerChars);
+}
+
+export function buildSharedContextData(selectedQuote: string, completed: readonly InterviewTurn[], currentAnswer: string): SharedContextData {
+  if (!text(selectedQuote, SHARED_CONTEXT_LIMITS.quoteChars) || !text(currentAnswer, SHARED_CONTEXT_LIMITS.currentAnswerChars)) throw new Error('INVALID_SHARED_CONTEXT');
+  if (!Array.isArray(completed) || !completed.every(turn => typeof turn === 'object' && turn !== null && isInterviewQuestion(turn.question) &&
+    (turn.answer === null || text(turn.answer, INTERVIEW_LIMITS.answerChars)))) throw new Error('INVALID_SHARED_CONTEXT');
+  const answered = completed.filter((turn): turn is InterviewTurn & { answer: string } => turn.answer !== null);
+  const recentCompleted = answered.slice(-SHARED_CONTEXT_LIMITS.turns).map(turn => ({
+    question: turn.question.text.slice(0, SHARED_CONTEXT_LIMITS.questionChars), answer: turn.answer.slice(0, SHARED_CONTEXT_LIMITS.answerChars),
+  }));
+  const historyJSON = JSON.stringify(recentCompleted);
+  if (historyJSON.length > SHARED_CONTEXT_LIMITS.historyJSONChars) throw new Error('SHARED_HISTORY_TOO_LARGE');
+  const data: SharedContextData = { selectedQuote, recentCompleted, currentAnswer, scope: {
+    includedCompleted: recentCompleted.length, omittedCompleted: answered.length - recentCompleted.length, excerpts: true,
+  } };
+  if (JSON.stringify(data).length > SHARED_CONTEXT_LIMITS.dataJSONChars) throw new Error('SHARED_DATA_TOO_LARGE');
+  return data;
 }
 export function isDeleteInterviewRequest(value: unknown): value is DeleteInterviewRequest {
   return record(value, ['sessionId', 'confirm']) && isInterviewId(value.sessionId) && value.confirm === true;

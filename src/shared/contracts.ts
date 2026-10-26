@@ -3,7 +3,7 @@ import type { AvatarAsset, AvatarSlot, StagedAvatar } from './avatar';
 import type { VoiceRequest, VoiceStart, VoiceStatus } from './voice';
 import type { SpeechRequest, SpeechStatus } from './speech';
 import type { AIPreferences, AIKeyRequest, AIProvider, AIStatus } from './ai';
-import type { DeleteAllInterviewsRequest, DeleteInterviewRequest, InterviewHistory, InterviewSession, StartInterviewRequest, SubmitAnswerRequest } from './interview';
+import type { DeleteAllInterviewsRequest, DeleteInterviewRequest, InterviewHistory, InterviewSession, SharedContextPreview, SharedContextPreviewRequest, StartInterviewRequest, SubmitAnswerRequest } from './interview';
 
 export const CHANNELS = {
   avatarSelect: 'studio:avatar-select', avatarGet: 'studio:avatar-get', avatarCommit: 'studio:avatar-commit', avatarReset: 'studio:avatar-reset',
@@ -11,6 +11,7 @@ export const CHANNELS = {
   avatarQuality: 'studio:avatar-quality',
   interviewHistory: 'studio:interview-history', interviewGet: 'studio:interview-get',
   interviewStart: 'studio:interview-start', interviewAnswer: 'studio:interview-answer',
+  interviewContextPreview: 'studio:interview-context-preview',
   interviewDelete: 'studio:interview-delete', interviewDeleteAll: 'studio:interview-delete-all',
   interviewCancel: 'studio:interview-cancel',
   aiStatus: 'studio:ai-status', aiKey: 'studio:ai-key', aiClear: 'studio:ai-clear',
@@ -43,6 +44,7 @@ export interface DesktopAPI {
   getInterview(sessionId: string): Promise<Result<InterviewSession>>;
   startInterview(request: StartInterviewRequest): Promise<Result<InterviewSession>>;
   submitInterviewAnswer(request: SubmitAnswerRequest): Promise<Result<InterviewSession>>;
+  submitInterviewAnswer(request: SharedContextPreviewRequest & { preview: true }): Promise<Result<SharedContextPreview>>;
   cancelInterviewOperation(operationId: string): Promise<Result<boolean>>;
   deleteInterview(request: DeleteInterviewRequest): Promise<Result<null>>;
   deleteAllInterviews(request: DeleteAllInterviewsRequest): Promise<Result<null>>;

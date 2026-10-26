@@ -1,5 +1,5 @@
 import type { Result } from '../shared/contracts';
-import { isDeleteAllInterviewsRequest, isDeleteInterviewRequest, isInterviewId, isStartInterviewRequest, isSubmitAnswerRequest } from '../shared/interview';
+import { isDeleteAllInterviewsRequest, isDeleteInterviewRequest, isInterviewId, isSharedContextPreviewRequest, isStartInterviewRequest, isSubmitAnswerRequest } from '../shared/interview';
 import { InterviewStoreError, type InterviewStore } from './interview-store';
 import { InterviewService } from './interview-service';
 import { AIQuestionError } from './ai-question-provider';
@@ -31,6 +31,10 @@ export function createInterviewHandlers(store: () => InterviewStore, service = n
     async answer(args: unknown[]) {
       const request = args[0];
       return args.length !== 1 || !isSubmitAnswerRequest(request) ? invalid() : performAsync(() => service.answer(request));
+    },
+    preview(args: unknown[]) {
+      const request = args[0];
+      return args.length !== 1 || !isSharedContextPreviewRequest(request) ? invalid() : perform(() => service.preview(request));
     },
     cancel(args: unknown[]) { return args.length !== 1 || !isInterviewId(args[0]) ? invalid() : perform(() => service.cancel(args[0] as string)); },
     delete(args: unknown[]) {
