@@ -5,6 +5,8 @@ import { ConnectionContext } from '../AIOptions';
 import { AvatarStage, type StageMetrics } from './stage';
 
 const names = { a: 'A · 기술 면접관', b: 'B · 경험·협업 면접관' };
+type ModelState = 'default' | 'restoring' | 'active' | 'failed';
+const defaultModel = '기본 3D 캐릭터 · 실사 에셋 아님';
 export function AvatarPanel({ active = 'a', waiting = false, answering = false, preview = false }: {
   active?: AvatarSlot | null; waiting?: boolean; answering?: boolean; preview?: boolean;
 }) {
@@ -13,7 +15,8 @@ export function AvatarPanel({ active = 'a', waiting = false, answering = false, 
   const [error, setError] = useState(''), [ready, setReady] = useState(false), [busy, setBusy] = useState(true);
   const [graphicsFailed, setGraphicsFailed] = useState(false), [canvasKey, setCanvasKey] = useState(0);
   const [metrics, setMetrics] = useState<StageMetrics>();
-  const [models, setModels] = useState<Record<AvatarSlot, string>>({ a: '기본 3D 캐릭터 · 실사 에셋 아님', b: '기본 3D 캐릭터 · 실사 에셋 아님' });
+  const [models, setModels] = useState<Record<AvatarSlot, string>>({ a: defaultModel, b: defaultModel });
+  const [modelStates, setModelStates] = useState<Record<AvatarSlot, ModelState>>({ a: 'restoring', b: 'restoring' });
   const [speaker, setSpeaker] = useState<AvatarSlot | null>(null), [selected, setSelected] = useState<AvatarSlot>('a');
   const [paused, setPaused] = useState(false), [quality, setQuality] = useState<AvatarQuality>('low');
   const [qualityReady, setQualityReady] = useState(false), [qualitySaving, setQualitySaving] = useState(false), [qualityWarning, setQualityWarning] = useState('');
@@ -31,7 +34,8 @@ export function AvatarPanel({ active = 'a', waiting = false, answering = false, 
   }, []);
   useEffect(() => {
     live.current = true;
-    setModels({ a: '기본 3D 캐릭터 · 실사 에셋 아님', b: '기본 3D 캐릭터 · 실사 에셋 아님' });
+    setModels({ a: defaultModel, b: defaultModel });
+    setModelStates({ a: 'restoring', b: 'restoring' });
     let instance: AvatarStage;
     setReady(false); setBusy(true); setMetrics(undefined);
     try { instance = new AvatarStage(canvas.current!, setMetrics, message => { if (live.current && stage.current === instance) { setError(message); setGraphicsFailed(true); setReady(false); } }); stage.current = instance; setReady(true); }
@@ -44,12 +48,15 @@ export function AvatarPanel({ active = 'a', waiting = false, answering = false, 
         try {
           const stored = await window.studio!.getAvatar(slot);
           if (!live.current || stage.current !== instance) return;
-          if (!stored.ok) { setError(stored.error.message); continue; }
+          if (!stored.ok) { setModelStates(states => ({ ...states, [slot]: 'failed' })); continue; }
           if (stored.value) {
             const capability = await instance.replace(slot, stored.value);
-            if (live.current && stage.current === instance && capability) setModels(m => ({ ...m, [slot]: `${stored.value!.name} · ${capability}` }));
-          }
-        } catch { if (live.current && stage.current === instance) setError('저장한 모델을 복원하지 못했습니다. 기본 캐릭터로 표시합니다. 다시 선택하거나 기본 모델로 초기화하세요.'); }
+            if (live.current && stage.current === instance && capability) {
+              setModels(m => ({ ...m, [slot]: `${stored.value!.name} · ${capability}` }));
+              setModelStates(states => ({ ...states, [slot]: 'active' }));
+            }
+          } else setModelStates(states => ({ ...states, [slot]: 'default' }));
+        } catch { if (live.current && stage.current === instance) setModelStates(states => ({ ...states, [slot]: 'failed' })); }
       }
       if (live.current && stage.current === instance) setBusy(false);
     })();
@@ -75,7 +82,10 @@ export function AvatarPanel({ active = 'a', waiting = false, answering = false, 
         const saved = await window.studio!.commitAvatar(slot, asset.token);
         if (!saved.ok) throw new Error('Save failed'); return true;
       });
-      if (live.current && stage.current === instance && capability) setModels(m => ({ ...m, [slot]: `${asset.name} · ${capability}` }));
+      if (live.current && stage.current === instance && capability) {
+        setModels(m => ({ ...m, [slot]: `${asset.name} · ${capability}` }));
+        setModelStates(states => ({ ...states, [slot]: 'active' }));
+      }
     } catch { if (live.current && stage.current === instance) setError('모델 로딩·저장에 실패했습니다. 기존 모델을 유지합니다. 텍스처·리깅·자기 포함 형식을 확인하세요.'); }
     finally { if (live.current && stage.current === instance) setBusy(false); }
   }
@@ -84,8 +94,23 @@ export function AvatarPanel({ active = 'a', waiting = false, answering = false, 
     try {
       const result = await window.studio!.resetAvatar(slot); if (!live.current || stage.current !== instance) return;
       if (!result.ok) { setError(result.error.message); return; }
-      instance.reset(slot); setModels(m => ({ ...m, [slot]: '기본 3D 캐릭터 · 실사 에셋 아님' }));
+      instance.reset(slot); setModels(m => ({ ...m, [slot]: defaultModel })); setModelStates(states => ({ ...states, [slot]: 'default' }));
     } catch { if (live.current && stage.current === instance) setError('모델 초기화에 실패했습니다. 다시 시도하세요.'); }
+    finally { if (live.current && stage.current === instance) setBusy(false); }
+  }
+  async function retryRestore(slot: AvatarSlot) {
+    if (busy || !stage.current) return;
+    const instance = stage.current; setBusy(true); setModelStates(states => ({ ...states, [slot]: 'restoring' }));
+    try {
+      const stored = await window.studio!.getAvatar(slot);
+      if (!live.current || stage.current !== instance) return;
+      if (!stored.ok || !stored.value) { setModelStates(states => ({ ...states, [slot]: 'failed' })); return; }
+      const capability = await instance.replace(slot, stored.value);
+      if (live.current && stage.current === instance && capability) {
+        setModels(models => ({ ...models, [slot]: `${stored.value!.name} · ${capability}` }));
+        setModelStates(states => ({ ...states, [slot]: 'active' }));
+      }
+    } catch { if (live.current && stage.current === instance) setModelStates(states => ({ ...states, [slot]: 'failed' })); }
     finally { if (live.current && stage.current === instance) setBusy(false); }
   }
   function animate() {
@@ -120,7 +145,7 @@ export function AvatarPanel({ active = 'a', waiting = false, answering = false, 
     <p className="hint">마우스 드래그·휠 또는 방향키로 시점을 바꿀 수 있습니다. 3D 화면을 선택한 뒤 +/=로 확대하고 -로 축소하며 Home으로 초기화합니다. 한 화면에서 두 모델을 렌더링합니다. {metrics && !paused && !settingsOpen ? `현재 측정 ${metrics.fps}FPS · 삼각형 ${metrics.triangles.toLocaleString()} · geometry ${metrics.geometries} · texture ${metrics.textures}` : '최대 30FPS · 경량 품질 기본'}</p>
     {error && <div><p className="error" role="alert">{error}</p>{graphicsFailed && <button className="secondary" onClick={() => { clearTimeout(timer.current); setSpeaker(null); setError(''); setGraphicsFailed(false); setCanvasKey(key => key + 1); }}>3D 화면 다시 시작</button>}</div>}
     <details className="avatar-config"><summary>면접관 모델 설정</summary><p className="hint">사용 권한이 있는 자기 포함 GLB/glTF 2.0만 선택하세요(20MB 이하). 외부 파일·URL·압축 확장은 지원하지 않습니다. 선택 모델은 이 PC에 복사해 재시작 후 복원하며 기본 모델로 변경하면 앱 사본만 삭제합니다. 원본 파일은 유지합니다.</p>
-      <div className="avatar-models">{AVATAR_SLOTS.map(slot => <article key={slot}><h3>{names[slot]}</h3><p>{models[slot]}</p><button className="secondary" disabled={busy || !ready} onClick={() => void selectModel(slot)}>{slot.toUpperCase()} 모델 불러오기</button><button className="secondary" disabled={busy || !ready} onClick={() => void reset(slot)}>{slot.toUpperCase()} 기본 모델</button></article>)}</div>
+      <div className="avatar-models">{AVATAR_SLOTS.map(slot => <article key={slot}><h3>{names[slot]}</h3><p>{models[slot]}</p><p role={modelStates[slot] === 'failed' ? 'alert' : 'status'}>{modelStates[slot] === 'default' ? '기본 모델' : modelStates[slot] === 'restoring' ? '저장 모델 복원 중' : modelStates[slot] === 'active' ? '저장 모델 사용 중' : `${slot.toUpperCase()} 모델 복원 실패 · 기본 캐릭터로 표시 중`}</p>{modelStates[slot] === 'failed' && <button className="secondary" disabled={busy || !ready} onClick={() => void retryRestore(slot)}>{slot.toUpperCase()} 모델 복원 다시 시도</button>}<button className="secondary" disabled={busy || !ready} onClick={() => void selectModel(slot)}>{slot.toUpperCase()} 모델 불러오기</button><button className="secondary" disabled={busy || !ready} onClick={() => void reset(slot)}>{slot.toUpperCase()} 기본 모델</button></article>)}</div>
     </details>
     {preview && <div className="avatar-preview"><label>동작 확인 면접관 <select value={selected} onChange={e => { setSelected(e.target.value as AvatarSlot); setSpeaker(null); clearTimeout(timer.current); }}><option value="a">A · 기술</option><option value="b">B · 경험·협업</option></select></label><button className="secondary" disabled={!ready || paused || settingsOpen} onClick={animate}>발언 동작 미리보기 (무음)</button><button className="secondary" onClick={() => { clearTimeout(timer.current); setSpeaker(null); }}>동작 미리보기 중지</button><p className="hint">5초 동안 입·고개 움직임을 확인합니다. 음성 재생·립싱크·Gemini 역할 생성은 아직 연결하지 않았습니다. 실제 음량 립싱크는 후속 단계입니다.</p></div>}
     {busy && <p role="status">모델 검증·복원 중입니다.</p>}
