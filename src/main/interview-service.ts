@@ -1,12 +1,14 @@
 import { createHash } from 'node:crypto';
-import type { InterviewSession, StartInterviewRequest, SubmitAnswerRequest } from '../shared/interview';
+import { randomUUID } from 'node:crypto';
+import type { GeminiUsageTokens, InterviewSession, StartInterviewRequest, SubmitAnswerRequest } from '../shared/interview';
 import { INTERVIEW_LIMITS } from '../shared/interview';
 import { AIQuestionError, AI_QUESTION_LIMITS } from './ai-question-provider';
 import { InterviewStoreError, type InterviewStore } from './interview-store';
 import { LocalQuestionProvider, type QuestionDraft } from './questions';
 
 export interface AsyncInterviewProvider {
-  next(resume: Pick<StartInterviewRequest, 'reviewedText' | 'sourceSections' | 'ai'>, previous: InterviewSession['turns'], signal: AbortSignal): QuestionDraft | null | Promise<QuestionDraft | null>;
+  next(resume: Pick<StartInterviewRequest, 'reviewedText' | 'sourceSections' | 'ai'>, previous: InterviewSession['turns'], signal: AbortSignal): (QuestionDraft & { usage?: GeminiUsageTokens }) | null | Promise<(QuestionDraft & { usage?: GeminiUsageTokens }) | null>;
+  tracksUsage?(resume: Pick<StartInterviewRequest, 'reviewedText' | 'sourceSections' | 'ai'>): boolean;
 }
 interface Operation { id: string; signature: string; sessionId: string | null; controller: AbortController; promise: Promise<InterviewSession> }
 
@@ -49,10 +51,18 @@ export class InterviewService {
       const store = this.store();
       const existing = store.findStart(request);
       if (existing) return existing;
-      const question = await this.provider.next(structuredClone(request), [], signal);
-      if (signal.aborted || this.closed) throw new AIQuestionError('CANCELLED');
+      const usage = this.provider.tracksUsage?.(request) === true ? randomUUID() : undefined;
+      if (usage) store.reserveUsage(usage, null);
+      let question;
+      try { question = await this.provider.next(structuredClone(request), [], signal); }
+      catch (error) { if (usage) store.finishUsage(usage, error instanceof AIQuestionError && error.code === 'CANCELLED' ? 'cancelled' : error instanceof AIQuestionError && error.code === 'TIMEOUT' ? 'timeout' : 'failed'); throw error; }
+      if (signal.aborted || this.closed) { if (usage) store.finishUsage(usage, 'cancelled'); throw new AIQuestionError('CANCELLED'); }
       if (!question) throw new Error('Missing first question');
-      return store.start(request, question);
+      let saved;
+      try { saved = store.start(request, question); }
+      catch (error) { if (usage) store.finishUsage(usage, 'failed'); throw error; }
+      if (usage) store.finishUsage(usage, 'succeeded', question.usage, saved.id);
+      return store.get(saved.id);
     });
   }
   answer(value: SubmitAnswerRequest): Promise<InterviewSession> {
@@ -62,10 +72,18 @@ export class InterviewService {
       const { session, pending } = store.prepareAnswer(request);
       if (!pending) return session;
       session.turns.at(-1)!.answer = request.answer;
-      const next = session.turns.length === INTERVIEW_LIMITS.turns ? null : await this.provider.next(structuredClone(session), structuredClone(session.turns), signal);
-      if (signal.aborted || this.closed) throw new AIQuestionError('CANCELLED');
+      const usage = session.turns.length < INTERVIEW_LIMITS.turns && this.provider.tracksUsage?.(session) === true ? randomUUID() : undefined;
+      if (usage) store.reserveUsage(usage, session.id);
+      let next;
+      try { next = session.turns.length === INTERVIEW_LIMITS.turns ? null : await this.provider.next(structuredClone(session), structuredClone(session.turns), signal); }
+      catch (error) { if (usage) store.finishUsage(usage, error instanceof AIQuestionError && error.code === 'CANCELLED' ? 'cancelled' : error instanceof AIQuestionError && error.code === 'TIMEOUT' ? 'timeout' : 'failed'); throw error; }
+      if (signal.aborted || this.closed) { if (usage) store.finishUsage(usage, 'cancelled'); throw new AIQuestionError('CANCELLED'); }
       if (!next && session.turns.length < INTERVIEW_LIMITS.turns) throw new Error('Missing next question');
-      return store.answer(request, { next });
+      let saved;
+      try { saved = store.answer(request, { next }); }
+      catch (error) { if (usage) store.finishUsage(usage, 'failed'); throw error; }
+      if (usage) store.finishUsage(usage, 'succeeded', next?.usage, session.id);
+      return store.get(saved.id);
     });
   }
   cancel(id: string): boolean {

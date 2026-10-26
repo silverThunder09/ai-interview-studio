@@ -2,7 +2,15 @@ import type { ResumeSection } from './resume';
 import { RESUME_LIMITS } from './resume';
 import { isAIConfig, type AIInterviewConfig } from './ai';
 
-export const INTERVIEW_LIMITS = Object.freeze({ sessions: 100, answerChars: 10_000, turns: 12 });
+export const INTERVIEW_LIMITS = Object.freeze({ sessions: 100, answerChars: 10_000, turns: 12, usageRows: 3_600 });
+export const GEMINI_USAGE_FIELDS = ['promptTokenCount', 'candidatesTokenCount', 'cachedContentTokenCount', 'thoughtsTokenCount', 'totalTokenCount'] as const;
+export type GeminiUsageField = typeof GEMINI_USAGE_FIELDS[number];
+export type GeminiUsageTokens = Partial<Record<GeminiUsageField, number>>;
+export interface InterviewUsage {
+  attempts: number;
+  missingAttempts: number;
+  tokens: GeminiUsageTokens;
+}
 export interface StartInterviewRequest {
   requestId: string;
   reviewedText: string;
@@ -22,7 +30,7 @@ export interface InterviewTurn { question: InterviewQuestion; answer: string | n
 export interface InterviewSession {
   id: string; createdAt: string; status: 'active' | 'completed';
   reviewedText: string; sourceSections: ResumeSection[]; turns: InterviewTurn[];
-  mode: 'local-practice' | 'external-ai'; ai?: AIInterviewConfig;
+  mode: 'local-practice' | 'external-ai'; ai?: AIInterviewConfig; usage?: InterviewUsage;
 }
 export interface InterviewSummary {
   id: string; createdAt: string; status: 'active' | 'completed'; answered: number;

@@ -5,6 +5,7 @@ import type { AIQuestionPayload, AIQuestionTransport, AITransportResult } from '
 import { AIQuestionError, AIQuestionProvider } from './ai-question-provider';
 import type { AsyncInterviewProvider } from './interview-service';
 import { LocalQuestionProvider } from './questions';
+import { GEMINI_USAGE_FIELDS, type GeminiUsageTokens } from '../shared/interview';
 
 // Keys are write-only across IPC. Optional OS-encrypted persistence stays in main.
 export class AICredentials {
@@ -70,6 +71,15 @@ function items(value: unknown): unknown[] { if (!Array.isArray(value)) throw new
 function parseText(value: unknown): unknown {
   if (typeof value !== 'string' || value.length > 8_000) throw new AIQuestionError('INVALID_RESPONSE');
   return JSON.parse(value);
+}
+function geminiUsage(value: unknown): GeminiUsageTokens | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const source = value as Record<string, unknown>, usage: GeminiUsageTokens = {};
+  for (const field of GEMINI_USAGE_FIELDS) {
+    const count = source[field];
+    if (typeof count === 'number' && Number.isSafeInteger(count) && count >= 0) usage[field] = count;
+  }
+  return Object.keys(usage).length ? usage : undefined;
 }
 async function boundedJSON(response: Response, signal: AbortSignal): Promise<unknown> {
   if (!response.headers.get('content-type')?.toLowerCase().includes('application/json') || !response.body) throw new AIQuestionError('INVALID_RESPONSE');
@@ -137,7 +147,8 @@ export function createExternalTransport(provider: AIProvider, model: string, key
         if (parts.length !== 1 || object(parts[0]).thought === true || typeof object(parts[0]).text !== 'string' || object(parts[0]).functionCall) throw new AIQuestionError('INVALID_RESPONSE');
         value = parseText(object(parts[0]).text);
       }
-      return { ok: true, value };
+      const usage = provider === 'gemini' ? geminiUsage(result.usageMetadata) : undefined;
+      return { ok: true, value, ...(usage ? { usage } : {}) };
     } catch {
       // Fixed classification only: never forward response bodies, stream errors or secrets.
       return { ok: false, reason: 'invalid-response' };
@@ -160,4 +171,5 @@ export class InterviewProviderRouter implements AsyncInterviewProvider {
       answer: number % 2 === 0 ? previous.at(-1)?.answer : null,
       ...(config.provider === 'gemini' ? { speakerId: number <= 2 ? 'b' as const : 'a' as const } : {}) }, signal);
   }
+  tracksUsage(resume: Parameters<AsyncInterviewProvider['next']>[0]): boolean { return resume.ai?.provider === 'gemini'; }
 }

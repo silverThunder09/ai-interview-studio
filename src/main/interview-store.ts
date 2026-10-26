@@ -2,8 +2,8 @@ import { mkdirSync, chmodSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
-import type { InterviewHistory, InterviewQuestion, InterviewSession, InterviewSummary, StartInterviewRequest, SubmitAnswerRequest } from '../shared/interview';
-import { INTERVIEW_LIMITS, isInterviewId, isInterviewQuestion, isStartInterviewRequest } from '../shared/interview';
+import type { GeminiUsageTokens, InterviewHistory, InterviewQuestion, InterviewSession, InterviewSummary, StartInterviewRequest, SubmitAnswerRequest } from '../shared/interview';
+import { GEMINI_USAGE_FIELDS, INTERVIEW_LIMITS, isInterviewId, isInterviewQuestion, isStartInterviewRequest } from '../shared/interview';
 import { LocalQuestionProvider, type QuestionDraft, type QuestionProvider } from './questions';
 import { isAIConfig } from '../shared/ai';
 
@@ -21,7 +21,7 @@ export class InterviewStore {
     this.database = new DatabaseSync(path, { enableForeignKeyConstraints: true, enableDoubleQuotedStringLiterals: false, allowExtension: false });
     try {
       const version = Number(this.database.prepare('PRAGMA user_version').get()?.user_version);
-      if (version > 2) throw new InterviewStoreError('이 앱보다 새 버전의 기록 저장소입니다. 최신 앱으로 열어 주세요.');
+      if (version > 3) throw new InterviewStoreError('이 앱보다 새 버전의 기록 저장소입니다. 최신 앱으로 열어 주세요.');
       this.database.exec('PRAGMA journal_mode=DELETE; PRAGMA synchronous=FULL; PRAGMA secure_delete=ON; PRAGMA busy_timeout=1000;');
       if (version === 0) this.transaction(() => {
         this.database.exec(`
@@ -41,6 +41,14 @@ export class InterviewStore {
       });
       if (version < 2) this.transaction(() => {
         this.database.exec('ALTER TABLE sessions ADD COLUMN ai_config TEXT; PRAGMA user_version=2;');
+      });
+      if (version < 3) this.transaction(() => {
+        this.database.exec(`CREATE TABLE usage_ledger (
+          attempt_id TEXT PRIMARY KEY, session_id TEXT REFERENCES sessions(id) ON DELETE CASCADE,
+          provider TEXT NOT NULL CHECK(provider='gemini'), status TEXT NOT NULL CHECK(status IN ('pending','succeeded','failed','cancelled','timeout')),
+          prompt_tokens INTEGER, candidates_tokens INTEGER, cached_tokens INTEGER, thoughts_tokens INTEGER, total_tokens INTEGER,
+          created_at TEXT NOT NULL
+        ) STRICT; PRAGMA user_version=3;`);
       });
       if (process.platform !== 'win32') chmodSync(path, 0o600);
     } catch (error) { this.database.close(); throw error; }
@@ -75,7 +83,15 @@ export class InterviewStore {
       if (pending ? turn.answer !== null : typeof turn.answer !== 'string' || !turn.answer.trim() || turn.answer.includes('\0') || turn.answer.length > (ai ? 2_000 : INTERVIEW_LIMITS.answerChars)) throw damaged();
       return { question, answer: turn.answer };
     });
-    return { id: row.id, createdAt: row.created_at, status: row.status, mode: ai ? 'external-ai' : 'local-practice', ...(isAIConfig(ai) ? { ai } : {}), reviewedText: row.reviewed_text, sourceSections: resume.sourceSections, turns };
+    const usageRows = this.database.prepare('SELECT status,prompt_tokens,candidates_tokens,cached_tokens,thoughts_tokens,total_tokens FROM usage_ledger WHERE session_id=?').all(id);
+    const usage = usageRows.length ? { attempts: usageRows.length, missingAttempts: 0, tokens: {} as GeminiUsageTokens } : undefined;
+    if (usage) for (const usageRow of usageRows) {
+      let provided = false;
+      const columns = ['prompt_tokens', 'candidates_tokens', 'cached_tokens', 'thoughts_tokens', 'total_tokens'] as const;
+      columns.forEach((column, index) => { const count = usageRow[column]; if (typeof count === 'number') { provided = true; const field = GEMINI_USAGE_FIELDS[index]!; usage.tokens[field] = (usage.tokens[field] ?? 0) + count; } });
+      if (!provided) usage.missingAttempts++;
+    }
+    return { id: row.id, createdAt: row.created_at, status: row.status, mode: ai ? 'external-ai' : 'local-practice', ...(isAIConfig(ai) ? { ai } : {}), reviewedText: row.reviewed_text, sourceSections: resume.sourceSections, turns, ...(usage ? { usage } : {}) };
   }
   history(): InterviewHistory {
     const rows = this.database.prepare(`SELECT s.id,s.created_at,s.status,s.ai_config,COUNT(t.answer) AS answered FROM sessions s
@@ -84,8 +100,21 @@ export class InterviewStore {
     return { sessions, storagePath: this.path, limit: INTERVIEW_LIMITS.sessions };
   }
   private addQuestion(sessionId: string, draft: Omit<InterviewQuestion, 'id' | 'number'>, sequence: number) {
-    const question: InterviewQuestion = { ...draft, id: randomUUID(), number: sequence + 1 };
+    const { kind, text, evidence, speakerId } = draft;
+    const question: InterviewQuestion = { kind, text, evidence, ...(speakerId ? { speakerId } : {}), id: randomUUID(), number: sequence + 1 };
     this.database.prepare('INSERT INTO turns(session_id,sequence,question_id,question,answer) VALUES(?,?,?,?,NULL)').run(sessionId, sequence, question.id, JSON.stringify(question));
+  }
+  reserveUsage(attemptId: string, sessionId: string | null): void {
+    this.transaction(() => {
+      const count = Number(this.database.prepare('SELECT COUNT(*) AS count FROM usage_ledger').get()?.count);
+      if (count >= INTERVIEW_LIMITS.usageRows) throw new InterviewStoreError('Gemini 요청 이력은 3,600개까지 저장할 수 있습니다. 전체 기록을 삭제한 뒤 다시 시도해 주세요.');
+      this.database.prepare("INSERT INTO usage_ledger(attempt_id,session_id,provider,status,created_at) VALUES(?,?,'gemini','pending',?)").run(attemptId, sessionId, new Date().toISOString());
+    });
+  }
+  finishUsage(attemptId: string, status: 'succeeded' | 'failed' | 'cancelled' | 'timeout', tokens?: GeminiUsageTokens, sessionId?: string): void {
+    const values = GEMINI_USAGE_FIELDS.map(field => tokens?.[field] ?? null);
+    const result = this.database.prepare(`UPDATE usage_ledger SET status=?,session_id=COALESCE(?,session_id),prompt_tokens=?,candidates_tokens=?,cached_tokens=?,thoughts_tokens=?,total_tokens=? WHERE attempt_id=?`).run(status, sessionId ?? null, ...values, attemptId);
+    if (result.changes !== 1) throw new InterviewStoreError('Gemini 요청 이력을 저장하지 못했습니다. 다시 시도해 주세요.');
   }
   findStart(request: StartInterviewRequest): InterviewSession | null {
     const hash = requestHash(request);
@@ -142,6 +171,6 @@ export class InterviewStore {
   delete(id: string): void {
     this.transaction(() => { this.row(id); this.database.prepare('DELETE FROM sessions WHERE id=?').run(id); });
   }
-  deleteAll(): void { this.transaction(() => { this.database.exec('DELETE FROM sessions'); }); }
+  deleteAll(): void { this.transaction(() => { this.database.exec('DELETE FROM sessions; DELETE FROM usage_ledger;'); }); }
   close(): void { this.database.close(); }
 }

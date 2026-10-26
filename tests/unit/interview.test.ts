@@ -136,9 +136,24 @@ describe('durable SQLite sessions and transitions', () => {
     expect(store.history().sessions).toEqual([]);
     const reopened = storage(file); expect(reopened.history().sessions).toEqual([]);
   });
+  it('restores provided Gemini usage while session and whole-history deletion have distinct scope', () => {
+    const store = storage(), base = startFixture();
+    const input = { ...base, ai: { provider: 'gemini' as const, model: 'synthetic-model', quote: base.reviewedText, transmissionConsent: true as const } };
+    store.reserveUsage('00000000-0000-4000-8000-000000000001', null);
+    store.finishUsage('00000000-0000-4000-8000-000000000001', 'failed');
+    const session = store.start(input, { kind: 'experience', text: '합성 질문', evidence: null, speakerId: 'b' });
+    store.reserveUsage('00000000-0000-4000-8000-000000000002', session.id);
+    store.finishUsage('00000000-0000-4000-8000-000000000002', 'succeeded', { promptTokenCount: 5, totalTokenCount: 8 });
+    expect(store.get(session.id).usage).toEqual({ attempts: 1, missingAttempts: 0, tokens: { promptTokenCount: 5, totalTokenCount: 8 } });
+    store.delete(session.id);
+    const database = new DatabaseSync(store.path);
+    expect(database.prepare('SELECT COUNT(*) AS count FROM usage_ledger').get()?.count).toBe(1);
+    database.close(); store.deleteAll();
+    const empty = new DatabaseSync(store.path); expect(empty.prepare('SELECT COUNT(*) AS count FROM usage_ledger').get()?.count).toBe(0); empty.close();
+  });
   it('refuses a future schema and corrupt database without automatically resetting their contents', () => {
     const file = path(), future = new DatabaseSync(file);
-    future.exec("CREATE TABLE preservation(value TEXT); INSERT INTO preservation VALUES('synthetic sentinel'); PRAGMA user_version=3;"); future.close();
+    future.exec("CREATE TABLE preservation(value TEXT); INSERT INTO preservation VALUES('synthetic sentinel'); PRAGMA user_version=4;"); future.close();
     const before = readFileSync(file);
     expect(() => new InterviewStore(file)).toThrow('새 버전');
     expect(readFileSync(file)).toEqual(before);

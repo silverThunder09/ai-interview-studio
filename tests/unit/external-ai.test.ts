@@ -131,7 +131,8 @@ describe.each(AI_PROVIDERS)('%s REST adapter with synthetic fetch', provider => 
     expect(readFileSync(storage.path).includes(Buffer.from(key))).toBe(false);
     const noKey = new InterviewService(() => restored, new InterviewProviderRouter(new AICredentials(), request));
     const last = { sessionId: third.id, questionId: third.turns[2]!.question.id, answer: '보존할 답변', transmissionConsent: true as const };
-    await expect(noKey.answer(last)).rejects.toMatchObject({ code: 'AUTHENTICATION' }); expect(restored.get(first.id)).toEqual(third);
+    await expect(noKey.answer(last)).rejects.toMatchObject({ code: 'AUTHENTICATION' });
+    expect(restored.get(first.id)).toEqual(provider === 'gemini' ? { ...third, usage: { attempts: 4, missingAttempts: 4, tokens: {} } } : third);
     service.close(); noKey.close();
   });
 });
@@ -152,10 +153,10 @@ it('caps even failed or cancelled requests across all providers and clearing/re-
 it('migrates schema 1 without changing old request hashes, sessions or pending questions', () => {
   const storage = store(), input = startFixture(), first = storage.start(input);
   const fixture = new DatabaseSync(storage.path);
-  fixture.exec('ALTER TABLE sessions DROP COLUMN ai_config; PRAGMA user_version=1;'); fixture.close();
+  fixture.exec('DROP TABLE usage_ledger; ALTER TABLE sessions DROP COLUMN ai_config; PRAGMA user_version=1;'); fixture.close();
   const migrated = store(storage.path);
   expect(migrated.get(first.id)).toEqual(first); expect(migrated.start(input)).toEqual(first);
-  const check = new DatabaseSync(storage.path); expect(check.prepare('PRAGMA user_version').get()?.user_version).toBe(2); check.close();
+  const check = new DatabaseSync(storage.path); expect(check.prepare('PRAGMA user_version').get()?.user_version).toBe(3); check.close();
 });
 it('accepts Gemini output only after a strict synthetic REST endpoint accepts the documented MIME enum', async () => {
   const request = vi.fn<typeof fetch>().mockImplementation(async (_url, init) => {
@@ -183,6 +184,15 @@ it('binds Gemini response schema and output to the requested speaker', async () 
   const result = await new AIQuestionProvider(createExternalTransport('gemini', 'synthetic-model', key, request))
     .next({ questionNumber: 1, evidence: [{ origin: 'reviewed', location: '사용자 선택 구절', text: '합성 구절' }], answer: null, speakerId: 'b' });
   expect(result.speakerId).toBe('b');
+});
+it('normalizes only known non-negative safe Gemini usage counters without inventing missing totals', async () => {
+  const request = vi.fn<typeof fetch>().mockResolvedValue(response({ ...envelope('gemini'), usageMetadata: {
+    promptTokenCount: 11, candidatesTokenCount: 7, cachedContentTokenCount: -1,
+    thoughtsTokenCount: 1.5, totalTokenCount: Number.MAX_SAFE_INTEGER + 1, privatePrompt: 'do not store',
+  } }));
+  const result = await createExternalTransport('gemini', 'synthetic-model', key, request)(payload, new AbortController().signal);
+  expect(result).toEqual({ ok: true, value: answer, usage: { promptTokenCount: 11, candidatesTokenCount: 7 } });
+  expect(JSON.stringify(result)).not.toContain('privatePrompt');
 });
 it.each([[400, 'HTTP 400'], [404, 'HTTP 404'], [200, 'AI 응답의 형식']] as const)(
   'returns a safe IPC error for HTTP %i without persisting a failed first question', async (status, message) => {

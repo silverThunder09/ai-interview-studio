@@ -1,4 +1,4 @@
-import { INTERVIEW_LIMITS, type EvidenceQuote } from '../shared/interview';
+import { INTERVIEW_LIMITS, type EvidenceQuote, type GeminiUsageTokens } from '../shared/interview';
 import type { QuestionDraft } from './questions';
 import { AI_CALL_LIMIT } from '../shared/ai';
 
@@ -20,7 +20,7 @@ export interface AIQuestionPayload {
     speakerId?: 'a' | 'b';
   };
 }
-export type AITransportResult = { ok: true; value: unknown } | { ok: false; reason: 'rate-limit' | 'authentication' | 'bad-request' | 'not-found' | 'invalid-response' | 'unavailable' };
+export type AITransportResult = { ok: true; value: unknown; usage?: GeminiUsageTokens } | { ok: false; reason: 'rate-limit' | 'authentication' | 'bad-request' | 'not-found' | 'invalid-response' | 'unavailable' };
 // No transport is installed by this module. Only an explicitly selected adapter
 // may implement this boundary; tests inject synthetic results without networking.
 export type AIQuestionTransport = (payload: AIQuestionPayload, signal: AbortSignal) => Promise<AITransportResult>;
@@ -90,7 +90,7 @@ export class AIQuestionProvider {
   constructor(private readonly transport: AIQuestionTransport, private readonly timeoutMs: number = AI_QUESTION_LIMITS.timeoutMs) {
     if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > AI_QUESTION_LIMITS.timeoutMs) throw new AIQuestionError('INVALID_INPUT');
   }
-  async next(input: unknown, signal?: AbortSignal): Promise<QuestionDraft> {
+  async next(input: unknown, signal?: AbortSignal): Promise<QuestionDraft & { usage?: GeminiUsageTokens }> {
     const payload = prepare(input);
     if (signal?.aborted) throw new AIQuestionError('CANCELLED');
     // Keep a private snapshot for citation binding. An adapter cannot rewrite
@@ -110,13 +110,14 @@ export class AIQuestionProvider {
         return this.transport(payload, controller.signal);
       }).catch(() => { throw new AIQuestionError('UNAVAILABLE'); });
       const result = await Promise.race([operation, stopped]);
-      if (!record(result, result?.ok === true ? ['ok', 'value'] : ['ok', 'reason'])) throw new AIQuestionError('INVALID_RESPONSE');
+      const successKeys = result?.ok === true && typeof result === 'object' && result !== null && Object.hasOwn(result, 'usage') ? ['ok', 'value', 'usage'] : ['ok', 'value'];
+      if (!record(result, result?.ok === true ? successKeys : ['ok', 'reason'])) throw new AIQuestionError('INVALID_RESPONSE');
       if (result.ok !== true) {
         if (result.ok !== false || typeof result.reason !== 'string' || !Object.hasOwn(transportErrors, result.reason)) throw new AIQuestionError('INVALID_RESPONSE');
         const code = transportErrors[result.reason as keyof typeof transportErrors];
         throw new AIQuestionError(code);
       }
-      return question(result.value, citations);
+      return { ...question(result.value, citations), ...(result.usage ? { usage: result.usage } : {}) };
     } catch (error) {
       // Never propagate provider bodies, credentials, URLs or exception details.
       throw error instanceof AIQuestionError ? error : new AIQuestionError('UNAVAILABLE');
