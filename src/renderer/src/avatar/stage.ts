@@ -45,7 +45,6 @@ export class AvatarStage {
     this.install('a', this.actors.a); this.install('b', this.actors.b);
     this.observer = new ResizeObserver(() => this.resize()); this.observer.observe(canvas);
     canvas.addEventListener('webglcontextlost', this.contextLost);
-    canvas.addEventListener('webglcontextrestored', this.contextRestored);
     this.resize(); this.renderer.setAnimationLoop(this.frame);
   }
   private ring(x: number) {
@@ -76,8 +75,7 @@ export class AvatarStage {
     if (this.state.paused && !this.disposed && !this.lost && !document.hidden) this.renderer.render(this.scene, this.camera);
   };
   rotate(direction: number) { const offset = this.camera.position.clone().sub(this.controls.target); offset.applyAxisAngle(new T.Vector3(0, 1, 0), direction * 0.15); this.camera.position.copy(this.controls.target).add(offset); this.controls.update(); }
-  private contextLost = (event: Event) => { event.preventDefault(); this.lost = true; this.last = 0; this.failure('3D 그래픽 연결을 잃었습니다. 복구를 기다리거나 화면을 다시 여세요. 텍스트 면접은 계속할 수 있습니다.'); };
-  private contextRestored = () => { this.lost = false; this.failure(''); this.resize(); };
+  private contextLost = (event: Event) => { event.preventDefault(); this.lost = true; this.last = 0; this.renderer.setAnimationLoop(null); this.failure('3D 그래픽 연결을 잃었습니다. 3D 화면을 다시 시작하세요. 텍스트 면접은 계속할 수 있습니다.'); };
   private frame = (stamp: number) => {
     if (this.disposed || this.lost) return;
     if (document.hidden || this.state.paused) {
@@ -117,7 +115,7 @@ export class AvatarStage {
     if (this.disposed) return;
     this.disposed = true; ++this.epochs.a; ++this.epochs.b;
     this.renderer.setAnimationLoop(null); this.observer.disconnect(); this.controls.removeEventListener('change', this.viewChanged); this.controls.dispose();
-    this.canvas.removeEventListener('webglcontextlost', this.contextLost); this.canvas.removeEventListener('webglcontextrestored', this.contextRestored);
+    this.canvas.removeEventListener('webglcontextlost', this.contextLost);
     Object.values(this.actors).forEach(a => a.dispose()); disposeObjectScene(this.scene);
     this.renderer.dispose(); this.renderer.forceContextLoss(); this.scene.clear();
   }
