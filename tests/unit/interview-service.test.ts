@@ -30,6 +30,50 @@ afterEach(() => {
 });
 
 describe('async generation and atomic storage', () => {
+  it('rolls back a new interview when usage finalization fails and retries without a phantom session', async () => {
+    const next = vi.fn<AsyncInterviewProvider['next']>(async (resume, previous, _signal, onDispatch) => {
+      onDispatch?.();
+      const draft = local.next(resume, previous);
+      return draft ? { ...draft, usage: { promptTokenCount: 11, totalTokenCount: 13 } } : null;
+    });
+    const { store, service } = fixture({ next, tracksUsage: () => true });
+    const base = startFixture(), request = { ...base, ai: { provider: 'gemini' as const, model: 'synthetic-model', quote: base.reviewedText.slice(0, 180), transmissionConsent: true as const } };
+    const database = new DatabaseSync(store.path);
+    database.exec("CREATE TRIGGER fail_usage BEFORE UPDATE ON usage_ledger WHEN NEW.status='succeeded' BEGIN SELECT RAISE(ABORT,'synthetic_usage_finish_failure'); END;");
+    try {
+      await expect(service.start(request)).rejects.toThrow('synthetic_usage_finish_failure');
+      expect(store.history().sessions).toEqual([]);
+      expect(database.prepare('SELECT status,total_tokens FROM usage_ledger').all()).toMatchObject([{ status: 'failed', total_tokens: 13 }]);
+      database.exec('DROP TRIGGER fail_usage');
+      const session = await service.start(request);
+      expect(next).toHaveBeenCalledTimes(2); expect(store.history().sessions).toHaveLength(1);
+      expect(session.usage).toMatchObject({ attempts: 1, missingAttempts: 1, tokens: { promptTokenCount: 11, totalTokenCount: 13 } });
+      expect(await service.start(request)).toEqual(session); expect(next).toHaveBeenCalledTimes(2);
+    } finally { database.close(); }
+  });
+  it('rolls back an answer and next question when usage finalization fails and preserves the known billed tokens', async () => {
+    const next = vi.fn<AsyncInterviewProvider['next']>(async (resume, previous, _signal, onDispatch) => {
+      onDispatch?.();
+      const draft = local.next(resume, previous);
+      return draft ? { ...draft, usage: { totalTokenCount: 13 } } : null;
+    });
+    const { store, service } = fixture({ next, tracksUsage: () => true });
+    const base = startFixture(), request = { ...base, ai: { provider: 'gemini' as const, model: 'synthetic-model', quote: base.reviewedText.slice(0, 180), transmissionConsent: true as const } };
+    const session = await service.start(request), answer = { sessionId: session.id, questionId: session.turns[0]!.question.id, answer: '합성 답변', transmissionConsent: true as const };
+    const database = new DatabaseSync(store.path);
+    database.exec("CREATE TRIGGER fail_usage BEFORE UPDATE ON usage_ledger WHEN NEW.status='succeeded' BEGIN SELECT RAISE(ABORT,'synthetic_usage_finish_failure'); END;");
+    try {
+      await expect(service.answer(answer)).rejects.toThrow('synthetic_usage_finish_failure');
+      const unchanged = store.get(session.id);
+      expect(unchanged.turns).toEqual(session.turns);
+      expect(unchanged.usage).toMatchObject({ attempts: 2, missingAttempts: 2, tokens: { totalTokenCount: 26 } });
+      database.exec('DROP TRIGGER fail_usage');
+      const retried = await service.answer(answer);
+      expect(retried.turns).toHaveLength(2); expect(retried.turns[0]!.answer).toBe(answer.answer);
+      expect(retried.usage).toMatchObject({ attempts: 3, tokens: { totalTokenCount: 39 } });
+      expect(await service.answer(answer)).toEqual(retried); expect(next).toHaveBeenCalledTimes(3);
+    } finally { database.close(); }
+  });
   it('does not open a write transaction while waiting for the first question', async () => {
     const delayed = deferred<QuestionDraft | null>(), next = vi.fn<AsyncInterviewProvider['next']>().mockReturnValue(delayed.promise);
     const { store, service } = fixture({ next }), request = startFixture();

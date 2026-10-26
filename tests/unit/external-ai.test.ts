@@ -131,7 +131,8 @@ describe.each(AI_PROVIDERS)('%s REST adapter with synthetic fetch', provider => 
     expect(readFileSync(storage.path).includes(Buffer.from(key))).toBe(false);
     const noKey = new InterviewService(() => restored, new InterviewProviderRouter(new AICredentials(), request));
     const last = { sessionId: third.id, questionId: third.turns[2]!.question.id, answer: '보존할 답변', transmissionConsent: true as const };
-    await expect(noKey.answer(last)).rejects.toMatchObject({ code: 'AUTHENTICATION' }); expect(restored.get(first.id)).toEqual(third);
+    await expect(noKey.answer(last)).rejects.toMatchObject({ code: 'AUTHENTICATION' });
+    expect(restored.get(first.id)).toEqual(third);
     service.close(); noKey.close();
   });
 });
@@ -152,10 +153,10 @@ it('caps even failed or cancelled requests across all providers and clearing/re-
 it('migrates schema 1 without changing old request hashes, sessions or pending questions', () => {
   const storage = store(), input = startFixture(), first = storage.start(input);
   const fixture = new DatabaseSync(storage.path);
-  fixture.exec('ALTER TABLE sessions DROP COLUMN ai_config; PRAGMA user_version=1;'); fixture.close();
+  fixture.exec('DROP TABLE usage_ledger; ALTER TABLE sessions DROP COLUMN ai_config; PRAGMA user_version=1;'); fixture.close();
   const migrated = store(storage.path);
   expect(migrated.get(first.id)).toEqual(first); expect(migrated.start(input)).toEqual(first);
-  const check = new DatabaseSync(storage.path); expect(check.prepare('PRAGMA user_version').get()?.user_version).toBe(2); check.close();
+  const check = new DatabaseSync(storage.path); expect(check.prepare('PRAGMA user_version').get()?.user_version).toBe(3); check.close();
 });
 it('accepts Gemini output only after a strict synthetic REST endpoint accepts the documented MIME enum', async () => {
   const request = vi.fn<typeof fetch>().mockImplementation(async (_url, init) => {
@@ -183,6 +184,88 @@ it('binds Gemini response schema and output to the requested speaker', async () 
   const result = await new AIQuestionProvider(createExternalTransport('gemini', 'synthetic-model', key, request))
     .next({ questionNumber: 1, evidence: [{ origin: 'reviewed', location: '사용자 선택 구절', text: '합성 구절' }], answer: null, speakerId: 'b' });
   expect(result.speakerId).toBe('b');
+});
+it('normalizes only known non-negative safe Gemini usage counters without inventing missing totals', async () => {
+  const request = vi.fn<typeof fetch>().mockResolvedValue(response({ ...envelope('gemini'), usageMetadata: {
+    promptTokenCount: 11, candidatesTokenCount: 7, cachedContentTokenCount: -1,
+    thoughtsTokenCount: 1.5, totalTokenCount: Number.MAX_SAFE_INTEGER + 1, privatePrompt: 'do not store',
+  } }));
+  const result = await createExternalTransport('gemini', 'synthetic-model', key, request)(payload, new AbortController().signal);
+  expect(result).toEqual({ ok: true, value: answer, usage: { promptTokenCount: 11, candidatesTokenCount: 7 } });
+  expect(JSON.stringify(result)).not.toContain('privatePrompt');
+});
+it.each(['speaker', 'json', 'finish-reason'] as const)('retains provided usage when Gemini question validation fails: %s', async failure => {
+  const storage = store(), vault = new AICredentials(); vault.set('gemini', key);
+  const value = envelope('gemini', { ...answer, speakerId: failure === 'speaker' ? 'a' : 'b' });
+  const candidate = value.candidates![0]!;
+  if (failure === 'json') candidate.content.parts[0]!.text = '{';
+  if (failure === 'finish-reason') candidate.finishReason = 'MAX_TOKENS';
+  const request = vi.fn<typeof fetch>().mockResolvedValue(response({ ...value, usageMetadata: { promptTokenCount: 11, totalTokenCount: 15 } }));
+  const service = new InterviewService(() => storage, new InterviewProviderRouter(vault, request));
+  try {
+    await expect(service.start({ ...startFixture(), ai: config('gemini') })).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
+    expect(storage.history().sessions).toEqual([]); expect(request).toHaveBeenCalledOnce();
+    const database = new DatabaseSync(storage.path);
+    expect(database.prepare('SELECT status,prompt_tokens,total_tokens FROM usage_ledger').all()).toMatchObject([{ status: 'failed', prompt_tokens: 11, total_tokens: 15 }]);
+    database.close();
+  } finally { service.close(); }
+});
+it('excludes local authentication and exhausted-budget rejections from actual Gemini attempts', async () => {
+  const storage = store(), vault = new AICredentials();
+  const request = vi.fn<typeof fetch>().mockResolvedValue(response({ ...envelope('gemini', { ...answer, speakerId: 'b' }), usageMetadata: { totalTokenCount: 15 } }));
+  const service = new InterviewService(() => storage, new InterviewProviderRouter(vault, request)), input = { ...startFixture(), ai: config('gemini') };
+  const database = new DatabaseSync(storage.path), rows = () => Number(database.prepare('SELECT COUNT(*) AS count FROM usage_ledger').get()?.count);
+  try {
+    await expect(service.start(input)).rejects.toMatchObject({ code: 'AUTHENTICATION' });
+    expect(rows()).toBe(0); expect(request).not.toHaveBeenCalled(); expect(vault.status().remainingRequests).toBe(AI_CALL_LIMIT);
+    vault.set('gemini', key); const session = await service.start(input);
+    const submit = { sessionId: session.id, questionId: session.turns[0]!.question.id, answer: '합성 답변', transmissionConsent: true as const };
+    vault.clear('gemini'); await expect(service.answer(submit)).rejects.toMatchObject({ code: 'AUTHENTICATION' });
+    expect(rows()).toBe(1); expect(request).toHaveBeenCalledOnce();
+    vault.set('gemini', key); while (vault.status().remainingRequests > 0) vault.acquire('gemini');
+    await expect(service.answer(submit)).rejects.toMatchObject({ code: 'BUDGET_EXHAUSTED' });
+    await expect(service.start({ ...input, requestId: '10000000-0000-4000-8000-000000000001' })).rejects.toMatchObject({ code: 'BUDGET_EXHAUSTED' });
+    expect(rows()).toBe(1); expect(request).toHaveBeenCalledOnce(); expect(storage.get(session.id).turns).toEqual(session.turns);
+  } finally { database.close(); service.close(); }
+});
+it('reports Gemini usage reservation failures as local storage errors before dispatch or budget use', async () => {
+  const storage = store(), vault = new AICredentials(); vault.set('gemini', key);
+  const request = vi.fn<typeof fetch>().mockResolvedValue(response({ ...envelope('gemini', { ...answer, speakerId: 'b' }), usageMetadata: { totalTokenCount: 15 } }));
+  const service = new InterviewService(() => storage, new InterviewProviderRouter(vault, request));
+  const handlers = createInterviewHandlers(() => storage, service), input = { ...startFixture(), ai: config('gemini') };
+  const database = new DatabaseSync(storage.path);
+  const rejectReservations = () => database.exec("CREATE TRIGGER fail_usage_reservation BEFORE INSERT ON usage_ledger BEGIN SELECT RAISE(ABORT,'synthetic private storage failure'); END;");
+  try {
+    rejectReservations();
+    const failedStart = await handlers.start([input]);
+    expect(failedStart).toMatchObject({ ok: false, error: { code: 'UNAVAILABLE', message: expect.stringContaining('기록 저장소') } });
+    expect(JSON.stringify(failedStart)).not.toContain('synthetic private');
+    expect(request).not.toHaveBeenCalled(); expect(vault.status().remainingRequests).toBe(AI_CALL_LIMIT);
+    database.exec('DROP TRIGGER fail_usage_reservation');
+    const session = await service.start(input);
+    const submit = { sessionId: session.id, questionId: session.turns[0]!.question.id, answer: '보존할 답변', transmissionConsent: true as const };
+    rejectReservations();
+    const failedAnswer = await handlers.answer([submit]);
+    expect(failedAnswer).toMatchObject({ ok: false, error: { code: 'UNAVAILABLE', message: expect.stringContaining('저장 공간·권한') } });
+    expect(request).toHaveBeenCalledOnce(); expect(vault.status().remainingRequests).toBe(AI_CALL_LIMIT - 1);
+    expect(storage.get(session.id).turns).toEqual(session.turns);
+  } finally { database.close(); service.close(); }
+});
+it.each(['timeout', 'cancelled'] as const)('persists the actual service abort reason: %s', async status => {
+  const storage = store(), vault = new AICredentials(); vault.set('gemini', key);
+  const request = vi.fn<typeof fetch>().mockImplementation((_url, init) => new Promise((_resolve, reject) => {
+    init!.signal!.addEventListener('abort', () => reject(new Error('synthetic_abort')), { once: true });
+  }));
+  const service = new InterviewService(() => storage, new InterviewProviderRouter(vault, request), status === 'timeout' ? 50 : 30_000), input = { ...startFixture(), ai: config('gemini') };
+  try {
+    const pending = service.start(input), rejected = expect(pending).rejects.toMatchObject({ code: status === 'timeout' ? 'TIMEOUT' : 'CANCELLED' });
+    await vi.waitFor(() => expect(request).toHaveBeenCalledOnce());
+    if (status === 'cancelled') service.cancel(input.requestId);
+    await rejected;
+    const database = new DatabaseSync(storage.path);
+    await vi.waitFor(() => expect(database.prepare('SELECT status FROM usage_ledger').get()?.status).toBe(status));
+    expect(storage.history().sessions).toEqual([]); database.close();
+  } finally { service.close(); }
 });
 it.each([[400, 'HTTP 400'], [404, 'HTTP 404'], [200, 'AI 응답의 형식']] as const)(
   'returns a safe IPC error for HTTP %i without persisting a failed first question', async (status, message) => {
