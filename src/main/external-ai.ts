@@ -2,7 +2,7 @@ import type { Result } from '../shared/contracts';
 import { AI_CALL_LIMIT, AI_ENDPOINTS, AI_PROVIDERS, exactRecord, isAIKeyRequest, isAIProvider, isAIPreferences, type AIProvider, type AIStatus } from '../shared/ai';
 import type { LocalSettings } from './local-settings';
 import type { AIQuestionPayload, AIQuestionTransport, AITransportResult } from './ai-question-provider';
-import { AIQuestionError, AIQuestionProvider } from './ai-question-provider';
+import { AIQuestionError, AIQuestionProvider, AIUsageReservationError } from './ai-question-provider';
 import type { AsyncInterviewProvider } from './interview-service';
 import { LocalQuestionProvider } from './questions';
 import { normalizeGeminiUsage, type GeminiUsageTokens } from '../shared/interview';
@@ -163,7 +163,7 @@ export class InterviewProviderRouter implements AsyncInterviewProvider {
     const transport: AIQuestionTransport = (payload, abort) => {
       if (abort.aborted) throw new AIQuestionError('CANCELLED');
       this.credentials.preflight(config.provider);
-      onDispatch?.();
+      try { onDispatch?.(); } catch { throw new AIUsageReservationError(); }
       const key = this.credentials.acquire(config.provider);
       return createExternalTransport(config.provider, config.model, key, this.request)(payload, abort);
     };

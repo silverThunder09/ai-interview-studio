@@ -79,7 +79,8 @@ test('Gemini speaker roles drive the question UI and live WebGL interviewer with
         const body = JSON.parse(String(init?.body));
         const data = JSON.parse(body.contents[0].parts[0].text);
         const value = { text: '잘못된 발언자의 합성 질문', evidenceId: null, speakerId: data.speakerId === 'a' ? 'b' : 'a' };
-        return new Response(JSON.stringify({ candidates: [{ finishReason: 'STOP', content: { parts: [{ text: JSON.stringify(value) }] } }] }),
+        return new Response(JSON.stringify({ candidates: [{ finishReason: 'STOP', content: { parts: [{ text: JSON.stringify(value) }] } }],
+          usageMetadata: { promptTokenCount: 12, candidatesTokenCount: 3, totalTokenCount: 15 } }),
           { headers: { 'content-type': 'application/json' } });
       };
     });
@@ -88,6 +89,8 @@ test('Gemini speaker roles drive the question UI and live WebGL interviewer with
     await expect(page.getByRole('alert')).toContainText('AI 응답의 형식');
     await expect(page.getByLabel('내 답변', { exact: true })).toHaveValue(answer);
     await expectQuestion(4, 'a');
+    await expect(page.getByRole('region', { name: 'Gemini 사용량' })).toContainText('요청 시도 5회 · 일부 토큰 정보 미제공 5회');
+    await expect(page.getByRole('region', { name: 'Gemini 사용량' })).toContainText('전체: 127 토큰 · 5/5회 제공');
     for (const [responseStatus, expected] of [[400, 'HTTP 400'], [404, 'HTTP 404'], [200, 'AI 응답의 형식']] as const) {
       await app.evaluate((_electron, status) => {
         globalThis.fetch = async () => status === 200
@@ -106,7 +109,7 @@ test('Gemini speaker roles drive the question UI and live WebGL interviewer with
     await page.getByRole('button', { name: '이어하기', exact: true }).click();
     await expectQuestion(4, 'a');
     await expect(page.getByRole('region', { name: 'Gemini 사용량' })).toContainText('요청 시도 8회 · 일부 토큰 정보 미제공 8회');
-    await expect(page.getByRole('region', { name: 'Gemini 사용량' })).toContainText('입력: 100 토큰 · 4/8회 제공 (부분 합계)');
+    await expect(page.getByRole('region', { name: 'Gemini 사용량' })).toContainText('입력: 112 토큰 · 5/8회 제공 (부분 합계)');
     await page.screenshot({ path: 'test-results/gemini-usage-restored.png', fullPage: true });
     const status = await page.evaluate(() => window.studio!.getAIStatus());
     expect(status).toMatchObject({ ok: true, value: { remainingRequests: 28 } }); // 4 successes + four rejected/failed responses; no retry.

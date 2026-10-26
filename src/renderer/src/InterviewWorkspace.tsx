@@ -30,6 +30,13 @@ export function InterviewWorkspace({ session, onUpdate, onHistory }: {
     ? current.question.speakerId ?? (current.question.kind === 'technical' ? 'a' : 'b')
     : null;
   const answered = session.turns.filter((turn) => turn.answer !== null).length;
+  async function refreshUsage() {
+    if (session.ai?.provider !== 'gemini') return;
+    try {
+      const refreshed = await window.studio!.getInterview(session.id);
+      if (refreshed.ok) onUpdate(refreshed.value);
+    } catch { /* Keep the original request error and the user's draft. */ }
+  }
   async function submit() {
     if (!current || lock.current || audioBusy || !answer.trim() || (session.ai && !transmissionConsent)) return;
     lock.current = true; pendingId.current = current.question.id; setSaving(true); setError(''); setNotice('');
@@ -38,8 +45,8 @@ export function InterviewWorkspace({ session, onUpdate, onHistory }: {
       // A save that completed just before navigation still updates the parent
       // snapshot, so returning to the session cannot show the old question.
       if (result.ok) { onUpdate(result.value); if (live.current) { setAnswer(''); setTransmissionConsent(false); } }
-      else if (live.current) { setError(result.error.message); setNeedsKey(result.error.code === 'AUTHENTICATION'); }
-    } catch { if (live.current) setError('답변을 저장하지 못했습니다. 입력한 내용은 유지됩니다. 다시 시도해 주세요.'); }
+      else { if (live.current) { setError(result.error.message); setNeedsKey(result.error.code === 'AUTHENTICATION'); } await refreshUsage(); }
+    } catch { if (live.current) setError('답변을 저장하지 못했습니다. 입력한 내용은 유지됩니다. 다시 시도해 주세요.'); await refreshUsage(); }
     finally { lock.current = false; pendingId.current = undefined; if (live.current) { setSaving(false); setCancelling(false); } }
   }
   async function cancel() {

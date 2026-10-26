@@ -228,6 +228,29 @@ it('excludes local authentication and exhausted-budget rejections from actual Ge
     expect(rows()).toBe(1); expect(request).toHaveBeenCalledOnce(); expect(storage.get(session.id).turns).toEqual(session.turns);
   } finally { database.close(); service.close(); }
 });
+it('reports Gemini usage reservation failures as local storage errors before dispatch or budget use', async () => {
+  const storage = store(), vault = new AICredentials(); vault.set('gemini', key);
+  const request = vi.fn<typeof fetch>().mockResolvedValue(response({ ...envelope('gemini', { ...answer, speakerId: 'b' }), usageMetadata: { totalTokenCount: 15 } }));
+  const service = new InterviewService(() => storage, new InterviewProviderRouter(vault, request));
+  const handlers = createInterviewHandlers(() => storage, service), input = { ...startFixture(), ai: config('gemini') };
+  const database = new DatabaseSync(storage.path);
+  const rejectReservations = () => database.exec("CREATE TRIGGER fail_usage_reservation BEFORE INSERT ON usage_ledger BEGIN SELECT RAISE(ABORT,'synthetic private storage failure'); END;");
+  try {
+    rejectReservations();
+    const failedStart = await handlers.start([input]);
+    expect(failedStart).toMatchObject({ ok: false, error: { code: 'UNAVAILABLE', message: expect.stringContaining('기록 저장소') } });
+    expect(JSON.stringify(failedStart)).not.toContain('synthetic private');
+    expect(request).not.toHaveBeenCalled(); expect(vault.status().remainingRequests).toBe(AI_CALL_LIMIT);
+    database.exec('DROP TRIGGER fail_usage_reservation');
+    const session = await service.start(input);
+    const submit = { sessionId: session.id, questionId: session.turns[0]!.question.id, answer: '보존할 답변', transmissionConsent: true as const };
+    rejectReservations();
+    const failedAnswer = await handlers.answer([submit]);
+    expect(failedAnswer).toMatchObject({ ok: false, error: { code: 'UNAVAILABLE', message: expect.stringContaining('저장 공간·권한') } });
+    expect(request).toHaveBeenCalledOnce(); expect(vault.status().remainingRequests).toBe(AI_CALL_LIMIT - 1);
+    expect(storage.get(session.id).turns).toEqual(session.turns);
+  } finally { database.close(); service.close(); }
+});
 it.each(['timeout', 'cancelled'] as const)('persists the actual service abort reason: %s', async status => {
   const storage = store(), vault = new AICredentials(); vault.set('gemini', key);
   const request = vi.fn<typeof fetch>().mockImplementation((_url, init) => new Promise((_resolve, reject) => {
