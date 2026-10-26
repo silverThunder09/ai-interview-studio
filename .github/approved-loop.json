@@ -160,7 +160,119 @@
         "src/renderer/src/avatar/AvatarPanel.tsx",
         "tests/smoke/avatar.spec.ts"
       ]
+    },
+    {
+      "id": "gemini-usage-ledger",
+      "pr": null,
+      "title": "Gemini 사용량 기록·복원과 세션별 표시",
+      "spec": {
+        "path": "harness/specs/gemini-local-interview.md",
+        "sha256": "d310364e58aefa2ef152376bb7c55a09ee38c9464896c8589450f666e89c473d"
+      },
+      "approval": "2026-10-26 KST 현재 채팅: 로드맵 순서의 사용량 기록/복원/표시 → 공유 문맥 범위/미리보기/동의 → A/B 교대/꼬리질문/중복 방지 → 성격 설정/보존 및 문서 현행화·승인 큐 등록 제안에 사용자 “ㄱㄱ”. 네 작업의 구현·테스트·PR·CI/AI 검토·조건부 자동 머지/main 검증과 다음 작업 연결 승인. 기존 한도·보안·사람 리뷰 유지, 합성 검증만 사용; 새 workflow/권한/의존성/키/실제 유료 호출/음성·장치·리포트·에셋 제외.",
+      "goal": "제품 스펙3.2 E만 구현한다. 기존 Gemini generateContent usageMetadata의 알려진5개 토큰 필드를 비음수 안전정수/unknown으로 정규화하고 원문/키/질문·답변을 ledger에 넣지 않는다. 실제 요청 시도별 ID로 중복을 막고, 같은 in-flight는1회·수동 재시도는별도·실패/취소/timeout은기존36요청예산에 포함한다. session 생성 전 실패도 성공 세션으로 위장하지 않고 제한된 비민감 요청 이력으로 귀속한다. schema2→3의 보존형 usage ledger·원자 migration/rollback·schema1/2 과거/다른 공급자 호환·3600행 상한과 명시 세션/전체 삭제 연계를 구현한다. 네트워크 await 동안 DB transaction을 열어두지 않는다. 초기 실패의 미연결 이력은 명시 전체 삭제로만 정리하며 저장 실패/상한은 요청 전에 알려 숨기지 않는다. InterviewSession의 선택적 usage 계약과 현재 세션/기록 재열기 표시를 연결한다. 누락=0/무료로 표시하지 않고 제공분/누락/시도 수를 구분하며 캐시/thinking을 이중 합산하거나 금액/청구액을 추정하지 않는다. 앱 재시작 시 기존 실행당 요청 예산 의미를 바꾸지 않는다. 허용 테스트에서 직접 provider/adapter/SQLite 성공·누락/손상 수치·실패/취소/중복·재시작·migration rollback·삭제·다른 공급자 회귀와 합성 Gemini Electron 표시/복원을 검증한다. 공유 문맥·새 요청·실제 요금조회·다른 파일을 추가하지 않는다. 기존 검사를 삭제/skip하지 말고 npm run check, npm run build, bash scripts/codex/smoke.sh, git diff --check를 정식 확장 실행 권한(require_escalated)으로 실제 실행한다. Chromium sandbox=true·TLS/proxy·기존 키/호출/출력/시간 한도를 유지한다. 실제 외부 API/개인 자료는 사용하지 않는다. 실패/미실행을 성공으로 표시하지 말고 한국어 양식과 renderDevelopmentResult의 ASCII JSON/원본 diff를 그대로 반환한다. Windows source/packaged와 실제 장치는 별도 원격/수동 검증으로 남긴다.",
+      "acceptance": [
+        "정상/누락/잘못된 Gemini usage와 요청 시도·중복·실패/취소를 구분하고 실제 없는 토큰을0/가격으로 만들지 않는다.",
+        "기존 SQLite 기록·request hash를 보존한 schema3 migration/rollback·세션/전체 삭제·재시작 복원이 검증된다.",
+        "세션의 제공 사용량/unknown/시도 수가 실제 Electron에서 표시·재조회되며 기존 답변/한도/다른 공급자를 유지한다."
+      ],
+      "allowed_paths": [
+        "src/shared/interview.ts",
+        "src/main/external-ai.ts",
+        "src/main/ai-question-provider.ts",
+        "src/main/interview-service.ts",
+        "src/main/interview-store.ts",
+        "src/renderer/src/InterviewWorkspace.tsx",
+        "tests/unit/external-ai.test.ts",
+        "tests/unit/interview-service.test.ts",
+        "tests/unit/interview.test.ts",
+        "tests/smoke/gemini.spec.ts"
+      ]
+    },
+    {
+      "id": "gemini-context-preview",
+      "pr": null,
+      "title": "공유 문맥의 제한된 미리보기와 동의 계약",
+      "spec": {
+        "path": "harness/specs/gemini-local-interview.md",
+        "sha256": "d310364e58aefa2ef152376bb7c55a09ee38c9464896c8589450f666e89c473d"
+      },
+      "approval": "2026-10-26 KST 현재 채팅: 로드맵 순서의 사용량 기록/복원/표시 → 공유 문맥 범위/미리보기/동의 → A/B 교대/꼬리질문/중복 방지 → 성격 설정/보존 및 문서 현행화·승인 큐 등록 제안에 사용자 “ㄱㄱ”. 네 작업의 구현·테스트·PR·CI/AI 검토·조건부 자동 머지/main 검증과 다음 작업 연결 승인. 기존 한도·보안·사람 리뷰 유지, 합성 검증만 사용; 새 workflow/권한/의존성/키/실제 유료 호출/음성·장치·리포트·에셋 제외.",
+      "goal": "E 머지/main 검증 뒤 스펙3.2 F만 구현한다. main의 현재 DB/질문/입력으로 선택구절180자·최근완료QA2개(질문500/답변1000자)·이번답변2000자만 뽑는다. shared history JSON4000자/최종data JSON8000자(UTF16) 상한, 명시 발췌 안내, 범위초과 거절을 공통 순수 계약으로 만든다. 전체 원문/연락처/경로/원본 음성·영상 자동 포함·원격 요약/캐시는 금지한다. 좁은 preview IPC를 기존 정확한 창/프레임/URL·인자 검증과 함께 등록하고 preview는 HTTP0회여야 한다. canonical payload hash를 세션/현재질문/답변/역할 snapshot에 결합해 전달하며 renderer가 만든 대화목록을 신뢰하지 않는다. UI에 실제 내용과 범위/발췌/전송 목적을 보여주고 입력/세션/질문/프로필 변경·이탈/재열기에서 체크를 무효화한다. 동의는 저장하지 않는다. F는 미리보기 계약만 제공하고 공유 전송 활성화는 G에 맡긴다. 연결 전 UI를 전송 활성화로 오인시키지 않고 기존 선택구절/직전답변 제출을 유지한다. 합성 단위/Electron에서 최근2개 선택/경계길이/손상입력/낡은snapshot/다른세션/재시작 동의미복원·preview의 네트워크0을 확인한다. 사용량/기록/취소 회귀를 유지한다. 기존 검사를 삭제/skip하지 말고 npm run check, npm run build, bash scripts/codex/smoke.sh, git diff --check를 정식 확장 실행 권한(require_escalated)으로 실제 실행한다. Chromium sandbox=true·TLS/proxy·기존 키/호출/출력/시간 한도를 유지한다. 실제 외부 API/개인 자료는 사용하지 않는다. 실패/미실행을 성공으로 표시하지 말고 한국어 양식과 renderDevelopmentResult의 ASCII JSON/원본 diff를 그대로 반환한다. Windows source/packaged와 실제 장치는 별도 원격/수동 검증으로 남긴다.",
+      "acceptance": [
+        "main이 만든 최근2개/선택구절/이번답변의 정확한 제한 내용과 digest를 preview로 보여주며 원문전체/원격호출이 없다.",
+        "JSON 크기·이전 질문/입력·세션 불일치를 거절하고 동의가 저장/재시작·재열기로 복원되지 않는다.",
+        "새 preview IPC가 기존 Electron 보안·한정 계약을 유지하고 기존 답변/사용량/3D 경로가 통과한다."
+      ],
+      "allowed_paths": [
+        "src/shared/interview.ts",
+        "src/shared/contracts.ts",
+        "src/main/interview-handlers.ts",
+        "src/main/interview-service.ts",
+        "src/main/index.ts",
+        "src/preload/index.ts",
+        "src/renderer/src/InterviewWorkspace.tsx",
+        "tests/unit/interview-service.test.ts",
+        "tests/unit/interview.test.ts",
+        "tests/smoke/gemini.spec.ts"
+      ]
+    },
+    {
+      "id": "gemini-context-turns",
+      "pr": null,
+      "title": "동의한 공유 문맥과 A/B 교대·질문 중복 제어",
+      "spec": {
+        "path": "harness/specs/gemini-local-interview.md",
+        "sha256": "d310364e58aefa2ef152376bb7c55a09ee38c9464896c8589450f666e89c473d"
+      },
+      "approval": "2026-10-26 KST 현재 채팅: 로드맵 순서의 사용량 기록/복원/표시 → 공유 문맥 범위/미리보기/동의 → A/B 교대/꼬리질문/중복 방지 → 성격 설정/보존 및 문서 현행화·승인 큐 등록 제안에 사용자 “ㄱㄱ”. 네 작업의 구현·테스트·PR·CI/AI 검토·조건부 자동 머지/main 검증과 다음 작업 연결 승인. 기존 한도·보안·사람 리뷰 유지, 합성 검증만 사용; 새 workflow/권한/의존성/키/실제 유료 호출/음성·장치·리포트·에셋 제외.",
+      "goal": "F 머지/main 검증 뒤 스펙3.2 G를 구현한다. 별도 동의와 main 재생성 hash가 일치할 때만 기존 Gemini 요청 하나에 제한 history를 전송하고 opts-out/과거/다른 공급자의 기존 전송 범위를 유지한다. 같은 canonical 객체로 preview/실제payload를 결합해 입력/질문/프로필 변경 시 HTTP0으로 거절한다. 최초 구절 동의와 매 답변 완료 버튼을 유지한다. 12문항 기본 B경험/B후속/A기술/A후속 쌍을3회 반복하도록 Gemini main 역할/kind 조정과 응답 speakerId·허용 근거를 함께 검증한다. 후속은 직전역할, B경험은 기존선택근거, A기술은evidence=null을 사용한다. 현재세션의 제한된 이전질문과 공백정규화 후 완전히 같은 질문은 INVALID_RESPONSE로 거절하고 입력/저장/usage를 일관되게 보존한다. 의미중복전체판정이나 자동 재생성은 하지 않는다. 자동재시도/추가 모델/서비스/요약호출 없이 기존12문항/36요청/1500질문자/600출력토큰/30초·8000data상한·원자저장/취소를 유지한다. 합성payload가 preview와byte일치, 동의없음/낡음의 history미전송, B/B/A/A 반복·잘못된역할·중복질문·취소/동시/재열기·OpenAI/Claude/로컬 회귀와 Electron 질문/3D/한도/usage를 검증한다. 기존 검사를 삭제/skip하지 말고 npm run check, npm run build, bash scripts/codex/smoke.sh, git diff --check를 정식 확장 실행 권한(require_escalated)으로 실제 실행한다. Chromium sandbox=true·TLS/proxy·기존 키/호출/출력/시간 한도를 유지한다. 실제 외부 API/개인 자료는 사용하지 않는다. 실패/미실행을 성공으로 표시하지 말고 한국어 양식과 renderDevelopmentResult의 ASCII JSON/원본 diff를 그대로 반환한다. Windows source/packaged와 실제 장치는 별도 원격/수동 검증으로 남긴다.",
+      "acceptance": [
+        "별도 동의한 현재 snapshot만 기존 Gemini 단일요청에 들어가고 동의없음/변경/과거/다른 공급자로 공유 history가 새지 않는다.",
+        "B/B/A/A3쌍과 speaker/kind/근거가 일치하며 동일 질문은 추가 자동호출 없이 거절하고 답변·usage·저장 원자성을 보존한다.",
+        "실제 Electron 합성Gemini와 단위/Windows CI가 기존3D/기록/요청·길이·시간/공급자 회귀를 유지한다."
+      ],
+      "allowed_paths": [
+        "src/shared/interview.ts",
+        "src/main/ai-question-provider.ts",
+        "src/main/external-ai.ts",
+        "src/main/interview-service.ts",
+        "src/main/interview-store.ts",
+        "src/renderer/src/InterviewWorkspace.tsx",
+        "tests/unit/ai-question-provider.test.ts",
+        "tests/unit/external-ai.test.ts",
+        "tests/unit/interview-service.test.ts",
+        "tests/smoke/gemini.spec.ts"
+      ]
+    },
+    {
+      "id": "gemini-personality-presets",
+      "pr": null,
+      "title": "면접관별 성격 프리셋과 로컬 설정 보존",
+      "spec": {
+        "path": "harness/specs/gemini-local-interview.md",
+        "sha256": "d310364e58aefa2ef152376bb7c55a09ee38c9464896c8589450f666e89c473d"
+      },
+      "approval": "2026-10-26 KST 현재 채팅: 로드맵 순서의 사용량 기록/복원/표시 → 공유 문맥 범위/미리보기/동의 → A/B 교대/꼬리질문/중복 방지 → 성격 설정/보존 및 문서 현행화·승인 큐 등록 제안에 사용자 “ㄱㄱ”. 네 작업의 구현·테스트·PR·CI/AI 검토·조건부 자동 머지/main 검증과 다음 작업 연결 승인. 기존 한도·보안·사람 리뷰 유지, 합성 검증만 사용; 새 workflow/권한/의존성/키/실제 유료 호출/음성·장치·리포트·에셋 제외.",
+      "goal": "G 머지/main 검증 뒤 스펙3.2 H만 구현한다. A strict/balanced, B calm/supportive의 검증된 enum 프리셋만 제공하고 자유명령/루브릭/목소리/새 모델을 추가하지 않는다. 기존 비민감 preferences·좁은 설정 API와 버전/누락 기본값·저장실패 안내를 재사용하고 API키 OS보호/공급자모델/3D품질을 보존한다. 새 면접의 ai config에 허용 profile snapshot을 저장해 기록 재열기·실제 Gemini고정역할 prompt·한국어 설정/현재역할 표시가 일치하도록 한다. 진행중/과거세션을 전역설정으로 다시쓰지 않고 오래된 config/request hash를 보존한다. 같은 실제 프로필 값이 공유 preview/hash에 포함되도록 하며 변경/재시작은 전송동의를 복원하지 않는다. 설정된 말투가 문서/사용자내용보다 우선하는 system 안전/근거/600토큰/30초/36요청 경계를 바꾸지 않으며 다른 공급자/로컬에 Gemini필드를 강제로 붙이지 않는다. 합성 단위/Electron에서 각프리셋 요청/표시·재시작보존·누락/불명값·저장권한거절·기존키암호화/과거기록·현재세션불변·공유동의미복원/usage/3D 회귀를 검증한다. 기존 검사를 삭제/skip하지 말고 npm run check, npm run build, bash scripts/codex/smoke.sh, git diff --check를 정식 확장 실행 권한(require_escalated)으로 실제 실행한다. Chromium sandbox=true·TLS/proxy·기존 키/호출/출력/시간 한도를 유지한다. 실제 외부 API/개인 자료는 사용하지 않는다. 실패/미실행을 성공으로 표시하지 말고 한국어 양식과 renderDevelopmentResult의 ASCII JSON/원본 diff를 그대로 반환한다. Windows source/packaged와 실제 장치는 별도 원격/수동 검증으로 남긴다.",
+      "acceptance": [
+        "A/B의 허용 프리셋만 새 Gemini 요청/화면/세션 snapshot에 일치하고 프롬프트 권한·근거·호출 한도를 바꾸지 않는다.",
+        "재시작 설정 보존/오류·기존 키 보호와 기록 호환을 검증하고 과거/진행중 세션을 전역값으로 덮어쓰지 않는다.",
+        "프로필을 포함한 실제 전송 preview/hash·동의 무효화와 실제 Electron/Windows·기존 공급자/3D/usage 회귀가 통과한다."
+      ],
+      "allowed_paths": [
+        "src/shared/ai.ts",
+        "src/main/local-settings.ts",
+        "src/main/ai-question-provider.ts",
+        "src/main/external-ai.ts",
+        "src/renderer/src/AIOptions.tsx",
+        "src/renderer/src/InterviewWorkspace.tsx",
+        "tests/unit/external-ai.test.ts",
+        "tests/unit/ai-question-provider.test.ts",
+        "tests/unit/local-settings.test.ts",
+        "tests/smoke/gemini.spec.ts"
+      ]
     }
   ],
-  "next_decision": "승인된 Phase 1의 3D 화면 재시작·모델별 복구 작업까지 완료했습니다. 실제 C→D 무개입 Cloud/CI/AI/merge/main 검증 증거를 #35에 정리합니다. 기존 단계에 구체적 미완료/결함이 있으면 먼저 확인하고, 별도 승인되지 않은 공유 문맥·로컬 음성·웹캠·리포트·실사 에셋·유료 호출/권한을 큐가 비었다는 이유로 활성화하지 않습니다."
+  "next_decision": "승인된 Phase 2의 사용량·공유 문맥 미리보기/동의·A/B 턴/중복·성격 프리셋까지 완료했습니다. 실제 각 PR/Cloud/CI/AI/merge/main 증거와 기존 #35 운영 인수 기준을 정리합니다. Phase 1 실사 에셋·실제 갤럭시북 성능은 별도이며, 별도 승인되지 않은 로컬 음성·웹캠·STT·리포트·다운로드·실제 유료 호출·권한/정책 확대를 빈 큐만으로 활성화하지 않습니다."
 }

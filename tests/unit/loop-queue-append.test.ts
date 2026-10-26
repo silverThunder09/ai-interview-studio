@@ -52,7 +52,8 @@ describe('approved queue extension', () => {
     expect(appendApprovedTasks(extended, config)).toBe(extended);
   });
   it('appends the current renderer and slot recovery work after all seven completed tasks', () => {
-    const config = JSON.parse(readFileSync(new URL('../../.github/approved-loop.json', import.meta.url), 'utf8'));
+    const installed = JSON.parse(readFileSync(new URL('../../.github/approved-loop.json', import.meta.url), 'utf8'));
+    const config = { ...installed, tasks: installed.tasks.slice(0, 9) };
     const previous = { ...config, tasks: config.tasks.slice(0, 7) };
     const state = emptyLoopState(previous); state.bootstrap = { main: sha('1'), key: 'a'.repeat(64), ready: true };
     state.tasks.forEach((task, i) => Object.assign(task, { pr: task.pr ?? 90 + i, phase: 'completed', cycles: i % 4, merged: sha('2'), receipt: { preserved: true } }));
@@ -63,9 +64,27 @@ describe('approved queue extension', () => {
       { id: 'avatar-renderer-recovery', phase: 'queued', pr: null, request: null },
       { id: 'avatar-model-restore-status', phase: 'queued', pr: null, request: null },
     ]);
+    expect(config.tasks.slice(7).every((task: { spec: { sha256: string } }) => task.spec.sha256 === '1b305eabb920e7f0a5796e3d0f2d1b9f123c6bbc9dfeef56a9d47785f8b06129')).toBe(true);
+    expect(appendApprovedTasks(extended, config)).toBe(extended);
+  });
+  it('preserves the nine installed definitions and completed receipts while appending Phase 2 in roadmap order', () => {
+    const config = JSON.parse(readFileSync(new URL('../../.github/approved-loop.json', import.meta.url), 'utf8'));
+    const previous = { ...config, tasks: config.tasks.slice(0, 9) };
+    expect(createHash('sha256').update(JSON.stringify(previous.tasks)).digest('hex')).toBe('52633db9ea2822075d8fbe663c5cd13e98c0979e0e10d7e775643fafdc6e3ce6');
+    const state = emptyLoopState(previous); state.bootstrap = { main: sha('1'), key: 'c'.repeat(64), ready: true };
+    state.tasks.forEach((task, i) => Object.assign(task, { pr: task.pr ?? 90 + i, phase: 'completed', cycles: i % 4, merged: sha('2'), receipt: { preserved: true } }));
+    const original = structuredClone(state), extended = appendApprovedTasks(state, config);
+    expect(state).toEqual(original); expect(extended.tasks.slice(0, 9)).toEqual(original.tasks);
+    expect(extended.bootstrap).toEqual(original.bootstrap);
+    expect(extended.tasks.slice(9).map(t => ({ id: t.id, phase: t.phase, pr: t.pr, request: t.request }))).toEqual([
+      { id: 'gemini-usage-ledger', phase: 'queued', pr: null, request: null },
+      { id: 'gemini-context-preview', phase: 'queued', pr: null, request: null },
+      { id: 'gemini-context-turns', phase: 'queued', pr: null, request: null },
+      { id: 'gemini-personality-presets', phase: 'queued', pr: null, request: null },
+    ]);
     const spec = readFileSync(new URL('../../harness/specs/gemini-local-interview.md', import.meta.url), 'utf8');
     const specHash = createHash('sha256').update(spec.replace(/\r\n/g, '\n')).digest('hex');
-    expect(config.tasks.slice(7).every((task: { spec: { sha256: string } }) => task.spec.sha256 === specHash)).toBe(true);
+    expect(config.tasks.slice(9).every((task: { spec: { sha256: string }; allowed_paths: string[] }) => task.spec.sha256 === specHash && task.allowed_paths.length <= 10)).toBe(true);
     expect(appendApprovedTasks(extended, config)).toBe(extended);
   });
   it('preserves every completed receipt and bootstrap byte and appends only queued work', () => {
