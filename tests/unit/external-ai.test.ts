@@ -36,6 +36,15 @@ function store(file?: string) { const dir = mkdtempSync(join(tmpdir(), 'studio-a
 afterEach(() => { for (const s of stores.splice(0)) s.close(); for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }); });
 
 describe('write-only credentials and consent validation', () => {
+  it('accepts only valid Gemini profile snapshots while preserving old and other-provider records', () => {
+    const profiles = { a: 'balanced', b: 'supportive' };
+    expect(isAIConfig({ ...config('gemini'), profiles })).toBe(true);
+    expect(isAIConfig(config('gemini'))).toBe(true);
+    expect(isAIConfig(config('openai'))).toBe(true);
+    expect(isAIConfig({ ...config('openai'), profiles })).toBe(false);
+    expect(isAIConfig({ ...config('gemini'), profiles: { ...profiles, a: 'arbitrary' } })).toBe(false);
+    expect(isAIConfig({ ...config('gemini'), profiles: { ...profiles, extra: true } })).toBe(false);
+  });
   it('rejects display labels and malformed model IDs without changing the accepted API ID contract', () => {
     for (const model of ['synthetic-model', 'model_v1.2', 'a'.repeat(100)]) {
       expect(isAIModelId(model)).toBe(true);

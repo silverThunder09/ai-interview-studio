@@ -1,11 +1,22 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { AIQuestionError, AIQuestionProvider, AI_QUESTION_LIMITS, type AIQuestionInput, type AIQuestionPayload, type AIQuestionTransport, type AITransportResult } from '../../src/main/ai-question-provider';
+import { AIQuestionError, AIQuestionProvider, AI_QUESTION_LIMITS, buildAIQuestionPayload, type AIQuestionInput, type AIQuestionPayload, type AIQuestionTransport, type AITransportResult } from '../../src/main/ai-question-provider';
 
 const input = (): AIQuestionInput => ({ questionNumber: 1, evidence: [{ origin: 'source', location: '단락 2', text: '합성 API 프로젝트를 구현했습니다.' }], answer: null });
 const response = (): AITransportResult => ({ ok: true, value: { text: '프로젝트에서 본인의 역할과 검증 방법을 설명해 주세요.', evidenceId: 'evidence-1' } });
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 
 describe('selected AI context and citation binding', () => {
+  it('sends only the selected speaker profile and rejects invalid or unbound profiles', () => {
+    const profiles = { a: 'balanced', b: 'supportive' } as const;
+    const first = { ...input(), speakerId: 'b' as const, profiles };
+    expect(buildAIQuestionPayload(first).data.profile).toBe('supportive');
+    const technical = { questionNumber: 3, evidence: [], answer: null, speakerId: 'a' as const, profiles };
+    expect(buildAIQuestionPayload(technical).data.profile).toBe('balanced');
+    expect(buildAIQuestionPayload(first).instructions).toContain('안전·근거 규칙');
+    expect(() => buildAIQuestionPayload({ ...first, profiles: { a: 'free text', b: 'calm' } })).toThrow('AI 질문');
+    expect(() => buildAIQuestionPayload({ ...input(), profiles })).toThrow('AI 질문');
+    expect(buildAIQuestionPayload(input()).data).not.toHaveProperty('profile');
+  });
   it('sends only selected bounded data and binds provider references to exact trusted evidence', async () => {
     const transport = vi.fn<AIQuestionTransport>().mockResolvedValue(response());
     const source = input();

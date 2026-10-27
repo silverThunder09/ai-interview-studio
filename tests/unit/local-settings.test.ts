@@ -27,6 +27,17 @@ const key = 'synthetic-protected-api-key';
 const preferences = { ...DEFAULT_AI_PREFERENCES, provider: 'gemini' as const, models: { ...DEFAULT_AI_PREFERENCES.models, gemini: 'synthetic-gemini-model' } };
 
 describe('protected local settings', () => {
+  it('persists valid profiles across restart without changing saved credentials', () => {
+    const { open } = setup(), storage = open();
+    storage.setKey('gemini', key, true);
+    storage.updatePreferences({ ...preferences, profiles: { a: 'balanced', b: 'supportive' } });
+    const restored = open();
+    expect(restored.preferences().profiles).toEqual({ a: 'balanced', b: 'supportive' });
+    expect(restored.restore().gemini).toBe(key);
+    const handlers = createAIHandlers(new AICredentials(restored), vi.fn());
+    expect(handlers.preferences([{ ...preferences, profiles: { a: 'invalid', b: 'calm' } }]).ok).toBe(false);
+    expect(open().preferences().profiles).toEqual({ a: 'balanced', b: 'supportive' });
+  });
   it('restores theme, model and opt-in key across services, without returning or persisting plaintext keys', () => {
     const { open, file } = setup(), storage = open();
     const handlers = createHandlers('test', storage), credentials = new AICredentials(storage), ai = createAIHandlers(credentials, vi.fn());
