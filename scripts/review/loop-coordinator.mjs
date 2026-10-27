@@ -49,6 +49,7 @@ export function parseLoopConfig(value) {
   const c = obj(value);
   ensure(c.schema === 1 && c.repository === REPO && typeof c.enabled === 'boolean' && Array.isArray(c.tasks) && c.tasks.length <= 256, 'invalid_loop_config');
   ensure(c.pr_auth === undefined || ['workflow-token', 'github-app'].includes(c.pr_auth), 'invalid_pr_auth_mode');
+  ensure(c.cloud_transport === undefined || ['legacy-comment', 'disabled'].includes(c.cloud_transport), 'invalid_cloud_transport');
   if (c.next_decision !== undefined) ensure(typeof c.next_decision === 'string' && c.next_decision.length > 0 && c.next_decision.length <= 2000, 'invalid_next_decision');
   const ids = new Set(), prs = new Set();
   for (const t of c.tasks) {
@@ -483,6 +484,7 @@ export async function runLoop({ api, sender, store, config, policy, writer, now 
       const update = fn => save(s => fn(s.tasks[index]));
       if (task.phase === 'paused') return { state: 'paused', changes };
       if (task.pr === null) {
+        if (c.cloud_transport !== 'legacy-comment') return { state: 'waiting-transport', changes };
         const main = identity((await api.request('GET', '/branches/main')).commit.sha);
         const preceding = snap.state.tasks[index - 1];
         // A newly installed planner must pass main CI too. Later tasks reuse the
@@ -555,6 +557,7 @@ export async function runLoop({ api, sender, store, config, policy, writer, now 
           let sent = await receipt(api, task);
           if (!sent && task.delivery.attempted) throw new Error('ambiguous_request_delivery');
           if (!sent) {
+            if (c.cloud_transport !== 'legacy-comment') return { state: 'waiting-transport', changes };
             if (await controlPaused(api)) return { state: 'stopped', changes };
             await update(t => { t.delivery.attempted = true; });
             sent = await sender.request('POST', `/issues/${task.pr}/comments`, { body: task.delivery.body });
@@ -743,7 +746,7 @@ async function main() {
   const config = parseLoopConfig(JSON.parse(await readFile('.github/approved-loop.json', 'utf8'))); if (!config.enabled) { console.log('Approved loop disabled; no state or requests changed.'); return; }
   const api = new RuntimeAPI(process.env.GITHUB_TOKEN), main = (await api.request('GET', '/branches/main')).commit.sha;
   ensure(process.env.AIS_CHECKOUT_SHA === main, 'trusted_main_moved');
-  ensure(process.env.AIS_CODEX_COMMENT_TOKEN, 'missing_comment_sender');
+  if (config.cloud_transport === 'legacy-comment') ensure(process.env.AIS_CODEX_COMMENT_TOKEN, 'missing_comment_sender');
   const policy = JSON.parse(await readFile('.github/review-policy.json', 'utf8'));
   const store = new LoopStore(api, config);
   await store.appendApprovedTasks();
@@ -759,7 +762,10 @@ async function main() {
   const credentials = new AppCredentials({ api, appId: process.env.AIS_PR_WRITER_APP_ID, installationId: process.env.AIS_PR_WRITER_INSTALLATION_ID, privateKey: process.env.AIS_PR_WRITER_PRIVATE_KEY });
   try {
     const writer = config.pr_auth === 'github-app' ? new ProductWriter({ api, credentials, config }) : undefined;
-    const result = await runLoop({ api, sender: new GitHub(process.env.AIS_CODEX_COMMENT_TOKEN), store, config, policy, writer });
+    const sender = config.cloud_transport !== 'legacy-comment'
+      ? { request: async () => { throw new Error('cloud_transport_disabled'); } }
+      : new GitHub(process.env.AIS_CODEX_COMMENT_TOKEN);
+    const result = await runLoop({ api, sender, store, config, policy, writer });
     console.log(JSON.stringify({ repository: REPO, ...result }));
   } finally { await credentials.dispose(); }
 }

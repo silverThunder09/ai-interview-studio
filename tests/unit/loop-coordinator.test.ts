@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import { GitHub } from '../../scripts/review/event-worker';
 
 const repository = 'silverThunder09/ai-interview-studio', head = '1'.repeat(40), base = '2'.repeat(40), checkout = '3'.repeat(40), merged = '4'.repeat(40);
-const config = { schema: 1, repository, enabled: true, tasks: [56, 57].map((pr, i) => ({ id: `probe-${i}`, pr, goal: '합성 실패 경계 검증 테스트를 추가합니다.', approval: '사용자가 승인한 검증 범위', allowed_paths: ['tests/unit/probe.test.ts'] })) };
+const config = { schema: 1, repository, enabled: true, cloud_transport: 'legacy-comment', tasks: [56, 57].map((pr, i) => ({ id: `probe-${i}`, pr, goal: '합성 실패 경계 검증 테스트를 추가합니다.', approval: '사용자가 승인한 검증 범위', allowed_paths: ['tests/unit/probe.test.ts'] })) };
 const policy = JSON.parse(readFileSync('.github/review-policy.json', 'utf8'));
 const blob = createHash('sha1').update('blob 5\0test\n').digest('hex');
 function reviewRequest(pr = 56) { return { schema: 2, repository, pr_number: pr, request_key: 'a'.repeat(64), head_sha: head, base_sha: base, requested_at: '2026-10-20T10:00:00.000Z', mode: 'read-only', allowed_paths: [] }; }
@@ -67,6 +67,47 @@ class FixtureAPI {
   } }; }
   respond(review: boolean) { const task = this.store.state.tasks.find(t => t.phase === (review ? 'review' : 'development'))!; if (task.pr === null) throw new Error('PR must be prepared'); const request = task.request as ReturnType<typeof reviewRequest>; const list = this.storedComments.get(task.pr) ?? []; list.push(resultComment(request, review, 2000 + list.length)); this.storedComments.set(task.pr, list); }
 }
+describe('disabled Cloud transport', () => {
+  it('holds an unsent development request without a PR comment or attempted receipt', async () => {
+    const f = new FixtureAPI();
+    const result = await runLoop({ ...f.options(), config: { ...config, cloud_transport: 'disabled' } });
+    expect(result.state).toBe('waiting-transport'); expect(f.sends).toHaveLength(0);
+    expect(f.store.state.tasks[0]!.delivery).toMatchObject({ phase: 'sending', attempted: false, id: null });
+  });
+  it('defaults to holding when the transport setting is absent', async () => {
+    const f = new FixtureAPI(), missing = { ...config, cloud_transport: undefined };
+    expect((await runLoop({ ...f.options(), config: missing })).state).toBe('waiting-transport');
+    expect(f.sends).toHaveLength(0);
+  });
+  it('does not turn an ambiguous attempted delivery into an unsent request', async () => {
+    const f = new FixtureAPI(), options = { ...f.options(), config: { ...config, cloud_transport: 'disabled' } };
+    expect((await runLoop(options)).state).toBe('waiting-transport');
+    Object.assign(f.store.state.tasks[0]!.delivery as object, { attempted: true });
+    await expect(runLoop(options)).rejects.toThrow('ambiguous_request_delivery');
+    expect(f.sends).toHaveLength(0);
+  });
+  it('continues reading a result for a previously sent request without sending another', async () => {
+    const f = new FixtureAPI(), options = { ...f.options(), config: { ...config, cloud_transport: 'disabled' } };
+    expect((await runLoop(options)).state).toBe('waiting-transport');
+    Object.assign(f.store.state.tasks[0]!.delivery as object, { phase: 'sent', attempted: true, id: 1001 });
+    f.respond(false);
+    const result = await runLoop(options);
+    expect(result.state).toBe('waiting-ci'); expect(f.sends).toHaveLength(0);
+  });
+  it('does not prepare a new product PR when no Cloud transport is available', async () => {
+    const f = new FixtureAPI();
+    const planned = { ...config, cloud_transport: 'disabled', tasks: [{ ...config.tasks[0]!, pr: null, title: '승인된 합성 작업', spec: { path: 'harness/specs/probe.md', sha256: 'a'.repeat(64) }, acceptance: ['결과 확인'] }, config.tasks[1]!] };
+    f.store.state = emptyLoopState(planned); f.store.state.bootstrap = { main: base, key: 'c'.repeat(64), ready: true };
+    f.store.save = async (old, state) => { expect(old.head).toBe(String(f.store.revision)); parseLoopState(state, planned); f.store.state = structuredClone(state); f.store.revision++; return f.store.load(); };
+    expect((await runLoop({ ...f.options(), config: planned })).state).toBe('waiting-transport');
+    expect(f.store.state.tasks[0]!.pr).toBeNull(); expect(f.sends).toHaveLength(0);
+    expect(f.reads.some(read => read === 'POST /pulls')).toBe(false);
+  });
+  it('rejects unknown transport settings', () => {
+    expect(() => parseLoopConfig({ ...config, cloud_transport: 'other' })).toThrow('invalid_cloud_transport');
+    expect(emptyLoopState({ ...config, cloud_transport: 'disabled' }).config_hash).toBe(emptyLoopState(config).config_hash);
+  });
+});
 describe('idle queue checkpoints', () => {
   it('does not write a lease or dispatch when every task is complete and there is no decision', async () => {
     const f = new FixtureAPI(); f.store.state.tasks.forEach(task => { task.phase = 'completed'; });
