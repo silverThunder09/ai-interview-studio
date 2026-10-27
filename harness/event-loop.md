@@ -6,7 +6,9 @@
 - 완료된 공식 리뷰의 실제 finding은 병합 성공으로 해석하지 않는다. 기존 승인 파일·3회 상한 안에서 같은 task의 요청/영수증/결함/이슈 이력을 보존하고 새 key로 수정 작업을 요청한다. P0·허용 밖 파일·모호하거나 과대한 결과·사람의 변경 요청은 보류한다. 새 권한이나 스펙을 댓글에서 가져오지 않는다.
 - 수정된 파일·새 head의 실제 CI3개와 새 AI 검토 finding0을 확인한 뒤 그 수정에 연결된 이슈를 닫는다. 기록된 해당 AI finding의 **공식 Bot 댓글만 있는** 스레드만 해결한다. outdated 스레드는 기존 절차를 따른다. GitHub가 현재 줄에 계속 연결한 과거 finding은 다음 조건을 모두 만족해야 한다: 신뢰하는 main이 보낸 새 read-only 요청에 미해결 원결함 전체·재현·수정 AC가 명시되어 있고, 그 요청의 key·head/base·본문 hash·전송 영수증이 일치하며, 해당 과거 finding을 포함한 새 AI 검토가 완료되어 finding0이어야 한다. 스레드의 모든 댓글은 보존한 과거 finding의 URL·본문과 정확히 같아야 한다. 새 head에서 처음 발견된 finding, 일반 리뷰만 완료한 과거 영수증, 사람 댓글, 누락/페이지 잘림은 해결하지 않는다. 해결 전 전체 대상 스레드를 먼저 검사하고, 해결 직후 재조회에서 사람 댓글이나 내용 변경이 확인되면 unresolved로 복원하고 멈춘다. 사람의 결정 리뷰를 dismiss/APPROVE하지 않으며 최종 원본 리뷰/스레드/라벨/현재 SHA 검증과 3회 수정 상한은 그대로 수행한다.
 
-PR #112의 개발 결과는 자동 적용·CI·새 AI 검토까지 진행됐으나, 수정된 사용량 화면의 봇 finding이 GitHub에서 outdated가 되지 않아 `human_or_current_thread_blocks_repair`로 보류됐다([실행](https://github.com/silverThunder09/ai-interview-studio/actions/runs/40320040533)). 위의 명시적 재검증 절차를 설치하더라도 기존 완료 댓글을 새 증거로 바꾸지 않는다. 최신 main을 일반 merge하고 새 CI·해당 결함을 포함한 새 리뷰를 거쳐야 한다. 보류 복구는 원본 요청/결과·수정회차·다음 승인 작업을 보존하며, 실제 머지/main 성공 전 다음 작업을 시작하거나 전체 무인 성공을 주장하지 않는다.
+과거 PR #112는 수정 finding이 GitHub에서 outdated가 되지 않아 `human_or_current_thread_blocks_repair`로 보류됐다([실행](https://github.com/silverThunder09/ai-interview-studio/actions/runs/40320040533)). 이 기록은 당시 사례이며 현재 상태가 아니다. 실제 최신 PR·CI·큐는 GitHub와 영속 상태에서 확인한다. 복구 시 원본 요청/결과·수정회차·다음 승인 작업을 보존하며, 실제 머지/main 성공 전 다음 작업을 시작하거나 전체 무인 성공을 주장하지 않는다.
+
+개발 결과가 텍스트 패치로 전달될 때 `renderGitDevelopmentResult`는 발신 전 현재 HEAD, Git이 생성한 원본 diff, 승인된 경로와 원본·작업 파일의 정확한 일치를 검사한다. 결과가 이후 전달 중 변형될 수 있으므로 수신 측 신원·형식·문맥 검증도 유지한다. main 동기화는 `sync_cycles`에 별도로 기록하며 리뷰 수정의 `cycles`를 소비하지 않는다. 이전 `cycles`는 줄이지 않고 보존하며, 기존 동기화 이력의 길이를 동기화 횟수의 초기값으로 사용한다.
 
 - 활성 상태는 신뢰하는 main의 `.github/approved-loop.json`과 #35의 최신 운영 기록으로 확인한다. 설치 성공·봇 수신·리뷰 완료·제품 개발 완료는 구분한다.
 - 공식 일반 실패 문장에는 요청 key가 없다. 현재 전송 이후 실패 이전에 같은 PR의 별도 Codex 요청이 있으면 `ambiguous_native_codex_failure`로 보류하고 실패 댓글·끼어든 요청 ID를 `unattributed_native_failure`에 남긴다. 현재 개발의 확정 실패로 귀속하거나 다음 작업을 시작하지 않는다. 원래 요청과 과거 실패 이력은 유지한다.

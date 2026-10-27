@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
-import { spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { REPOSITORY, applyDevelopmentPatch, buildDevelopmentRequest, renderDevelopmentResult, parseDevelopmentPatch, parseDevelopmentResult, planConnectedResult, type ConnectedSnapshot, type DevelopmentRequest, type DevelopmentReport } from '../../scripts/review/connected-controller';
 
@@ -21,6 +21,28 @@ const patch = 'diff --git a/src/example.ts b/src/example.ts\nindex aaaaaaa..bbbb
 const repair: DevelopmentRequest = { ...request, mode: 'repair', allowed_paths: ['src/example.ts'] };
 
 describe('development v2 result boundary', () => {
+  it('checks the Git patch against the exact checkout and working tree before rendering', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ais-patch-preflight-'));
+    const git = (...args: string[]) => execFileSync('git', args, { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    try {
+      git('init'); git('config', 'user.name', 'Fixture'); git('config', 'user.email', 'fixture@example.invalid');
+      writeFileSync(join(dir, 'example.txt'), 'first\nsecond\n'); git('add', 'example.txt'); git('commit', '-m', 'fixture');
+      const head = git('rev-parse', 'HEAD').trim();
+      writeFileSync(join(dir, 'example.txt'), 'first\n수정\n');
+      const diff = git('diff', '--no-ext-diff', '--unified=3', head, '--', 'example.txt');
+      const checkedRequest = { ...repair, head_sha: head, allowed_paths: ['example.txt'] };
+      const checkedReport = { ...report(), checkout_sha: head, change: { kind: 'patch', patch: diff } };
+      const moduleURL = new URL('../../scripts/review/connected-controller.ts', import.meta.url).href;
+      const script = `import {renderGitDevelopmentResult} from ${JSON.stringify(moduleURL)}; const x=JSON.parse(process.argv[1]); console.log(renderGitDevelopmentResult(x.request,x.report,'검증 완료'));`;
+      const run = (value: unknown) => spawnSync(process.execPath, ['--experimental-strip-types', '--input-type=module', '-e', script, JSON.stringify(value)], { cwd: dir, encoding: 'utf8' });
+      const valid = run({ request: checkedRequest, report: checkedReport });
+      expect(valid.status).toBe(0); expect(valid.stdout).toContain('ais-development-result-v2');
+      const truncated = run({ request: checkedRequest, report: { ...checkedReport, change: { kind: 'patch', patch: diff.slice(0, -1) } } });
+      expect(truncated.status).not.toBe(0); expect(truncated.stderr).toContain('git_patch_mismatch');
+      const stale = run({ request: { ...checkedRequest, head_sha: A }, report: { ...checkedReport, checkout_sha: A } });
+      expect(stale.status).not.toBe(0); expect(stale.stderr).toContain('stale_result_checkout');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
   it('transports Korean and surrogate-pair patch values in deterministic ASCII without changing the exact patch', () => {
     const unicodePatch = patch.replace(' first\n', ' 움직임 일시정지\n').replace('+updated', '+수정 완료 🙂');
     const value = { ...report(), change: { kind: 'patch', patch: unicodePatch } } as DevelopmentReport;
