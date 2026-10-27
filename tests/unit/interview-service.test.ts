@@ -1,3 +1,4 @@
+import { AIQuestionError } from '../../src/main/ai-question-provider';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -223,4 +224,16 @@ describe('async generation and atomic storage', () => {
     service.close(); await check; delayed.resolve(local.next(request, [])); await Promise.resolve();
     await expect(service.start(request)).rejects.toThrow('종료 중'); expect(store.history().sessions).toEqual([]);
   });
+});
+
+it('rejects oversized final Gemini data in preview before consent or any provider call', () => {
+  const next = vi.fn<AsyncInterviewProvider['next']>();
+  const { store, service } = fixture({ next });
+  const base = startFixture(), ai = { provider: 'gemini' as const, model: 'synthetic-model', quote: base.reviewedText.slice(0, 180), transmissionConsent: true as const };
+  const q = (number: number) => ({ id: randomUUID(), number, kind: 'experience' as const, speakerId: 'b' as const, text: 'q'.repeat(500), evidence: null });
+  let session = store.start({ ...base, ai }, q(1));
+  for (let number = 1; number <= 2; number++) session = store.answer({ sessionId: session.id, questionId: session.turns.at(-1)!.question.id, answer: 'a'.repeat(1_000), transmissionConsent: true }, { next: q(number + 1) });
+  const request = { sessionId: session.id, questionId: session.turns.at(-1)!.question.id, answer: '\\'.repeat(2_000) };
+  expect(() => service.preview(request)).toThrow(AIQuestionError); expect(next).not.toHaveBeenCalled();
+  const preview = service.preview({ ...request, answer: '범위 안 답변' }); expect(preview.data.recentCompleted).toHaveLength(2);
 });

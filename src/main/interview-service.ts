@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { randomUUID } from 'node:crypto';
 import type { GeminiUsageTokens, InterviewSession, SharedContextPreview, SharedContextPreviewRequest, StartInterviewRequest, SubmitAnswerRequest } from '../shared/interview';
 import { buildSharedContextData, geminiQuestionRole, isSharedContextPreviewRequest, INTERVIEW_LIMITS, type SharedContextData } from '../shared/interview';
-import { AIQuestionError, AI_QUESTION_LIMITS } from './ai-question-provider';
+import { AIQuestionError, AI_QUESTION_LIMITS, buildAIQuestionPayload } from './ai-question-provider';
 import { InterviewStoreError, type InterviewStore } from './interview-store';
 import { LocalQuestionProvider, type QuestionDraft } from './questions';
 
@@ -77,6 +77,9 @@ export class InterviewService {
     let data;
     try { data = buildSharedContextData(session.ai.quote, session.turns, value.answer); }
     catch { throw new AIQuestionError('INVALID_INPUT'); }
+    buildAIQuestionPayload({ questionNumber: current.question.number + 1, ...role,
+      evidence: role.kind === 'experience' ? [{ origin: 'reviewed', location: '사용자 선택 구절', text: session.ai.quote }] : [],
+      answer: role.kind === 'follow-up' ? value.answer : null, context: data });
     const canonical = JSON.stringify({ sessionId: session.id, questionId: current.question.id, role, ai: session.ai, data });
     return { sessionId: session.id, questionId: current.question.id, role, data, digest: createHash('sha256').update(canonical).digest('hex') };
   }

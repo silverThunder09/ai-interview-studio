@@ -62,7 +62,7 @@ function record(value: unknown, keys: string[]): value is Record<string, unknown
 function text(value: unknown, max: number): value is string {
   return typeof value === 'string' && value.trim().length > 0 && value.length <= max && !value.includes('\0');
 }
-function prepare(value: unknown): AIQuestionPayload {
+export function buildAIQuestionPayload(value: unknown): AIQuestionPayload {
   const keys = ['questionNumber', 'evidence', 'answer'];
   if (typeof value === 'object' && value !== null && Object.hasOwn(value, 'speakerId')) keys.push('speakerId');
   if (typeof value === 'object' && value !== null && Object.hasOwn(value, 'kind')) keys.push('kind');
@@ -98,8 +98,6 @@ function question(value: unknown, data: AIQuestionPayload['data']): QuestionDraf
   if ((value.evidenceId !== null && !evidence) || (data.speakerId !== undefined && data.kind === 'experience' && !evidence) || (data.kind === 'technical' && value.evidenceId !== null) ||
     (data.kind === 'follow-up' && value.evidenceId !== 'answer-previous') ||
     (data.speakerId !== undefined && value.speakerId !== data.speakerId)) throw new AIQuestionError('INVALID_RESPONSE');
-  const normalized = (text: string) => text.trim().replace(/\s+/g, ' ');
-  if (data.context?.recentCompleted.some(turn => normalized(turn.question) === normalized(value.text as string))) throw new AIQuestionError('INVALID_RESPONSE');
   return { kind: data.kind, text: value.text, evidence: evidence ? { origin: evidence.origin, location: evidence.location, text: evidence.text } : null,
     ...(data.speakerId ? { speakerId: data.speakerId } : {}) };
 }
@@ -109,7 +107,7 @@ export class AIQuestionProvider {
     if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > AI_QUESTION_LIMITS.timeoutMs) throw new AIQuestionError('INVALID_INPUT');
   }
   async next(input: unknown, signal?: AbortSignal): Promise<QuestionDraft & { usage?: GeminiUsageTokens }> {
-    const payload = prepare(input);
+    const payload = buildAIQuestionPayload(input);
     if (signal?.aborted) throw new AIQuestionError(signal.reason instanceof AIQuestionError && signal.reason.code === 'TIMEOUT' ? 'TIMEOUT' : 'CANCELLED');
     // Keep a private snapshot for citation binding. An adapter cannot rewrite
     // the evidence it will later claim to have received.

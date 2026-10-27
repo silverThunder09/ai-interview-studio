@@ -348,3 +348,21 @@ it('sends the exact consented preview through the real router, preserves usage, 
     expect(request).toHaveBeenCalledTimes(4);
   } finally { service.close(); vault.clearAll(); }
 });
+
+it('allows a question equal to the 500-character preview prefix of a longer stored question', async () => {
+  const storage = store(), vault = new AICredentials(); vault.set('gemini', key);
+  const excerpt = 'q'.repeat(500);
+  const request = vi.fn<typeof fetch>().mockImplementation(async (_url, init) => {
+    const data = JSON.parse(JSON.parse(String(init?.body)).contents[0].parts[0].text) as AIQuestionPayload['data'];
+    return response(envelope('gemini', { text: data.questionNumber === 1 ? excerpt + 'suffix' : data.questionNumber === 2 ? '중간 합성 질문' : excerpt, speakerId: data.speakerId, evidenceId: data.kind === 'experience' ? 'evidence-1' : data.kind === 'follow-up' ? 'answer-previous' : null }));
+  });
+  const service = new InterviewService(() => storage, new InterviewProviderRouter(vault, request));
+  try {
+    let session = await service.start({ ...startFixture(), ai: config('gemini') });
+    session = await service.answer({ sessionId: session.id, questionId: session.turns.at(-1)!.question.id, answer: '첫 답변', transmissionConsent: true });
+    const input = { sessionId: session.id, questionId: session.turns.at(-1)!.question.id, answer: '이번 답변' };
+    const preview = service.preview(input); expect(preview.data.recentCompleted[0]!.question).toBe(excerpt);
+    session = await service.answer({ ...input, transmissionConsent: true, contextPreview: { digest: preview.digest, consent: true } });
+    expect(session.turns.at(-1)!.question.text).toBe(excerpt); expect(request).toHaveBeenCalledTimes(3);
+  } finally { service.close(); vault.clearAll(); }
+});

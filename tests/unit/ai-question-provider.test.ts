@@ -90,13 +90,14 @@ describe('selected AI context and citation binding', () => {
   it('requires answer provenance for follow-up rather than allowing uncited generated assumptions', async () => {
     await expect(new AIQuestionProvider(async () => ({ ok: true, value: { text: '합성 질문', evidenceId: null } })).next({ questionNumber: 2, evidence: [], answer: '합성 답변' })).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
   });
-  it('rejects a whitespace-normalized duplicate from the consented limited history without another call', async () => {
-    const transport = vi.fn<AIQuestionTransport>().mockResolvedValue({ ok: true, value: { text: '같은   질문 입니다', evidenceId: null, speakerId: 'a' } });
-    await expect(new AIQuestionProvider(transport).next({ questionNumber: 3, kind: 'technical', evidence: [], answer: null, speakerId: 'a', context: {
-      selectedQuote: '합성 구절', recentCompleted: [{ question: ' 같은 질문\n입니다 ', answer: '합성 답변' }], currentAnswer: '현재 답변',
+  it('does not treat a 500-character excerpt as a full duplicate question', async () => {
+    const excerpt = 'q'.repeat(500);
+    const transport = vi.fn<AIQuestionTransport>().mockResolvedValue({ ok: true, value: { text: excerpt, evidenceId: null, speakerId: 'a' } });
+    const value = await new AIQuestionProvider(transport).next({ questionNumber: 3, kind: 'technical', evidence: [], answer: null, speakerId: 'a', context: {
+      selectedQuote: '합성 구절', recentCompleted: [{ question: excerpt, answer: '합성 답변' }], currentAnswer: '현재 답변',
       scope: { includedCompleted: 1, omittedCompleted: 0, excerpts: true },
-    } })).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
-    expect(transport).toHaveBeenCalledOnce();
+    } });
+    expect(value.text).toBe(excerpt); expect(transport).toHaveBeenCalledOnce();
   });
 });
 
