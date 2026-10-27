@@ -1,4 +1,4 @@
-import { registerTemporaryKey, selectModel } from './settings-helpers';
+import { openAPISettings, registerTemporaryKey, selectModel } from './settings-helpers';
 import { _electron as electron, expect, test, type ElectronApplication } from '@playwright/test';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
@@ -35,7 +35,7 @@ test('Gemini speaker roles drive the question UI and live WebGL interviewer with
         }
         const data = JSON.parse(body.contents[0].parts[0].text);
         const expectedSpeaker = data.questionNumber <= 2 ? 'b' : 'a';
-        if (data.speakerId !== expectedSpeaker || body.generationConfig.responseFormat.text.schema?.properties?.speakerId?.enum?.[0] !== expectedSpeaker) {
+        if (data.speakerId !== expectedSpeaker || data.profile !== (expectedSpeaker === 'a' ? 'balanced' : 'supportive') || body.generationConfig.responseFormat.text.schema?.properties?.speakerId?.enum?.[0] !== expectedSpeaker) {
           return new Response('synthetic invalid speaker contract', { status: 400 });
         }
         const value = { text: `합성 Gemini ${data.questionNumber}번 ${data.speakerId.toUpperCase()} 질문입니다.`, evidenceId: data.evidence[0]?.id ?? null, speakerId: data.speakerId };
@@ -54,6 +54,18 @@ test('Gemini speaker roles drive the question UI and live WebGL interviewer with
     await page.getByLabel('외부 API로 AI 질문 생성', { exact: true }).check();
     await registerTemporaryKey(page, 'synthetic-gemini-key-never-real', 'gemini');
     await selectModel(page, 'gemini', 'synthetic-gemini-model');
+    const settings = await openAPISettings(page);
+    await settings.getByLabel('키를 등록할 서비스', { exact: true }).selectOption('gemini');
+    await settings.getByLabel('기술 면접관 A의 말투').selectOption('balanced');
+    await settings.getByLabel('경험 면접관 B의 말투').selectOption('supportive');
+    await settings.getByRole('button', { name: '서비스·모델 저장', exact: true }).click();
+    await expect(settings.getByText('서비스와 모델 설정을 저장했습니다.', { exact: false })).toBeVisible();
+    await settings.getByRole('button', { name: '설정 닫기', exact: true }).click();
+    const reopened = await openAPISettings(page);
+    await expect(reopened.getByLabel('기술 면접관 A의 말투')).toHaveValue('balanced');
+    await expect(reopened.getByLabel('경험 면접관 B의 말투')).toHaveValue('supportive');
+    await reopened.getByRole('button', { name: '설정 닫기', exact: true }).click();
+    await expect(page.getByText('면접관 B 말투: 친절·구체화 (supportive)')).toBeVisible();
     await page.getByLabel('첫 질문에 보낼 구절', { exact: false }).fill(quote);
     await page.getByLabel('선택 서비스·모델·구절과 과금·보존 가능성', { exact: false }).check();
     await page.getByLabel('이력서 검토 내용과 면접 기록의 로컬 저장에 동의합니다.').check();
@@ -64,6 +76,7 @@ test('Gemini speaker roles drive the question UI and live WebGL interviewer with
       await expect(page.getByRole('heading', { name: `질문 ${number}`, exact: true })).toBeVisible();
       await expect(page.getByText(`합성 Gemini ${number}번 ${speaker.toUpperCase()} 질문입니다.`, { exact: true })).toBeVisible();
       await expect(page.locator('.avatar-status')).toContainText(`현재 면접관 ${speaker === 'a' ? 'A · 기술 면접관' : 'B · 경험·협업 면접관'}`);
+      await expect(page.getByText(`현재 면접관 ${speaker.toUpperCase()} · 말투: ${speaker === 'a' ? '균형·명확' : '친절·구체화'}`)).toBeVisible();
       await expect(canvas).toHaveAttribute('data-active', speaker);
       expect(await canvas.evaluate(c => (c as HTMLCanvasElement).getContext('webgl2')?.isContextLost())).toBe(false);
     }
@@ -159,5 +172,13 @@ test('Gemini speaker roles drive the question UI and live WebGL interviewer with
     await expect(page.getByRole('heading', { name: '이번 연습을 완료했습니다' })).toBeVisible();
     expect(await app.evaluate(() => (globalThis as typeof globalThis & { __sharedRequests: number }).__sharedRequests)).toBe(8);
     expect(errors).toEqual([]);
+    await app.close();
+    app = await electron.launch({ chromiumSandbox: true, env,
+      ...(process.env.SMOKE_EXECUTABLE ? { executablePath: resolve(process.env.SMOKE_EXECUTABLE) } : {}),
+      args: [...(process.env.SMOKE_EXECUTABLE ? [] : ['.']), ...(process.env.STUDIO_SMOKE_HEADLESS === '1' ? ['--ozone-platform=headless', '--use-gl=angle', '--use-angle=swiftshader'] : []), `--user-data-dir=${profile}`] });
+    const restarted = await app.firstWindow();
+    const restoredSettings = await openAPISettings(restarted);
+    await expect(restoredSettings.getByLabel('기술 면접관 A의 말투')).toHaveValue('balanced');
+    await expect(restoredSettings.getByLabel('경험 면접관 B의 말투')).toHaveValue('supportive');
   } finally { await app?.close(); await rm(directory, { recursive: true, force: true }); }
 });

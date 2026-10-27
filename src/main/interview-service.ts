@@ -79,7 +79,7 @@ export class InterviewService {
     catch { throw new AIQuestionError('INVALID_INPUT'); }
     buildAIQuestionPayload({ questionNumber: current.question.number + 1, ...role,
       evidence: role.kind === 'experience' ? [{ origin: 'reviewed', location: '사용자 선택 구절', text: session.ai.quote }] : [],
-      answer: role.kind === 'follow-up' ? value.answer : null, context: data });
+      answer: role.kind === 'follow-up' ? value.answer : null, context: data, ...(session.ai.profiles ? { profiles: session.ai.profiles } : {}) });
     const canonical = JSON.stringify({ sessionId: session.id, questionId: current.question.id, role, ai: session.ai, data });
     return { sessionId: session.id, questionId: current.question.id, role, data, digest: createHash('sha256').update(canonical).digest('hex') };
   }

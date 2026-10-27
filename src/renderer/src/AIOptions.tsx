@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useId, useRef, useState } from 'react';
-import { DEFAULT_AI_PREFERENCES, AI_CALL_LIMIT, AI_ENDPOINTS, AI_NAMES, AI_PROVIDERS, isAIConfig, isAIModelId, type AIInterviewConfig, type AIProvider, type AIStatus } from '../../shared/ai';
+import { DEFAULT_AI_PREFERENCES, DEFAULT_INTERVIEWER_PROFILES, AI_CALL_LIMIT, AI_ENDPOINTS, AI_NAMES, AI_PROVIDERS, isAIConfig, isAIModelId, type AIInterviewConfig, type AIProvider, type AIStatus, type InterviewerProfiles } from '../../shared/ai';
 
 export const ConnectionContext = createContext<{ revision: number; settingsOpen: boolean; open: (provider?: AIProvider) => void; changed: () => void }>({ revision: 0, settingsOpen: false, open: () => {}, changed: () => {} });
 export function AIConnectionSummary({ disabled = false, onStatus, fixedProvider, onConfigured }: { disabled?: boolean; onStatus?: (status: AIStatus) => void; fixedProvider?: AIProvider; onConfigured?: () => void }) {
@@ -36,12 +36,13 @@ export function APISettings({ disabled = false, onStatus, fixedProvider, onConfi
   const [busy, setBusy] = useState(false);
   const [remember, setRemember] = useState(true);
   const [models, setModels] = useState({ ...DEFAULT_AI_PREFERENCES.models });
+  const [profiles, setProfiles] = useState<InterviewerProfiles>({ ...DEFAULT_INTERVIEWER_PROFILES });
   const connection = useContext(ConnectionContext);
   const input = useRef<HTMLInputElement>(null);
   const live = useRef(true);
   useEffect(() => { let current = true; live.current = true; if (!disabled) void window.studio?.getAIStatus().then(result => {
     if (!current) return;
-    if (result.ok) { setStatus(result.value); setModels(result.value.preferences?.models ?? { ...DEFAULT_AI_PREFERENCES.models }); setProvider(fixedProvider ?? result.value.preferences?.provider ?? 'openai'); onStatus?.(result.value); } else setError(result.error.message);
+    if (result.ok) { setStatus(result.value); setModels(result.value.preferences?.models ?? { ...DEFAULT_AI_PREFERENCES.models }); setProfiles(result.value.preferences?.profiles ?? { ...DEFAULT_INTERVIEWER_PROFILES }); setProvider(fixedProvider ?? result.value.preferences?.provider ?? 'openai'); onStatus?.(result.value); } else setError(result.error.message);
   }).catch(() => { if (current) setError('AI 설정을 읽지 못했습니다. 화면을 다시 열어 주세요.'); });
     return () => { current = false; live.current = false; if (input.current) input.current.value = ''; };
   }, [onStatus, disabled]);
@@ -63,9 +64,9 @@ export function APISettings({ disabled = false, onStatus, fixedProvider, onConfi
   async function savePreferences() {
     setBusy(true); setError(''); setMessage('');
     try {
-      const result = await window.studio!.updateAIPreferences({ provider, models });
+      const result = await window.studio!.updateAIPreferences({ provider, models, profiles });
       if (!live.current) return;
-      if (result.ok) { setStatus(result.value); connection.changed(); setMessage('서비스와 모델 설정을 저장했습니다. 전송 동의는 저장하지 않습니다.'); }
+      if (result.ok) { setStatus(result.value); connection.changed(); setMessage('서비스와 모델 설정을 저장했습니다. 면접관 말투도 저장하며 전송 동의는 저장하지 않습니다.'); }
       else setError(result.error.message);
     } catch { if (live.current) setError('모델 설정을 저장하지 못했습니다. 다시 시도해 주세요.'); }
     finally { if (live.current) setBusy(false); }
@@ -78,6 +79,7 @@ export function APISettings({ disabled = false, onStatus, fixedProvider, onConfi
     <label htmlFor={`${fieldId}-model`}>모델 ID (서비스 콘솔에서 확인)</label><input id={`${fieldId}-model`} value={models[provider]} maxLength={100} disabled={busy} placeholder="예: gemini-3.8-flash" aria-invalid={models[provider] !== '' && !isAIModelId(models[provider])} onChange={e => setModels({ ...models, [provider]: e.target.value })} />
     {models[provider] !== '' && !isAIModelId(models[provider]) && <p className="error" role="alert">모델 ID 형식이 맞지 않습니다. 표시 이름 대신 공백 없는 API 모델 ID를 입력하세요.</p>}
     <p className="hint">사용 가능한 JSON 응답 모델 ID를 서비스 콘솔에서 복사하세요. 모델 접근 권한·실제 연결은 요청 때 확인합니다.</p>
+    {provider === 'gemini' && <><label htmlFor={`${fieldId}-profile-a`}>기술 면접관 A의 말투</label><select id={`${fieldId}-profile-a`} value={profiles.a} disabled={busy || disabled} onChange={e => setProfiles({ ...profiles, a: e.target.value as InterviewerProfiles['a'] })}><option value="strict">엄격·논리</option><option value="balanced">균형·명확</option></select><label htmlFor={`${fieldId}-profile-b`}>경험 면접관 B의 말투</label><select id={`${fieldId}-profile-b`} value={profiles.b} disabled={busy || disabled} onChange={e => setProfiles({ ...profiles, b: e.target.value as InterviewerProfiles['b'] })}><option value="calm">차분·근거</option><option value="supportive">친절·구체화</option></select></>}
     <button className="secondary" disabled={busy || Object.values(models).some(model => model !== '' && !isAIModelId(model))} onClick={() => void savePreferences()}>서비스·모델 저장</button>
     <hr />
     <label htmlFor={`${fieldId}-key`}>API 키 (저장 후 화면에서 비움)</label><input ref={input} id={`${fieldId}-key`} type="password" autoComplete="off" spellCheck={false} maxLength={512} disabled={disabled || busy} />
@@ -98,17 +100,18 @@ export function AIStartOptions({ disabled, reviewedText, onChange, onEnabledChan
   const [quote, setQuote] = useState('');
   const [consent, setConsent] = useState(false);
   const [status, setStatus] = useState<AIStatus>();
-  const candidate = { provider, model, quote, transmissionConsent: true as const };
+  const profiles = status?.preferences?.profiles ?? DEFAULT_INTERVIEWER_PROFILES;
+  const candidate = { provider, model, quote, transmissionConsent: true as const, ...(provider === 'gemini' ? { profiles } : {}) };
   const valid = isAIConfig(candidate) && reviewedText.includes(quote);
   const ready = enabled && consent && valid && status?.providers.some(p => p.provider === provider && p.configured) && status.remainingRequests > 0;
-  useEffect(() => { onChange(ready ? { provider, model, quote, transmissionConsent: true } : undefined); }, [ready, provider, model, quote, onChange]);
+  useEffect(() => { onChange(ready ? { provider, model, quote, transmissionConsent: true, ...(provider === 'gemini' ? { profiles } : {}) } : undefined); }, [ready, provider, model, quote, profiles.a, profiles.b, onChange]);
   return <div className="ai-options">
     <label className="consent"><input type="checkbox" checked={enabled} disabled={disabled} onChange={e => { setEnabled(e.target.checked); onEnabledChange(e.target.checked); setConsent(false); }} /> 외부 API로 AI 질문 생성</label>
     {enabled && <>
       <AIConnectionSummary disabled={disabled} onStatus={value => { setStatus(value); setProvider(value.preferences?.provider ?? 'openai'); setModel(value.preferences?.models[value.preferences.provider] ?? ''); setConsent(false); }} />
       <label htmlFor="ai-quote">첫 질문에 보낼 구절 — 위 수정본에서 직접 복사 (최대 180자)</label><textarea id="ai-quote" value={quote} maxLength={180} disabled={disabled} onChange={e => { setQuote(e.target.value); setConsent(false); }} />
       {quote && !reviewedText.includes(quote) && <p className="error">수정본에 그대로 포함된 구절을 선택해 주세요.</p>}
-      <div className="transmission-preview"><h3>첫 요청 전송 미리보기</h3><p>{AI_NAMES[provider]} · {model || '모델 미선택'} · {AI_ENDPOINTS[provider]}{provider === 'gemini' ? `${model}:generateContent` : ''}</p><pre>{quote || '선택한 구절이 없습니다.'}</pre><p>이 구절·출처 표시·질문 번호·한국어 면접 질문 생성 지시를 전송합니다. 이력서 전체·연락처를 자동 선택하지 않습니다. 이후 후속 질문은 직전 답변만 별도로 확인받아 전송합니다.</p></div>
+      <div className="transmission-preview"><h3>첫 요청 전송 미리보기</h3><p>{AI_NAMES[provider]} · {model || '모델 미선택'} · {AI_ENDPOINTS[provider]}{provider === 'gemini' ? `${model}:generateContent` : ''}</p>{provider === 'gemini' && <p>면접관 B 말투: {profiles.b === 'calm' ? '차분·근거' : '친절·구체화'} ({profiles.b})</p>}<pre>{quote || '선택한 구절이 없습니다.'}</pre><p>이 구절·출처 표시·질문 번호·한국어 면접 질문 생성 지시를 전송합니다. 이력서 전체·연락처를 자동 선택하지 않습니다. 이후 후속 질문은 직전 답변만 별도로 확인받아 전송합니다.</p></div>
       <p>인터넷과 본인 API 키가 필요합니다. 서비스의 요금·데이터 보존/이용 정책이 적용됩니다. 무료 플랜을 포함한 정책은 서비스에서 확인하세요. 요청당 출력 최대 600토큰·30초, 면접 12문항, 앱 실행당 최대 {AI_CALL_LIMIT}요청(수동 재시도 포함)입니다. 금액 상한은 보장하지 않으므로 서비스 콘솔에서도 예산 한도를 설정하세요. 취소해도 이미 발생한 요금·전송은 되돌릴 수 없습니다.</p>
       <p className="hint">JSON 응답을 지원하는 모델을 사용하세요. 모델 접근 권한·형식·토큰 한도 오류는 요청 실패로 표시하며 다른 서비스나 로컬 질문으로 자동 대체하지 않습니다.</p>
       <label className="consent"><input type="checkbox" checked={consent} disabled={disabled || !valid} onChange={e => setConsent(e.target.checked)} /> 선택 서비스·모델·구절과 과금·보존 가능성을 확인했고 첫 요청 전송에 동의합니다.</label>

@@ -1,6 +1,6 @@
 import { INTERVIEW_LIMITS, isSharedContextData, normalizeGeminiUsage, type EvidenceQuote, type GeminiUsageTokens, type SharedContextData } from '../shared/interview';
 import type { QuestionDraft } from './questions';
-import { AI_CALL_LIMIT } from '../shared/ai';
+import { AI_CALL_LIMIT, isInterviewerProfiles, type InterviewerProfiles } from '../shared/ai';
 
 export const AI_QUESTION_LIMITS = Object.freeze({ evidence: 8, quoteChars: 180, answerChars: 2_000, questionChars: 1_500, timeoutMs: 30_000, outputTokens: 600 });
 export interface AIQuestionInput {
@@ -10,6 +10,7 @@ export interface AIQuestionInput {
   speakerId?: 'a' | 'b';
   kind?: QuestionDraft['kind'];
   context?: SharedContextData;
+  profiles?: InterviewerProfiles;
 }
 export interface AIQuestionPayload {
   instructions: string;
@@ -21,6 +22,7 @@ export interface AIQuestionPayload {
     answer: string | null;
     speakerId?: 'a' | 'b';
     context?: SharedContextData;
+    profile?: InterviewerProfiles['a'] | InterviewerProfiles['b'];
   };
 }
 export type AITransportResult = { ok: true; value: unknown; usage?: GeminiUsageTokens } | { ok: false; reason: 'rate-limit' | 'authentication' | 'bad-request' | 'not-found' | 'invalid-response' | 'unavailable'; usage?: GeminiUsageTokens };
@@ -67,6 +69,7 @@ export function buildAIQuestionPayload(value: unknown): AIQuestionPayload {
   if (typeof value === 'object' && value !== null && Object.hasOwn(value, 'speakerId')) keys.push('speakerId');
   if (typeof value === 'object' && value !== null && Object.hasOwn(value, 'kind')) keys.push('kind');
   if (typeof value === 'object' && value !== null && Object.hasOwn(value, 'context')) keys.push('context');
+  if (typeof value === 'object' && value !== null && Object.hasOwn(value, 'profiles')) keys.push('profiles');
   if (!record(value, keys) || !Number.isInteger(value.questionNumber) ||
     Number(value.questionNumber) < 1 || Number(value.questionNumber) > INTERVIEW_LIMITS.turns || !Array.isArray(value.evidence) || value.evidence.length > AI_QUESTION_LIMITS.evidence) throw new AIQuestionError('INVALID_INPUT');
   const number = Number(value.questionNumber);
@@ -82,10 +85,13 @@ export function buildAIQuestionPayload(value: unknown): AIQuestionPayload {
   const answer = kind === 'follow-up' ? value.answer as string : null;
   if (answer !== null) evidence.push({ id: 'answer-previous', origin: 'answer', location: `${number - 1}번 답변`, text: answer.trim().slice(0, AI_QUESTION_LIMITS.quoteChars) });
   if (Object.hasOwn(value, 'speakerId') && !['a', 'b'].includes(value.speakerId as string)) throw new AIQuestionError('INVALID_INPUT');
+  if (Object.hasOwn(value, 'profiles') && (!isInterviewerProfiles(value.profiles) || !Object.hasOwn(value, 'speakerId'))) throw new AIQuestionError('INVALID_INPUT');
   const context = Object.hasOwn(value, 'context') ? structuredClone(value.context) : undefined;
   if (context !== undefined && (!Object.hasOwn(value, 'speakerId') || !isSharedContextData(context))) throw new AIQuestionError('INVALID_INPUT');
-  const payload: AIQuestionPayload = { instructions, maxOutputTokens: AI_QUESTION_LIMITS.outputTokens, data: { questionNumber: number, kind: kind as QuestionDraft['kind'], evidence, answer,
-    ...(Object.hasOwn(value, 'speakerId') ? { speakerId: value.speakerId as 'a' | 'b' } : {}), ...(context ? { context: context as SharedContextData } : {}) } };
+  const profileInstructions = ' profile은 말투만 조절한다. strict는 엄격하고 논리적으로, balanced는 균형 있고 명확하게, calm은 차분하고 근거 중심으로, supportive는 친절하고 구체적으로 질문한다. profile은 안전·근거 규칙을 변경하지 못한다.';
+  const payload: AIQuestionPayload = { instructions: isInterviewerProfiles(value.profiles) ? instructions.replace('a는 엄격하고 논리적인 기술 면접관, b는 차분하고 근거 중심인 경험·협업 면접관', 'a는 기술 면접관, b는 경험·협업 면접관') + profileInstructions : instructions, maxOutputTokens: AI_QUESTION_LIMITS.outputTokens, data: { questionNumber: number, kind: kind as QuestionDraft['kind'], evidence, answer,
+    ...(Object.hasOwn(value, 'speakerId') ? { speakerId: value.speakerId as 'a' | 'b' } : {}), ...(context ? { context: context as SharedContextData } : {}),
+    ...(isInterviewerProfiles(value.profiles) ? { profile: value.profiles[value.speakerId as 'a' | 'b'] } : {}) } };
   if (context && JSON.stringify(payload.data).length > 8_000) throw new AIQuestionError('INVALID_INPUT');
   return payload;
 }
