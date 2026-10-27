@@ -17,6 +17,7 @@ import { startReviewRepair, finishReviewRepair, buildRepairReviewAddition } from
 export const REPO = 'silverThunder09/ai-interview-studio';
 export const LOOP_BRANCH = 'automation/approved-loop';
 const STATE_PATH = '.automation/approved-loop.json';
+const STATE_MAX_BYTES = 1024 * 1024;
 const HASH = /^[a-f0-9]{64}$/, SHA = /^[a-f0-9]{40}$/;
 const PHASES = ['queued', 'development', 'apply', 'ci', 'review', 'merge', 'main-ci', 'completed', 'paused'];
 const hash = value => createHash('sha256').update(value).digest('hex');
@@ -123,7 +124,7 @@ export class LoopStore {
     const commit = await this.api.request('GET', `/git/commits/${head}`), tree = identity(commit.tree.sha);
     const entries = await this.api.request('GET', `/git/trees/${tree}?recursive=1`); ensure(entries.truncated === false, 'incomplete_state_tree');
     const entry = entries.tree.find(e => e.path === STATE_PATH); ensure(entry?.mode === '100644' && entry.type === 'blob', 'missing_loop_state');
-    const file = await this.api.request('GET', `/git/blobs/${identity(entry.sha)}`); ensure(file.encoding === 'base64' && file.size <= 512 * 1024, 'invalid_state_blob');
+    const file = await this.api.request('GET', `/git/blobs/${identity(entry.sha)}`); ensure(file.encoding === 'base64' && file.size <= STATE_MAX_BYTES, 'invalid_state_blob');
     return { head, tree, state: JSON.parse(Buffer.from(file.content, 'base64').toString('utf8')) };
   }
   async load() {
@@ -154,7 +155,9 @@ export class LoopStore {
     return this.writeSnapshot(old, next);
   }
   async writeSnapshot(old, next) {
-    const tree = await this.api.request('POST', '/git/trees', { base_tree: old.tree, tree: [{ path: STATE_PATH, mode: '100644', type: 'blob', content: JSON.stringify(next) }] });
+    const content = JSON.stringify(next);
+    ensure(Buffer.byteLength(content, 'utf8') <= STATE_MAX_BYTES, 'state_size_limit');
+    const tree = await this.api.request('POST', '/git/trees', { base_tree: old.tree, tree: [{ path: STATE_PATH, mode: '100644', type: 'blob', content }] });
     const commit = await this.api.request('POST', '/git/commits', { message: 'chore(automation): checkpoint approved loop', tree: identity(tree.sha), parents: [old.head] });
     const fresh = await this.api.request('GET', `/git/ref/heads/${LOOP_BRANCH}`); ensure(fresh.object.sha === old.head, 'loop_cas_conflict');
     await this.api.request('PATCH', `/git/refs/heads/${LOOP_BRANCH}`, { sha: identity(commit.sha), force: false });

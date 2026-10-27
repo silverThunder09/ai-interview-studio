@@ -105,3 +105,28 @@ describe('queue recovery without replay', () => {
     expect(next.bootstrap).toEqual(old.bootstrap);
   });
 });
+
+it('preserves a synthetic journal above 512KiB across load and the next checkpoint', async () => {
+  const api = new GitHubFixture();
+  Object.assign(api.state, { retained_history: '보존'.repeat(90_000) });
+  const store = new LoopStore(api, previous), old = await store.load();
+  expect(Buffer.byteLength(JSON.stringify(old.state))).toBeGreaterThan(512 * 1024);
+  const next = { ...structuredClone(old.state), revision: old.state.revision + 1 };
+  const saved = await store.save(old, next);
+  expect(saved).toMatchObject({ state: next });
+  expect(api.calls.find(c => c.method === 'POST' && c.path === '/git/trees')?.body).toMatchObject({ tree: [{ content: JSON.stringify(next) }] });
+});
+it('rejects oversized remote journals before decoding or writing', async () => {
+  const api = new GitHubFixture(), request = api.request.bind(api);
+  api.request = async (method, path, body = {}) => method === 'GET' && path.startsWith('/git/blobs/')
+    ? { encoding: 'base64', size: 1024 * 1024 + 1, content: Buffer.from('{}').toString('base64') }
+    : request(method, path, body);
+  await expect(new LoopStore(api, previous).load()).rejects.toThrow('invalid_state_blob');
+  expect(api.calls.some(c => c.method !== 'GET')).toBe(false);
+});
+it('rejects a checkpoint crossing the UTF8 limit before any remote tree or ref write', async () => {
+  const api = new GitHubFixture(), store = new LoopStore(api, previous), old = await store.load();
+  const next = Object.assign(structuredClone(old.state), { revision: old.state.revision + 1, retained_history: '가'.repeat(360_000) });
+  await expect(store.save(old, next)).rejects.toThrow('state_size_limit');
+  expect(api.calls.some(c => c.method !== 'GET')).toBe(false);
+});
