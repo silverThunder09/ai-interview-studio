@@ -1,3 +1,4 @@
+import { AIQuestionError } from '../../src/main/ai-question-provider';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -43,10 +44,19 @@ describe('async generation and atomic storage', () => {
     expect(next).not.toHaveBeenCalled();
     const saved = await service.answer({ ...request, transmissionConsent: true, contextPreview: { digest: preview.digest, consent: true } });
     expect(saved.turns[0]!.answer).toBe(request.answer);
+    expect(next.mock.calls[0]![4]).toEqual(preview.data);
     expect(await service.answer({ ...request, transmissionConsent: true, contextPreview: { digest: preview.digest, consent: true } })).toEqual(saved);
     await expect(service.answer({ sessionId: second.id, questionId: second.turns[0]!.question.id, answer: request.answer, transmissionConsent: true, contextPreview: { digest: preview.digest, consent: true } })).rejects.toMatchObject({ code: 'INVALID_INPUT' });
     expect(handlers.preview([{ ...request, questionId: randomUUID() }])).toMatchObject({ ok: false, error: { code: 'INVALID_REQUEST' } });
     expect(next).toHaveBeenCalledOnce();
+  });
+  it('does not provide shared context without the separate current-snapshot consent', async () => {
+    const next = vi.fn<AsyncInterviewProvider['next']>((resume, turns) => local.next(resume, turns));
+    const { store, service } = fixture({ next });
+    const base = startFixture(), ai = { provider: 'gemini' as const, model: 'synthetic-model', quote: base.reviewedText.slice(0, 180), transmissionConsent: true as const };
+    const session = store.start({ ...base, ai }, { ...local.next(base, [])!, speakerId: 'b' });
+    await service.answer({ sessionId: session.id, questionId: session.turns[0]!.question.id, answer: '합성 답변', transmissionConsent: true });
+    expect(next.mock.calls[0]![4]).toBeUndefined();
   });
   it('rolls back a new interview when usage finalization fails and retries without a phantom session', async () => {
     const next = vi.fn<AsyncInterviewProvider['next']>(async (resume, previous, _signal, onDispatch) => {
@@ -214,4 +224,16 @@ describe('async generation and atomic storage', () => {
     service.close(); await check; delayed.resolve(local.next(request, [])); await Promise.resolve();
     await expect(service.start(request)).rejects.toThrow('종료 중'); expect(store.history().sessions).toEqual([]);
   });
+});
+
+it('rejects oversized final Gemini data in preview before consent or any provider call', () => {
+  const next = vi.fn<AsyncInterviewProvider['next']>();
+  const { store, service } = fixture({ next });
+  const base = startFixture(), ai = { provider: 'gemini' as const, model: 'synthetic-model', quote: base.reviewedText.slice(0, 180), transmissionConsent: true as const };
+  const q = (number: number) => ({ id: randomUUID(), number, kind: 'experience' as const, speakerId: 'b' as const, text: 'q'.repeat(500), evidence: null });
+  let session = store.start({ ...base, ai }, q(1));
+  for (let number = 1; number <= 2; number++) session = store.answer({ sessionId: session.id, questionId: session.turns.at(-1)!.question.id, answer: 'a'.repeat(1_000), transmissionConsent: true }, { next: q(number + 1) });
+  const request = { sessionId: session.id, questionId: session.turns.at(-1)!.question.id, answer: '\\'.repeat(2_000) };
+  expect(() => service.preview(request)).toThrow(AIQuestionError); expect(next).not.toHaveBeenCalled();
+  const preview = service.preview({ ...request, answer: '범위 안 답변' }); expect(preview.data.recentCompleted).toHaveLength(2);
 });

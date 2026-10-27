@@ -40,6 +40,12 @@ export interface SharedContextPreview {
   sessionId: string; questionId: string; role: { kind: InterviewQuestion['kind']; speakerId: 'a' | 'b' };
   data: SharedContextData; digest: string;
 }
+export function geminiQuestionRole(number: number): { kind: InterviewQuestion['kind']; speakerId: 'a' | 'b' } {
+  if (!Number.isInteger(number) || number < 1 || number > INTERVIEW_LIMITS.turns) throw new Error('INVALID_QUESTION_NUMBER');
+  const position = (number - 1) % 4;
+  return position === 0 ? { kind: 'experience', speakerId: 'b' } : position === 1 ? { kind: 'follow-up', speakerId: 'b' } :
+    position === 2 ? { kind: 'technical', speakerId: 'a' } : { kind: 'follow-up', speakerId: 'a' };
+}
 export interface DeleteInterviewRequest { sessionId: string; confirm: true }
 export interface DeleteAllInterviewsRequest { confirm: 'DELETE_ALL_INTERVIEWS' }
 export interface EvidenceQuote { origin: 'source' | 'reviewed' | 'answer'; location: string; text: string }
@@ -113,6 +119,15 @@ export function buildSharedContextData(selectedQuote: string, completed: readonl
   } };
   if (JSON.stringify(data).length > SHARED_CONTEXT_LIMITS.dataJSONChars) throw new Error('SHARED_DATA_TOO_LARGE');
   return data;
+}
+export function isSharedContextData(value: unknown): value is SharedContextData {
+  if (!record(value, ['selectedQuote', 'recentCompleted', 'currentAnswer', 'scope']) ||
+    !text(value.selectedQuote, SHARED_CONTEXT_LIMITS.quoteChars) || !text(value.currentAnswer, SHARED_CONTEXT_LIMITS.currentAnswerChars) ||
+    !Array.isArray(value.recentCompleted) || value.recentCompleted.length > SHARED_CONTEXT_LIMITS.turns ||
+    !value.recentCompleted.every(turn => record(turn, ['question', 'answer']) && text(turn.question, SHARED_CONTEXT_LIMITS.questionChars) && text(turn.answer, SHARED_CONTEXT_LIMITS.answerChars)) ||
+    !record(value.scope, ['includedCompleted', 'omittedCompleted', 'excerpts']) || value.scope.excerpts !== true ||
+    value.scope.includedCompleted !== value.recentCompleted.length || !Number.isSafeInteger(value.scope.omittedCompleted) || Number(value.scope.omittedCompleted) < 0) return false;
+  return JSON.stringify(value.recentCompleted).length <= SHARED_CONTEXT_LIMITS.historyJSONChars && JSON.stringify(value).length <= SHARED_CONTEXT_LIMITS.dataJSONChars;
 }
 export function isDeleteInterviewRequest(value: unknown): value is DeleteInterviewRequest {
   return record(value, ['sessionId', 'confirm']) && isInterviewId(value.sessionId) && value.confirm === true;

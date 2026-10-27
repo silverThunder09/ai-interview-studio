@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AI_CALL_LIMIT, AI_ENDPOINTS, AI_PROVIDERS, isAIConfig, isAIKeyRequest, isAIModelId, type AIProvider } from '../../src/shared/ai';
-import { isStartInterviewRequest } from '../../src/shared/interview';
+import { geminiQuestionRole, isStartInterviewRequest } from '../../src/shared/interview';
 import { AICredentials, createAIHandlers, createExternalTransport, InterviewProviderRouter } from '../../src/main/external-ai';
 import { AIQuestionProvider, type AIQuestionPayload } from '../../src/main/ai-question-provider';
 import { InterviewService } from '../../src/main/interview-service';
@@ -22,6 +22,14 @@ function envelope(provider: AIProvider, value: unknown = answer) {
   if (provider === 'claude') return { type: 'message', stop_reason: 'end_turn', content: [{ type: 'text', text }] };
   return { candidates: [{ finishReason: 'STOP', content: { parts: [{ text }] } }] };
 }
+
+it('uses the B/B/A/A Gemini role and kind sequence for all twelve questions', () => {
+  expect(Array.from({ length: 12 }, (_, index) => geminiQuestionRole(index + 1))).toEqual([
+    { kind: 'experience', speakerId: 'b' }, { kind: 'follow-up', speakerId: 'b' }, { kind: 'technical', speakerId: 'a' }, { kind: 'follow-up', speakerId: 'a' },
+    { kind: 'experience', speakerId: 'b' }, { kind: 'follow-up', speakerId: 'b' }, { kind: 'technical', speakerId: 'a' }, { kind: 'follow-up', speakerId: 'a' },
+    { kind: 'experience', speakerId: 'b' }, { kind: 'follow-up', speakerId: 'b' }, { kind: 'technical', speakerId: 'a' }, { kind: 'follow-up', speakerId: 'a' },
+  ]);
+});
 const response = (value: unknown) => new Response(JSON.stringify(value), { headers: { 'content-type': 'application/json' } });
 const dirs: string[] = [], stores: InterviewStore[] = [];
 function store(file?: string) { const dir = mkdtempSync(join(tmpdir(), 'studio-ai-')); dirs.push(dir); const result = new InterviewStore(file ?? join(dir, 'records.sqlite')); stores.push(result); return result; }
@@ -102,7 +110,7 @@ describe.each(AI_PROVIDERS)('%s REST adapter with synthetic fetch', provider => 
       const raw = String(init?.body); seen.push(raw);
       const body = JSON.parse(raw);
       const data = JSON.parse(provider === 'gemini' ? body.contents[0].parts[0].text : body.messages.at(-1).content);
-      return response(envelope(provider, { text: '합성 질문', evidenceId: data.kind === 'follow-up' ? 'answer-previous' : data.kind === 'technical' ? null : 'evidence-1',
+      return response(envelope(provider, { text: `${data.questionNumber}번 합성 질문`, evidenceId: data.kind === 'follow-up' ? 'answer-previous' : data.kind === 'technical' ? null : 'evidence-1',
         ...(provider === 'gemini' ? { speakerId: data.speakerId } : {}) }));
     });
     const storage = store(), vault = new AICredentials(); vault.set(provider, key);
@@ -310,4 +318,51 @@ it('does not acquire a key or consume budget on pre-aborted operations', async (
   const vault = new AICredentials(), request = vi.fn<typeof fetch>(), controller = new AbortController(); controller.abort();
   await expect(new InterviewProviderRouter(vault, request).next({ ...startFixture(), ai: config() }, [], controller.signal)).rejects.toMatchObject({ code: 'CANCELLED' });
   expect(request).not.toHaveBeenCalled(); expect(vault.status().remainingRequests).toBe(AI_CALL_LIMIT);
+});
+
+it('sends the exact consented preview through the real router, preserves usage, and rejects a duplicate current question', async () => {
+  const storage = store(), vault = new AICredentials(); vault.set('gemini', key);
+  let duplicate = false;
+  const transmitted: AIQuestionPayload['data'][] = [];
+  const request = vi.fn<typeof fetch>().mockImplementation(async (_url, init) => {
+    const data = JSON.parse(JSON.parse(String(init?.body)).contents[0].parts[0].text) as AIQuestionPayload['data']; transmitted.push(data);
+    return response({ ...envelope('gemini', { text: duplicate ? '합성 1번 질문' : `합성 ${data.questionNumber}번 질문`, speakerId: data.speakerId, evidenceId: data.kind === 'technical' ? null : data.kind === 'follow-up' ? 'answer-previous' : 'evidence-1' }), usageMetadata: { totalTokenCount: 7 } });
+  });
+  const service = new InterviewService(() => storage, new InterviewProviderRouter(vault, request));
+  try {
+    const session = await service.start({ ...startFixture(), ai: config('gemini') });
+    const answer = { sessionId: session.id, questionId: session.turns[0]!.question.id, answer: '이번 합성 답변', transmissionConsent: true as const };
+    const preview = service.preview({ sessionId: answer.sessionId, questionId: answer.questionId, answer: answer.answer }); expect(request).toHaveBeenCalledOnce();
+    await expect(service.answer({ ...answer, answer: '바뀐 답변', contextPreview: { digest: preview.digest, consent: true } })).rejects.toMatchObject({ code: 'INVALID_INPUT' });
+    expect(request).toHaveBeenCalledOnce();
+    duplicate = true;
+    await expect(service.answer({ ...answer, contextPreview: { digest: preview.digest, consent: true } })).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
+    expect(storage.get(session.id).turns).toEqual(session.turns); expect(storage.get(session.id).usage?.attempts).toBe(2);
+    duplicate = false;
+    const saved = await service.answer({ ...answer, contextPreview: { digest: preview.digest, consent: true } });
+    expect(JSON.stringify(transmitted.at(-1)!.context)).toBe(JSON.stringify(preview.data));
+    expect(saved.turns.at(-1)!.question).toMatchObject({ number: 2, speakerId: 'b', kind: 'follow-up' });
+    const current = saved.turns.at(-1)!.question;
+    await service.answer({ sessionId: saved.id, questionId: current.id, answer: '옵트아웃 답변', transmissionConsent: true });
+    expect(transmitted.at(-1)!.context).toBeUndefined(); expect(transmitted.at(-1)).toMatchObject({ questionNumber: 3, speakerId: 'a', kind: 'technical', evidence: [] });
+    expect(request).toHaveBeenCalledTimes(4);
+  } finally { service.close(); vault.clearAll(); }
+});
+
+it('allows a question equal to the 500-character preview prefix of a longer stored question', async () => {
+  const storage = store(), vault = new AICredentials(); vault.set('gemini', key);
+  const excerpt = 'q'.repeat(500);
+  const request = vi.fn<typeof fetch>().mockImplementation(async (_url, init) => {
+    const data = JSON.parse(JSON.parse(String(init?.body)).contents[0].parts[0].text) as AIQuestionPayload['data'];
+    return response(envelope('gemini', { text: data.questionNumber === 1 ? excerpt + 'suffix' : data.questionNumber === 2 ? '중간 합성 질문' : excerpt, speakerId: data.speakerId, evidenceId: data.kind === 'experience' ? 'evidence-1' : data.kind === 'follow-up' ? 'answer-previous' : null }));
+  });
+  const service = new InterviewService(() => storage, new InterviewProviderRouter(vault, request));
+  try {
+    let session = await service.start({ ...startFixture(), ai: config('gemini') });
+    session = await service.answer({ sessionId: session.id, questionId: session.turns.at(-1)!.question.id, answer: '첫 답변', transmissionConsent: true });
+    const input = { sessionId: session.id, questionId: session.turns.at(-1)!.question.id, answer: '이번 답변' };
+    const preview = service.preview(input); expect(preview.data.recentCompleted[0]!.question).toBe(excerpt);
+    session = await service.answer({ ...input, transmissionConsent: true, contextPreview: { digest: preview.digest, consent: true } });
+    expect(session.turns.at(-1)!.question.text).toBe(excerpt); expect(request).toHaveBeenCalledTimes(3);
+  } finally { service.close(); vault.clearAll(); }
 });
