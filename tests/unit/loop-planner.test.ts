@@ -11,7 +11,7 @@ const spec = 'approved product spec\n';
 const definition = { id: 'avatar-quality', pr: null, title: '3D 렌더링 품질 보존', goal: '승인된 3D 설정만 보존한다.', approval: '현재 채팅의 Phase 1 승인',
   spec: { path: 'harness/specs/gemini-local-interview.md', sha256: createHash('sha256').update(spec).digest('hex') },
   acceptance: ['기존 모델·면접 기록 보존', '실제 check·관련 smoke 성공'], allowed_paths: ['src/renderer/src/avatar/AvatarPanel.tsx'] };
-const config = { schema: 1, repository, enabled: true, tasks: [definition, { ...definition, id: 'avatar-zoom', title: '키보드 시점 확대·축소' }] };
+const config = { schema: 1, repository, enabled: true, cloud_transport: 'legacy-comment', tasks: [definition, { ...definition, id: 'avatar-zoom', title: '키보드 시점 확대·축소' }] };
 const policy = { repository, max_prs_per_run: 2, max_fix_cycles: 3, protected_paths: ['.github/', 'harness/', 'scripts/review/', 'AGENTS.md'] };
 const file = (text: string) => ({ type: 'file', size: Buffer.byteLength(text), encoding: 'base64', content: Buffer.from(text).toString('base64') });
 type PR = { number: number; state: string; draft: boolean; merged: boolean; title: string; body: string; user: { login: string }; head: { ref: string; sha: string; repo: { full_name: string; fork: boolean } }; base: { ref: string; sha: string; repo: { full_name: string } } };
