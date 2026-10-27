@@ -4,9 +4,9 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AI_CALL_LIMIT, AI_ENDPOINTS, AI_PROVIDERS, isAIConfig, isAIKeyRequest, isAIModelId, type AIProvider } from '../../src/shared/ai';
-import { geminiQuestionRole, isStartInterviewRequest } from '../../src/shared/interview';
+import { buildSharedContextData, geminiQuestionRole, isStartInterviewRequest } from '../../src/shared/interview';
 import { AICredentials, createAIHandlers, createExternalTransport, InterviewProviderRouter } from '../../src/main/external-ai';
-import { AIQuestionProvider, type AIQuestionPayload } from '../../src/main/ai-question-provider';
+import { AIQuestionProvider, buildAIQuestionPayload, type AIQuestionPayload } from '../../src/main/ai-question-provider';
 import { InterviewService } from '../../src/main/interview-service';
 import { InterviewStore } from '../../src/main/interview-store';
 import { createInterviewHandlers } from '../../src/main/interview-handlers';
@@ -36,6 +36,25 @@ function store(file?: string) { const dir = mkdtempSync(join(tmpdir(), 'studio-a
 afterEach(() => { for (const s of stores.splice(0)) s.close(); for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }); });
 
 describe('write-only credentials and consent validation', () => {
+  it('rejects a profile-bearing shared-context request at preview when the actual payload exceeds its size limit', () => {
+    const storage = store(), ai = { ...config('gemini'), profiles: { a: 'strict' as const, b: 'supportive' as const } };
+    let session = storage.start({ ...startFixture(), ai }, { kind: 'experience', text: '질'.repeat(500), evidence: null, speakerId: 'b' });
+    for (const [kind, speakerId] of [['follow-up', 'b'], ['technical', 'a']] as const) {
+      session = storage.answer({ sessionId: session.id, questionId: session.turns.at(-1)!.question.id, answer: '답'.repeat(1000), transmissionConsent: true }, { next: { kind, text: '질'.repeat(500), evidence: null, speakerId } });
+    }
+    const service = new InterviewService(() => storage);
+    let answer = '';
+    for (let n = 100; n <= 2000; n++) {
+      const candidate = '"'.repeat(n), context = buildSharedContextData(ai.quote, session.turns, candidate);
+      const payload = { questionNumber: 4, kind: 'follow-up' as const, speakerId: 'a' as const, evidence: [], answer: candidate, context };
+      try { buildAIQuestionPayload(payload); } catch { continue; }
+      try { buildAIQuestionPayload({ ...payload, profiles: ai.profiles }); } catch { answer = candidate; break; }
+    }
+    expect(answer.length).toBeGreaterThan(0);
+    const request = { sessionId: session.id, questionId: session.turns.at(-1)!.question.id, answer };
+    expect(() => service.preview(request)).toThrow('AI 질문');
+    service.close();
+  });
   it('accepts only valid Gemini profile snapshots while preserving old and other-provider records', () => {
     const profiles = { a: 'balanced', b: 'supportive' };
     expect(isAIConfig({ ...config('gemini'), profiles })).toBe(true);
