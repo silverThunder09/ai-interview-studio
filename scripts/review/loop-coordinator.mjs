@@ -84,6 +84,7 @@ export function parseLoopState(value, config) {
   const prs = new Set();
   v.tasks.forEach((t, i) => {
     ensure(t.id === c.tasks[i].id && (c.tasks[i].pr === null ? t.pr === null || number(t.pr) : t.pr === c.tasks[i].pr) && PHASES.includes(t.phase) && Number.isSafeInteger(t.cycles) && t.cycles >= 0 && t.cycles <= 3, 'invalid_loop_task');
+    if (t.sync_cycles !== undefined) ensure(Number.isSafeInteger(t.sync_cycles) && t.sync_cycles >= 0 && t.sync_cycles <= 3, 'invalid_sync_cycles');
     ensure(t.pr !== null || ['queued', 'paused'].includes(t.phase), 'missing_prepared_pr');
     if (t.planning_ci !== undefined) ensure(t.planning_ci && SHA.test(t.planning_ci.main ?? '') && HASH.test(t.planning_ci.key ?? ''), 'invalid_planning_ci');
     if (t.pr !== null) { ensure(!prs.has(t.pr), 'duplicate_bound_pr'); prs.add(t.pr); }
@@ -95,6 +96,7 @@ export function parseLoopState(value, config) {
     if (t.waiting !== undefined && t.waiting !== null) ensure(['workflow_approval', 'ci_running', 'native_ci_registration', 'native_policy_registration', 'mergeability'].includes(t.waiting.reason) && t.waiting.head === t.head && t.waiting.base === t.base && SHA.test(t.waiting.head ?? '') && SHA.test(t.waiting.base ?? ''), 'invalid_loop_waiting');
     if (t.sync_intent !== undefined && t.sync_intent !== null) ensure(['head', 'base', 'main'].every(k => SHA.test(t.sync_intent[k] ?? '')), 'invalid_sync_intent');
     if (t.base_updates !== undefined) ensure(Array.isArray(t.base_updates) && t.base_updates.length <= 3 && t.base_updates.every(u => ['head', 'base', 'next_head', 'next_base'].every(k => SHA.test(u[k] ?? '')) && ['ci', 'review', 'merge'].includes(u.phase)), 'invalid_base_updates');
+    if (t.sync_cycles !== undefined) ensure(t.sync_cycles >= (t.base_updates?.length ?? 0), 'sync_history_mismatch');
     if (t.repairs !== undefined) ensure(Array.isArray(t.repairs) && t.repairs.length <= 3 && t.repairs.every(r => SHA.test(r.head ?? '') && SHA.test(r.base ?? '') && Array.isArray(r.issues) && r.issues.length > 0 && r.issues.length <= 10), 'invalid_repair_history');
     if (t.repair_findings !== undefined && t.repair_findings !== null) ensure(Array.isArray(t.repair_findings) && t.repair_findings.length > 0 && t.repair_findings.length <= 10 && t.repair_findings.every(f => number(f.id) && number(f.issue) && c.tasks[i].allowed_paths.includes(f.path) && typeof f.marker === 'string' && f.marker.startsWith(`<!-- ais-repair-issue:${t.pr}:`)), 'invalid_repair_findings');
   });
@@ -151,6 +153,7 @@ export class LoopStore {
       ensure(before.pr === null || before.pr === after.pr, 'bound_pr_changed');
       ensure(before.phase !== 'completed' || JSON.stringify(before) === JSON.stringify(after), 'completed_history_changed');
       ensure(after.cycles >= before.cycles, 'cycle_rollback');
+      ensure((after.sync_cycles ?? 0) >= (before.sync_cycles ?? 0), 'sync_cycle_rollback');
     }
     return this.writeSnapshot(old, next);
   }
@@ -499,7 +502,7 @@ export async function runLoop({ api, sender, store, config, policy, writer, now 
         }
       }
       if (native && ['ci', 'review', 'merge'].includes(task.phase) && main !== task.base) {
-        ensure(pr.head.sha === task.head && task.cycles < policy.max_fix_cycles, 'main_sync_limit_or_changed_head');
+        ensure(pr.head.sha === task.head && (task.sync_cycles ?? task.base_updates?.length ?? 0) < 3, 'main_sync_limit_or_changed_head');
         // Never overlap a still-running review. Its old tuple must reach a known
         // terminal result before current main can invalidate it and request another.
         if (task.phase === 'review') {
@@ -517,8 +520,9 @@ export async function runLoop({ api, sender, store, config, policy, writer, now 
         await update(t => { t.sync_intent = { head: t.head, base: t.base, main }; });
         const fresh = await synchronizedPR(api, task, definition, pr, main, sleep, product);
         await update(t => {
+          t.sync_cycles = (t.sync_cycles ?? t.base_updates?.length ?? 0) + 1;
           (t.base_updates ??= []).push({ head: t.head, base: t.base, phase: t.phase, request: t.request, delivery: t.delivery, review: t.review, validated_ci: t.validated_ci, next_head: fresh.head.sha, next_base: main });
-          t.cycles++; t.phase = 'ci'; t.head = fresh.head.sha; t.base = main; t.branch = fresh.head.ref;
+          t.phase = 'ci'; t.head = fresh.head.sha; t.base = main; t.branch = fresh.head.ref;
           t.request = null; t.delivery = null; t.review = null; t.validated_ci = null; t.operation = null; t.checkout = null; t.policy_update = null; t.waiting = null; t.sync_intent = null;
         }); continue;
       }

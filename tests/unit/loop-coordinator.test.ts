@@ -570,15 +570,16 @@ describe('native CI automatic continuation', () => {
       if (method === 'POST' && path === '/merges') { f.currentHead = nextHead; return { sha: nextHead }; }
       return original(method, path, body);
     };
+    f.store.state.tasks[0]!.cycles = 3; // Existing review history must neither be reset nor block a main-only sync.
     expect((await runLoop(options)).state).toBe('waiting-ci');
-    expect(f.store.state.tasks[0]).toMatchObject({ phase: 'ci', head: nextHead, base: merged, cycles: 1, reason: null });
+    expect(f.store.state.tasks[0]).toMatchObject({ phase: 'ci', head: nextHead, base: merged, cycles: 3, sync_cycles: 1, reason: null });
     expect(f.store.state.tasks[0]!.base_updates).toHaveLength(1); expect(f.sends).toHaveLength(2); expect(f.dispatches).toEqual([]);
     await runLoop(options); expect(f.sends).toHaveLength(2); expect(f.store.state.tasks[0]!.base_updates).toHaveLength(1);
   });
-  it('does not merge an advanced main after the fix limit or while another writer changed the product head', async () => {
+  it('does not merge an advanced main after the sync limit or while another writer changed the product head', async () => {
     for (const kind of ['limit', 'head']) {
       const { f, options } = nativeFixture(); await runLoop(options); f.respond(false); await runLoop(options); f.main = merged;
-      if (kind === 'limit') f.store.state.tasks[0]!.cycles = 3; else f.currentHead = '6'.repeat(40);
+      if (kind === 'limit') f.store.state.tasks[0]!.sync_cycles = 3; else f.currentHead = '6'.repeat(40);
       await expect(runLoop(options)).rejects.toThrow('main_sync_limit_or_changed_head'); expect(f.sends).toHaveLength(1); expect(f.merges).toEqual([]);
     }
   });
