@@ -84,6 +84,17 @@ describe('idle queue checkpoints', () => {
     expect(await runLoop({ ...f.options(), config: { ...config, next_decision: '새 작업 승인 필요' } })).toEqual({ state: 'needs-user', changes: 0 });
     expect(f.store.revision).toBe(0); expect(f.sends).toHaveLength(0);
   });
+  it('still sends the first decision notice when it has not been delivered', async () => {
+    const f = new FixtureAPI(); f.store.state.tasks.forEach(task => { task.phase = 'completed'; });
+    const original = f.request.bind(f); let posted = 0;
+    f.request = async (method, path, value) => {
+      if (method === 'POST' && path === '/issues/35/comments') posted++;
+      return original(method, path, value);
+    };
+    const result = await runLoop({ ...f.options(), config: { ...config, next_decision: '새 작업 승인 필요' } });
+    expect(result.state).toBe('needs-user'); expect(posted).toBe(1);
+    expect(f.store.state.lease).toBeNull(); expect(f.sends).toHaveLength(0);
+  });
   it('keeps an active lease authoritative even when every task is complete', async () => {
     const f = new FixtureAPI(); f.store.state.tasks.forEach(task => { task.phase = 'completed'; });
     f.store.state.lease = { owner: 'a'.repeat(64), until: f.now() + 60000 };
