@@ -312,6 +312,8 @@ describe('trusted event worker', () => {
     expect(workflow).toContain('ref: main'); expect(workflow).toContain('persist-credentials: false');
     expect(workflow.match(/secrets\.AIS_CODEX_COMMENT_TOKEN/g)).toHaveLength(1);
     expect(workflow).not.toContain('npm '); expect(workflow).not.toMatch(/schedule:/);
+    expect(workflow).toMatch(/\n {2}workflow_dispatch:\s*\n/);
+    expect(workflow).not.toMatch(/\n {2}(?:pull_request_target|issue_comment|workflow_run|schedule):/);
     const code = readFileSync(new URL('../../scripts/review/event-worker.ts', import.meta.url), 'utf8');
     expect(code.indexOf('if (!process.env.AIS_CODEX_COMMENT_TOKEN)')).toBeLessThan(code.indexOf('const api = new GitHub(process.env.GITHUB_TOKEN)'));
     expect(code).toContain('new UserCloudSender(new GitHub(process.env.AIS_CODEX_COMMENT_TOKEN))');
