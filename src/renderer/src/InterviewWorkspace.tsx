@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { InterviewSession, SharedContextPreview } from '../../shared/interview';
-import { GEMINI_USAGE_FIELDS, INTERVIEW_LIMITS, SHARED_CONTEXT_LIMITS } from '../../shared/interview';
+import { GEMINI_USAGE_FIELDS, INTERVIEW_LIMITS, SHARED_CONTEXT_LIMITS, geminiQuestionRole } from '../../shared/interview';
 import { AI_NAMES } from '../../shared/ai';
 import { AIConnectionSummary } from './AIOptions';
 import { InterviewAudio } from './InterviewAudio';
@@ -37,6 +37,10 @@ export function InterviewWorkspace({ session, onUpdate, onHistory }: {
   const answerLimit = session.ai ? SHARED_CONTEXT_LIMITS.currentAnswerChars : INTERVIEW_LIMITS.answerChars;
   const previewSnapshot = JSON.stringify([session.id, current?.question, session.ai, answer]);
   const contextPreview = previewResult?.snapshot === previewSnapshot ? previewResult.value : null;
+  const nextRole = current && current.question.number < INTERVIEW_LIMITS.turns ? geminiQuestionRole(current.question.number + 1) : null;
+  const nextSpeaker = nextRole?.kind === 'follow-up' && current?.question.speakerId ? current.question.speakerId : nextRole?.speakerId;
+  const nextProfile = nextSpeaker && session.ai?.provider === 'gemini' ? session.ai.profiles?.[nextSpeaker] : undefined;
+  const profileNames = { strict: '엄격·논리', balanced: '균형·명확', calm: '차분·근거', supportive: '친절·구체화' } as const;
   useEffect(() => {
     setContextConsent(false); setPreviewResult(null); setPreviewError('');
     if (session.ai?.provider !== 'gemini' || !current || current.question.number === INTERVIEW_LIMITS.turns || !answer.trim()) { setPreviewBusy(false); return; }
@@ -77,6 +81,7 @@ export function InterviewWorkspace({ session, onUpdate, onHistory }: {
   return <section className="interview-workspace" aria-labelledby="interview-title">
     <p className="eyebrow">{session.ai ? 'EXTERNAL AI INTERVIEW' : 'LOCAL PRACTICE'}</p><h1 id="interview-title">백엔드 면접 연습</h1>
     <p className="muted">{session.ai ? `${AI_NAMES[session.ai.provider]} · ${session.ai.model}에서 생성한 질문입니다. AI 문장은 사실 검증·채용 평가가 아닙니다. 답변 제출 때 전송 범위와 비용을 확인하세요. 재시작 후 키가 없거나 인증에 실패하면 API 연결 설정에서 키를 다시 등록할 수 있습니다.` : '기본 질문은 준비된 질문과 답변 인용이며 AI 분석·평가가 아닙니다. 별도로 선택하는 음성 입력·읽기는 OpenAI 전송과 비용이 발생할 수 있습니다.'}</p>
+    {activeInterviewer && session.ai?.provider === 'gemini' && session.ai.profiles && <p>현재 면접관 {activeInterviewer.toUpperCase()} · 말투: {profileNames[session.ai.profiles[activeInterviewer]]}</p>}
     <AvatarRoom active={activeInterviewer} waiting={saving} answering={answer.trim().length > 0} />
     <div className="session-progress"><span>{answered} / {INTERVIEW_LIMITS.turns}개 답변 저장</span><button className="secondary" disabled={saving} onClick={onHistory}>저장된 기록 보기</button></div>
     {session.ai?.provider === 'gemini' && session.usage && <section className="settings-card" aria-label="Gemini 사용량"><h2>Gemini 요청 사용량</h2><p>요청 시도 {session.usage.attempts}회 · 일부 토큰 정보 미제공 {session.usage.missingAttempts}회</p><ul>{GEMINI_USAGE_FIELDS.map(field => {
@@ -98,10 +103,10 @@ export function InterviewWorkspace({ session, onUpdate, onHistory }: {
         <h3>제한된 공유 문맥 미리보기</h3><p>전송 목적: 다음 Gemini 질문에 참고할 제한된 문맥입니다. 아래 별도 동의와 답변 제출을 함께 할 때만 표시한 문맥을 전송합니다. 동의하지 않으면 기존 구절·직전 답변 범위만 사용합니다.</p>
         <p>선택 구절 최대 180자 · 최근 완료 질문·답변 2개(질문 500자·답변 1,000자 발췌) · 이번 답변 2,000자. 이전 항목은 제외하며 JSON 크기 초과는 거절합니다.</p>
         {previewBusy && <p role="status">로컬 미리보기 준비 중…</p>}{previewError && <p role="alert">{previewError}</p>}
-        {contextPreview && <><p>최근 완료 {contextPreview.data.scope.includedCompleted}개 포함 · 오래된 {contextPreview.data.scope.omittedCompleted}개 제외</p><pre>{JSON.stringify(contextPreview.data, null, 2)}</pre></>}
+        {contextPreview && <><p>최근 완료 {contextPreview.data.scope.includedCompleted}개 포함 · 오래된 {contextPreview.data.scope.omittedCompleted}개 제외</p>{nextProfile && <p>다음 면접관 말투: {profileNames[nextProfile]} ({nextProfile})</p>}<pre>{JSON.stringify(contextPreview.data, null, 2)}</pre></>}
         <label className="consent"><input type="checkbox" checked={!!contextPreview && contextConsent} disabled={saving || !contextPreview} onChange={e => setContextConsent(e.target.checked)} /> 표시된 제한 문맥을 이번 Gemini 요청에 추가하는 데 동의합니다. (동의는 저장하지 않음)</label>
       </section>}
-      {session.ai && <div className="transmission-preview"><h3>다음 요청 전송 미리보기</h3><p>{AI_NAMES[session.ai.provider]} · {session.ai.model}</p><pre>{current.question.number === 12 ? '외부 요청 없음. 마지막 답변을 이 PC에만 저장합니다.' : current.question.number % 2 === 1 ? answer || '직전 답변을 입력하세요.' : session.ai.provider === 'gemini' && current.question.number % 4 === 0 ? `다음 B 경험 질문의 선택 구절: ${session.ai.quote}` : '개인 문맥 없이 질문 번호와 일반 기술 질문 생성 지시만 전송합니다.'}</pre><p>{session.ai.provider === 'gemini' ? '별도 공유 문맥 동의 시 위 로컬 미리보기와 같은 제한 문맥을 기존 질문 요청 하나에 함께 보냅니다. 동의하지 않으면 기존 질문 범위만 전송합니다.' : '기존 질문 범위만 전송하며 Gemini 공유 문맥은 보내지 않습니다.'} 요청당 최대 600토큰·30초, 자동 재시도 없음. 취소 전에 발생한 요금·전송은 되돌리지 못하며 서비스 보존 정책이 적용됩니다.</p><label className="consent"><input type="checkbox" checked={transmissionConsent} disabled={saving} onChange={e => setTransmissionConsent(e.target.checked)} /> 위 전송 범위·비용 가능성을 확인했습니다. (마지막 답변은 로컬 저장만)</label></div>}
+      {session.ai && <div className="transmission-preview"><h3>다음 요청 전송 미리보기</h3><p>{AI_NAMES[session.ai.provider]} · {session.ai.model}</p>{nextProfile && <p>면접관 {nextSpeaker?.toUpperCase()} 말투: {profileNames[nextProfile]} ({nextProfile})</p>}<pre>{current.question.number === 12 ? '외부 요청 없음. 마지막 답변을 이 PC에만 저장합니다.' : current.question.number % 2 === 1 ? answer || '직전 답변을 입력하세요.' : session.ai.provider === 'gemini' && current.question.number % 4 === 0 ? `다음 B 경험 질문의 선택 구절: ${session.ai.quote}` : '개인 문맥 없이 질문 번호와 일반 기술 질문 생성 지시만 전송합니다.'}</pre><p>{session.ai.provider === 'gemini' ? '별도 공유 문맥 동의 시 위 로컬 미리보기와 같은 제한 문맥을 기존 질문 요청 하나에 함께 보냅니다. 동의하지 않으면 기존 질문 범위만 전송합니다.' : '기존 질문 범위만 전송하며 Gemini 공유 문맥은 보내지 않습니다.'} 요청당 최대 600토큰·30초, 자동 재시도 없음. 취소 전에 발생한 요금·전송은 되돌리지 못하며 서비스 보존 정책이 적용됩니다.</p><label className="consent"><input type="checkbox" checked={transmissionConsent} disabled={saving} onChange={e => setTransmissionConsent(e.target.checked)} /> 위 전송 범위·비용 가능성을 확인했습니다. (마지막 답변은 로컬 저장만)</label></div>}
       <div className="answer-actions"><span className="hint">{answer.length.toLocaleString()} / {answerLimit.toLocaleString()}자</span><button className="primary" disabled={saving || audioBusy || !answer.trim() || (!!session.ai && !transmissionConsent)} onClick={() => void submit()}>{saving ? '저장 중…' : current.question.number === INTERVIEW_LIMITS.turns ? '답변 저장하고 완료' : '답변 저장하고 다음 질문'}</button></div>
       {saving && <><button className="secondary" disabled={cancelling} onClick={() => void cancel()}>{cancelling ? '취소 요청 중…' : '질문 생성 취소'}</button><p className="hint">이미 완료된 저장은 취소되지 않습니다.</p></>}
       <p className="hint">저장한 답변은 기록에 남습니다. 아직 제출하지 않은 입력은 화면을 벗어나면 사라집니다.</p>

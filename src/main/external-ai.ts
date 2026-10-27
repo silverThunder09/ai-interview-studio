@@ -174,7 +174,7 @@ export class InterviewProviderRouter implements AsyncInterviewProvider {
     const draft = await new AIQuestionProvider(transport).next({ questionNumber: number,
       evidence: kind === 'experience' ? [{ origin: 'reviewed', location: '사용자 선택 구절', text: config.quote }] : [],
       answer: kind === 'follow-up' ? previous.at(-1)?.answer : null,
-      ...(geminiRole ? { ...geminiRole, ...(context ? { context } : {}) } : {}) }, signal);
+      ...(geminiRole ? { ...geminiRole, ...(context ? { context } : {}), ...(config.profiles ? { profiles: config.profiles } : {}) } : {}) }, signal);
     const normalized = (value: string) => value.trim().replace(/\s+/g, ' ');
     if (geminiRole && previous.slice(-3).some(turn => normalized(turn.question.text) === normalized(draft.text))) throw new AIQuestionError('INVALID_RESPONSE', draft.usage);
     return draft;
