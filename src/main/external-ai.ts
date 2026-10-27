@@ -5,7 +5,7 @@ import type { AIQuestionPayload, AIQuestionTransport, AITransportResult } from '
 import { AIQuestionError, AIQuestionProvider, AIUsageReservationError } from './ai-question-provider';
 import type { AsyncInterviewProvider } from './interview-service';
 import { LocalQuestionProvider } from './questions';
-import { normalizeGeminiUsage, type GeminiUsageTokens } from '../shared/interview';
+import { geminiQuestionRole, normalizeGeminiUsage, type GeminiUsageTokens } from '../shared/interview';
 
 // Keys are write-only across IPC. Optional OS-encrypted persistence stays in main.
 export class AICredentials {
@@ -155,7 +155,7 @@ export function createExternalTransport(provider: AIProvider, model: string, key
 }
 export class InterviewProviderRouter implements AsyncInterviewProvider {
   constructor(private readonly credentials: AICredentials, private readonly request: typeof fetch = (...args) => fetch(...args)) {}
-  async next(resume: Parameters<AsyncInterviewProvider['next']>[0], previous: Parameters<AsyncInterviewProvider['next']>[1], signal: AbortSignal, onDispatch?: () => void) {
+  async next(resume: Parameters<AsyncInterviewProvider['next']>[0], previous: Parameters<AsyncInterviewProvider['next']>[1], signal: AbortSignal, onDispatch?: () => void, context?: Parameters<AsyncInterviewProvider['next']>[4]) {
     if (!resume.ai) return new LocalQuestionProvider().next(resume, previous);
     if (signal.aborted) throw new AIQuestionError('CANCELLED');
     const config = resume.ai, number = previous.length + 1;
@@ -167,10 +167,17 @@ export class InterviewProviderRouter implements AsyncInterviewProvider {
       const key = this.credentials.acquire(config.provider);
       return createExternalTransport(config.provider, config.model, key, this.request)(payload, abort);
     };
-    return new AIQuestionProvider(transport).next({ questionNumber: number,
-      evidence: number === 1 ? [{ origin: 'reviewed', location: '사용자 선택 구절', text: config.quote }] : [],
-      answer: number % 2 === 0 ? previous.at(-1)?.answer : null,
-      ...(config.provider === 'gemini' ? { speakerId: number <= 2 ? 'b' as const : 'a' as const } : {}) }, signal);
+    const baseRole = config.provider === 'gemini' ? geminiQuestionRole(number) : undefined;
+    const geminiRole = baseRole?.kind === 'follow-up' && previous.at(-1)?.question.speakerId
+      ? { ...baseRole, speakerId: previous.at(-1)!.question.speakerId! } : baseRole;
+    const kind = geminiRole?.kind ?? (number === 1 ? 'experience' : number % 2 === 0 ? 'follow-up' : 'technical');
+    const draft = await new AIQuestionProvider(transport).next({ questionNumber: number,
+      evidence: kind === 'experience' ? [{ origin: 'reviewed', location: '사용자 선택 구절', text: config.quote }] : [],
+      answer: kind === 'follow-up' ? previous.at(-1)?.answer : null,
+      ...(geminiRole ? { ...geminiRole, ...(context ? { context } : {}) } : {}) }, signal);
+    const normalized = (value: string) => value.trim().replace(/\s+/g, ' ');
+    if (geminiRole && previous.slice(-3).some(turn => normalized(turn.question.text) === normalized(draft.text))) throw new AIQuestionError('INVALID_RESPONSE', draft.usage);
+    return draft;
   }
   tracksUsage(resume: Parameters<AsyncInterviewProvider['next']>[0]): boolean { return resume.ai?.provider === 'gemini'; }
 }

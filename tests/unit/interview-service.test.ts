@@ -43,10 +43,19 @@ describe('async generation and atomic storage', () => {
     expect(next).not.toHaveBeenCalled();
     const saved = await service.answer({ ...request, transmissionConsent: true, contextPreview: { digest: preview.digest, consent: true } });
     expect(saved.turns[0]!.answer).toBe(request.answer);
+    expect(next.mock.calls[0]![4]).toEqual(preview.data);
     expect(await service.answer({ ...request, transmissionConsent: true, contextPreview: { digest: preview.digest, consent: true } })).toEqual(saved);
     await expect(service.answer({ sessionId: second.id, questionId: second.turns[0]!.question.id, answer: request.answer, transmissionConsent: true, contextPreview: { digest: preview.digest, consent: true } })).rejects.toMatchObject({ code: 'INVALID_INPUT' });
     expect(handlers.preview([{ ...request, questionId: randomUUID() }])).toMatchObject({ ok: false, error: { code: 'INVALID_REQUEST' } });
     expect(next).toHaveBeenCalledOnce();
+  });
+  it('does not provide shared context without the separate current-snapshot consent', async () => {
+    const next = vi.fn<AsyncInterviewProvider['next']>((resume, turns) => local.next(resume, turns));
+    const { store, service } = fixture({ next });
+    const base = startFixture(), ai = { provider: 'gemini' as const, model: 'synthetic-model', quote: base.reviewedText.slice(0, 180), transmissionConsent: true as const };
+    const session = store.start({ ...base, ai }, { ...local.next(base, [])!, speakerId: 'b' });
+    await service.answer({ sessionId: session.id, questionId: session.turns[0]!.question.id, answer: '합성 답변', transmissionConsent: true });
+    expect(next.mock.calls[0]![4]).toBeUndefined();
   });
   it('rolls back a new interview when usage finalization fails and retries without a phantom session', async () => {
     const next = vi.fn<AsyncInterviewProvider['next']>(async (resume, previous, _signal, onDispatch) => {

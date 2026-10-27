@@ -90,6 +90,14 @@ describe('selected AI context and citation binding', () => {
   it('requires answer provenance for follow-up rather than allowing uncited generated assumptions', async () => {
     await expect(new AIQuestionProvider(async () => ({ ok: true, value: { text: '합성 질문', evidenceId: null } })).next({ questionNumber: 2, evidence: [], answer: '합성 답변' })).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
   });
+  it('rejects a whitespace-normalized duplicate from the consented limited history without another call', async () => {
+    const transport = vi.fn<AIQuestionTransport>().mockResolvedValue({ ok: true, value: { text: '같은   질문 입니다', evidenceId: null, speakerId: 'a' } });
+    await expect(new AIQuestionProvider(transport).next({ questionNumber: 3, kind: 'technical', evidence: [], answer: null, speakerId: 'a', context: {
+      selectedQuote: '합성 구절', recentCompleted: [{ question: ' 같은 질문\n입니다 ', answer: '합성 답변' }], currentAnswer: '현재 답변',
+      scope: { includedCompleted: 1, omittedCompleted: 0, excerpts: true },
+    } })).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
+    expect(transport).toHaveBeenCalledOnce();
+  });
 });
 
 describe('AI request lifetime and sanitized failures', () => {
@@ -156,4 +164,18 @@ describe('AI request lifetime and sanitized failures', () => {
   it.each([0, -1, 1.5, NaN, AI_QUESTION_LIMITS.timeoutMs + 1])('rejects invalid or unbounded timeouts (%s)', (timeout) => {
     expect(() => new AIQuestionProvider(async () => response(), timeout)).toThrow(AIQuestionError);
   });
+});
+
+it('rejects malformed shared context and the complete 8000-character data limit before dispatch', async () => {
+  const transport = vi.fn<AIQuestionTransport>();
+  const provider = new AIQuestionProvider(transport);
+  const context = { selectedQuote: '합성 구절', recentCompleted: [], currentAnswer: '합성 답변', scope: { includedCompleted: 0, omittedCompleted: 0, excerpts: true as const } };
+  for (const value of [{ ...context, extra: 'private' }, { ...context, recentCompleted: [{ question: 'x', answer: 'y', extra: 'private' }] }, { ...context, scope: { ...context.scope, includedCompleted: 2 } }]) {
+    await expect(provider.next({ questionNumber: 2, kind: 'follow-up', speakerId: 'b', evidence: [], answer: '합성 답변', context: value })).rejects.toMatchObject({ code: 'INVALID_INPUT' });
+  }
+  const large = { ...context, currentAnswer: 'a'.repeat(2_000), recentCompleted: [1, 2].map(() => ({ question: 'q'.repeat(500), answer: 'a'.repeat(1_000) })), scope: { includedCompleted: 2, omittedCompleted: 0, excerpts: true } };
+  // Both fields fit individually; duplicating an escaped current answer in the final envelope must still be bounded.
+  const escaped = '\\'.repeat(2_000);
+  await expect(provider.next({ questionNumber: 2, kind: 'follow-up', speakerId: 'b', evidence: [], answer: escaped, context: { ...large, currentAnswer: escaped } })).rejects.toMatchObject({ code: 'INVALID_INPUT' });
+  expect(transport).not.toHaveBeenCalled();
 });

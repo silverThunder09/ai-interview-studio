@@ -1,13 +1,13 @@
 import { createHash } from 'node:crypto';
 import { randomUUID } from 'node:crypto';
 import type { GeminiUsageTokens, InterviewSession, SharedContextPreview, SharedContextPreviewRequest, StartInterviewRequest, SubmitAnswerRequest } from '../shared/interview';
-import { buildSharedContextData, isSharedContextPreviewRequest, INTERVIEW_LIMITS } from '../shared/interview';
+import { buildSharedContextData, geminiQuestionRole, isSharedContextPreviewRequest, INTERVIEW_LIMITS, type SharedContextData } from '../shared/interview';
 import { AIQuestionError, AI_QUESTION_LIMITS } from './ai-question-provider';
 import { InterviewStoreError, type InterviewStore } from './interview-store';
 import { LocalQuestionProvider, type QuestionDraft } from './questions';
 
 export interface AsyncInterviewProvider {
-  next(resume: Pick<StartInterviewRequest, 'reviewedText' | 'sourceSections' | 'ai'>, previous: InterviewSession['turns'], signal: AbortSignal, onDispatch?: () => void): (QuestionDraft & { usage?: GeminiUsageTokens }) | null | Promise<(QuestionDraft & { usage?: GeminiUsageTokens }) | null>;
+  next(resume: Pick<StartInterviewRequest, 'reviewedText' | 'sourceSections' | 'ai'>, previous: InterviewSession['turns'], signal: AbortSignal, onDispatch?: () => void, context?: SharedContextData): (QuestionDraft & { usage?: GeminiUsageTokens }) | null | Promise<(QuestionDraft & { usage?: GeminiUsageTokens }) | null>;
   tracksUsage?(resume: Pick<StartInterviewRequest, 'reviewedText' | 'sourceSections' | 'ai'>): boolean;
 }
 interface Operation { id: string; signature: string; sessionId: string | null; controller: AbortController; promise: Promise<InterviewSession> }
@@ -71,8 +71,9 @@ export class InterviewService {
     const session = this.store().get(value.sessionId);
     if (session.status !== 'active' || session.ai?.provider !== 'gemini') throw new AIQuestionError('INVALID_INPUT');
     const current = session.turns.find(turn => turn.answer === null);
-    if (!current || current.question.id !== value.questionId) throw new AIQuestionError('INVALID_INPUT');
-    const role = { kind: current.question.kind, speakerId: current.question.speakerId ?? (current.question.kind === 'technical' ? 'a' : 'b') } as const;
+    if (!current || current.question.number >= INTERVIEW_LIMITS.turns || current.question.id !== value.questionId) throw new AIQuestionError('INVALID_INPUT');
+    const nextRole = geminiQuestionRole(current.question.number + 1);
+    const role = nextRole.kind === 'follow-up' && current.question.speakerId ? { ...nextRole, speakerId: current.question.speakerId } : nextRole;
     let data;
     try { data = buildSharedContextData(session.ai.quote, session.turns, value.answer); }
     catch { throw new AIQuestionError('INVALID_INPUT'); }
@@ -85,14 +86,19 @@ export class InterviewService {
       const store = this.store();
       const { session, pending } = store.prepareAnswer(request);
       if (!pending) return session;
-      if (request.contextPreview && this.preview({ sessionId: request.sessionId, questionId: request.questionId, answer: request.answer }).digest !== request.contextPreview.digest) throw new AIQuestionError('INVALID_INPUT');
+      let context: SharedContextData | undefined;
+      if (request.contextPreview) {
+        const preview = this.preview({ sessionId: request.sessionId, questionId: request.questionId, answer: request.answer });
+        if (preview.digest !== request.contextPreview.digest) throw new AIQuestionError('INVALID_INPUT');
+        context = preview.data;
+      }
       session.turns.at(-1)!.answer = request.answer;
       const tracking = session.turns.length < INTERVIEW_LIMITS.turns && this.provider.tracksUsage?.(session) === true;
       if (tracking) store.checkUsageCapacity();
       let usage: string | undefined;
       const onDispatch = tracking ? () => { const id = randomUUID(); store.reserveUsage(id, session.id); usage = id; } : undefined;
       let next;
-      try { next = session.turns.length === INTERVIEW_LIMITS.turns ? null : await this.provider.next(structuredClone(session), structuredClone(session.turns), signal, onDispatch); }
+      try { next = session.turns.length === INTERVIEW_LIMITS.turns ? null : await this.provider.next(structuredClone(session), structuredClone(session.turns), signal, onDispatch, context ? structuredClone(context) : undefined); }
       catch (error) { if (usage) store.finishUsage(usage, error instanceof AIQuestionError && error.code === 'CANCELLED' ? 'cancelled' : error instanceof AIQuestionError && error.code === 'TIMEOUT' ? 'timeout' : 'failed', error instanceof AIQuestionError ? error.usage : undefined); throw error; }
       if (signal.aborted || this.closed) { const error = signal.reason instanceof AIQuestionError ? signal.reason : new AIQuestionError('CANCELLED'); if (usage) store.finishUsage(usage, error.code === 'TIMEOUT' ? 'timeout' : 'cancelled', next?.usage); throw error; }
       if (!next && session.turns.length < INTERVIEW_LIMITS.turns) throw new Error('Missing next question');

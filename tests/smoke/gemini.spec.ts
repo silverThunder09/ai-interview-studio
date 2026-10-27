@@ -128,6 +128,36 @@ test('Gemini speaker roles drive the question UI and live WebGL interviewer with
     await page.screenshot({ path: 'test-results/gemini-usage-restored.png', fullPage: true });
     const status = await page.evaluate(() => window.studio!.getAIStatus());
     expect(status).toMatchObject({ ok: true, value: { remainingRequests: 28 } }); // 4 successes + four rejected/failed responses; no retry.
+    await app.evaluate(() => {
+      (globalThis as typeof globalThis & { __sharedRequests: number }).__sharedRequests = 0;
+      globalThis.fetch = async (_url, init) => {
+        const data = JSON.parse(JSON.parse(String(init?.body)).contents[0].parts[0].text);
+        const state = globalThis as typeof globalThis & { __sharedRequests: number; __expectedContext?: unknown };
+        state.__sharedRequests++;
+        const position = (data.questionNumber - 1) % 4;
+        const kind = position === 0 ? 'experience' : position === 2 ? 'technical' : 'follow-up';
+        const speaker = position < 2 ? 'b' : 'a';
+        if (data.kind !== kind || data.speakerId !== speaker || JSON.stringify(data.context) !== JSON.stringify(state.__expectedContext) || JSON.stringify(data).length > 8_000) return new Response('synthetic context mismatch', { status: 400 });
+        const value = { text: `합성 Gemini ${data.questionNumber}번 ${speaker.toUpperCase()} 질문입니다.`, speakerId: speaker, evidenceId: kind === 'technical' ? null : kind === 'experience' ? 'evidence-1' : 'answer-previous' };
+        return new Response(JSON.stringify({ candidates: [{ finishReason: 'STOP', content: { parts: [{ text: JSON.stringify(value) }] } }], usageMetadata: { totalTokenCount: 7 } }), { headers: { 'content-type': 'application/json' } });
+      };
+    });
+    for (let number = 4; number <= 12; number++) {
+      await expectQuestion(number, (number - 1) % 4 < 2 ? 'b' : 'a');
+      await page.getByLabel('내 답변', { exact: true }).fill(`${number}번 공유 문맥 합성 답변`);
+      const region = page.getByRole('region', { name: '공유 문맥 미리보기', exact: true });
+      let expected: unknown;
+      if (number < 12) {
+        await expect(region.locator('pre')).toContainText(`${number}번 공유 문맥 합성 답변`);
+        if (number % 2 === 0) { expected = JSON.parse(await region.locator('pre').innerText()); await region.getByRole('checkbox').check(); }
+        else await expect(region.getByRole('checkbox')).not.toBeChecked();
+      } else await expect(region.getByRole('checkbox')).toBeDisabled();
+      await app.evaluate((_electron, value) => { (globalThis as typeof globalThis & { __expectedContext?: unknown }).__expectedContext = value; }, expected);
+      await page.getByLabel('위 전송 범위·비용 가능성을 확인했습니다.', { exact: false }).check();
+      await page.getByRole('button', { name: number === 12 ? '답변 저장하고 완료' : '답변 저장하고 다음 질문', exact: true }).click();
+    }
+    await expect(page.getByRole('heading', { name: '이번 연습을 완료했습니다' })).toBeVisible();
+    expect(await app.evaluate(() => (globalThis as typeof globalThis & { __sharedRequests: number }).__sharedRequests)).toBe(8);
     expect(errors).toEqual([]);
   } finally { await app?.close(); await rm(directory, { recursive: true, force: true }); }
 });
