@@ -67,6 +67,51 @@ class FixtureAPI {
   } }; }
   respond(review: boolean) { const task = this.store.state.tasks.find(t => t.phase === (review ? 'review' : 'development'))!; if (task.pr === null) throw new Error('PR must be prepared'); const request = task.request as ReturnType<typeof reviewRequest>; const list = this.storedComments.get(task.pr) ?? []; list.push(resultComment(request, review, 2000 + list.length)); this.storedComments.set(task.pr, list); }
 }
+describe('idle queue checkpoints', () => {
+  it('does not write a lease or dispatch when every task is complete and there is no decision', async () => {
+    const f = new FixtureAPI(); f.store.state.tasks.forEach(task => { task.phase = 'completed'; });
+    const before = structuredClone(f.store.state);
+    expect(await runLoop(f.options())).toEqual({ state: 'idle', changes: 0 });
+    expect(f.store.state).toEqual(before); expect(f.store.revision).toBe(0);
+    expect(f.sends).toHaveLength(0); expect(f.dispatches).toHaveLength(0);
+  });
+  it('does not repeat an already delivered decision notice or write a lease', async () => {
+    const f = new FixtureAPI(); f.store.state.tasks.forEach(task => { task.phase = 'completed'; });
+    const original = f.request.bind(f), marker = `<!-- ais-next-decision:${f.store.state.config_hash} -->`;
+    f.request = async (method, path, value) => path.startsWith('/issues/35/comments?')
+      ? [{ user: { login: 'github-actions[bot]' }, body: `${marker}\n기존 알림` }]
+      : original(method, path, value);
+    expect(await runLoop({ ...f.options(), config: { ...config, next_decision: '새 작업 승인 필요' } })).toEqual({ state: 'needs-user', changes: 0 });
+    expect(f.store.revision).toBe(0); expect(f.sends).toHaveLength(0);
+  });
+  it('still sends the first decision notice when it has not been delivered', async () => {
+    const f = new FixtureAPI(); f.store.state.tasks.forEach(task => { task.phase = 'completed'; });
+    const original = f.request.bind(f); let posted = 0;
+    f.request = async (method, path, value) => {
+      if (method === 'POST' && path === '/issues/35/comments') posted++;
+      return original(method, path, value);
+    };
+    const result = await runLoop({ ...f.options(), config: { ...config, next_decision: '새 작업 승인 필요' } });
+    expect(result.state).toBe('needs-user'); expect(posted).toBe(1);
+    expect(f.store.state.lease).toBeNull(); expect(f.sends).toHaveLength(0);
+  });
+  it('keeps an active lease authoritative even when every task is complete', async () => {
+    const f = new FixtureAPI(); f.store.state.tasks.forEach(task => { task.phase = 'completed'; });
+    f.store.state.lease = { owner: 'a'.repeat(64), until: f.now() + 60000 };
+    expect(await runLoop(f.options())).toEqual({ state: 'leased', changes: 0 });
+    expect(f.store.revision).toBe(0);
+  });
+  it('rechecks and respects a lease acquired after the idle snapshot', async () => {
+    const f = new FixtureAPI(); f.store.state.tasks.forEach(task => { task.phase = 'completed'; });
+    const load = f.store.load.bind(f.store); let reads = 0;
+    f.store.load = async () => {
+      if (++reads === 2) { f.store.state.lease = { owner: 'b'.repeat(64), until: f.now() + 60000 }; f.store.revision++; }
+      return load();
+    };
+    expect(await runLoop(f.options())).toEqual({ state: 'leased', changes: 0 });
+    expect(f.store.revision).toBe(1); expect(f.sends).toHaveLength(0);
+  });
+});
 describe('workflow completion wake-up', () => {
   const event = { repository: { full_name: repository }, workflow_run: { id: 39531052934, name: 'Approved loop ' + 'c'.repeat(64), path: '.github/workflows/loop-validation.yml', head_repository: { full_name: repository }, head_sha: base, status: 'completed' } };
   it('accepts the actual dynamic CI name using its stable workflow path', () => {

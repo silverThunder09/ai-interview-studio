@@ -425,6 +425,20 @@ export async function runLoop({ api, sender, store, config, policy, writer, now 
   let snap = await store.load(), changes = 0, currentTask = null;
   parseLoopState(snap.state, c); const owner = randomBytes(32).toString('hex');
   if (snap.state.lease && snap.state.lease.until > now()) return { state: 'leased', changes: 0 };
+  // A completed queue needs no lease churn once its decision notice already exists.
+  // Re-read the state after external reads so a concurrently appended task is not ignored.
+  if (snap.state.bootstrap?.ready && snap.state.tasks.every(t => t.phase === 'completed')) {
+    const stopped = await controlPaused(api);
+    if (c.next_decision) ensure(typeof c.next_decision === 'string' && c.next_decision.length <= 2000, 'invalid_next_decision');
+    const marker = `<!-- ais-next-decision:${snap.state.config_hash} -->`;
+    const notified = c.next_decision && !stopped && (await comments(api, 35)).some(comment => comment.user?.login === 'github-actions[bot]' && comment.body?.startsWith(marker));
+    if (stopped || !c.next_decision || notified) {
+      const current = await store.load();
+      if (current.head === snap.head && JSON.stringify(current.state) === JSON.stringify(snap.state)) return { state: stopped ? 'stopped' : c.next_decision ? 'needs-user' : 'idle', changes: 0 };
+      snap = current; parseLoopState(snap.state, c);
+      if (snap.state.lease && snap.state.lease.until > now()) return { state: 'leased', changes: 0 };
+    }
+  }
   const save = async update => { const value = JSON.parse(JSON.stringify(snap.state)); update(value); if (value.lease?.owner === owner) value.lease.until = now() + 300000; value.revision++; snap = await store.save(snap, value); changes++; };
   await save(s => { s.lease = { owner, until: now() + 300000 }; });
   try {
