@@ -130,3 +130,20 @@ it('rejects a checkpoint crossing the UTF8 limit before any remote tree or ref w
   await expect(store.save(old, next)).rejects.toThrow('state_size_limit');
   expect(api.calls.some(c => c.method !== 'GET')).toBe(false);
 });
+it('refuses to erase a direct Cloud attempt in the real GitHub checkpoint path', async () => {
+  const api = new GitHubFixture(), state = emptyLoopState(previous);
+  state.bootstrap = { main: sha('1'), key: 'b'.repeat(64), ready: true };
+  const body = '기존 요청';
+  Object.assign(state.tasks[0]!, {
+    phase: 'development', branch: 'work/test',
+    request: { pr_number: 58, request_key: 'a'.repeat(64), head_sha: sha('2'), base_sha: sha('1') },
+    delivery: { phase: 'sending', hash: createHash('sha256').update(body).digest('hex'), body, id: null, attempted: true },
+    direct_cloud: { request_key: 'a'.repeat(64), environment: 'env_1', branch: 'work/test', phase: 'attempting', task_id: null },
+  });
+  api.state = state;
+  const store = new LoopStore(api, previous), old = await store.load();
+  const next = structuredClone(old.state); next.revision++;
+  delete next.tasks[0]!.direct_cloud;
+  await expect(store.save(old, next)).rejects.toThrow('direct_cloud_history_changed');
+  expect(api.calls.some(c => c.method !== 'GET')).toBe(false);
+});

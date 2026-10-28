@@ -86,6 +86,16 @@ describe('disabled Cloud transport', () => {
     await expect(runLoop(options)).rejects.toThrow('ambiguous_request_delivery');
     expect(f.sends).toHaveLength(0);
   });
+  it('holds a direct Cloud attempt without treating it as a missing comment or pausing the task', async () => {
+    const f = new FixtureAPI(), options = { ...f.options(), config: { ...config, cloud_transport: 'disabled' } };
+    expect((await runLoop(options)).state).toBe('waiting-transport');
+    const task = f.store.state.tasks[0]!;
+    Object.assign(task.delivery as object, { attempted: true });
+    task.direct_cloud = { request_key: (task.request as { request_key: string }).request_key, environment: 'env_1', branch: task.branch, phase: 'attempting', task_id: null };
+    expect((await runLoop(options)).state).toBe('waiting-direct-cloud');
+    expect(task.phase).toBe('development'); expect(f.store.state.tasks[0]!.phase).toBe('development');
+    expect(f.sends).toHaveLength(0);
+  });
   it('continues reading a result for a previously sent request without sending another', async () => {
     const f = new FixtureAPI(), options = { ...f.options(), config: { ...config, cloud_transport: 'disabled' } };
     expect((await runLoop(options)).state).toBe('waiting-transport');
