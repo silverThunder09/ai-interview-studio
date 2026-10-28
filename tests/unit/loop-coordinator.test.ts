@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createHash } from 'node:crypto';
-import { gatherMergeEvidence, nativeCIStatus, acceptsLoopWakeup, isCurrentMergeCheckout, emptyLoopState, parseLoopConfig, parseLoopState, parseReviewResult, buildReviewRequest, renderLoopReview, renderLoopPRBody, runLoop, LoopStore, type LoopState } from '../../scripts/review/loop-coordinator.mjs';
+import { approvedDevelopmentBody, gatherMergeEvidence, nativeCIStatus, acceptsLoopWakeup, isCurrentMergeCheckout, emptyLoopState, parseLoopConfig, parseLoopState, parseReviewResult, buildReviewRequest, renderLoopReview, renderLoopPRBody, runLoop, LoopStore, type LoopState } from '../../scripts/review/loop-coordinator.mjs';
 import { readFileSync } from 'node:fs';
 import { GitHub } from '../../scripts/review/event-worker';
 
@@ -68,6 +68,22 @@ class FixtureAPI {
   respond(review: boolean) { const task = this.store.state.tasks.find(t => t.phase === (review ? 'review' : 'development'))!; if (task.pr === null) throw new Error('PR must be prepared'); const request = task.request as ReturnType<typeof reviewRequest>; const list = this.storedComments.get(task.pr) ?? []; list.push(resultComment(request, review, 2000 + list.length)); this.storedComments.set(task.pr, list); }
 }
 describe('disabled Cloud transport', () => {
+  it('preserves the direct receipt when verified CI advances the applied result to review', async () => {
+    const f = new FixtureAPI(), options = { ...f.options(), config: { ...config, cloud_transport: 'disabled' } };
+    expect((await runLoop(options)).state).toBe('waiting-transport');
+    const task = f.store.state.tasks[0]!, request = { ...(task.request as ReturnType<typeof reviewRequest>), head_sha: '7'.repeat(40) };
+    const body = approvedDevelopmentBody(request, config.tasks[0], task);
+    Object.assign(task, { phase: 'ci', head, base, checkout, request, operation: { key: 'e'.repeat(64), dispatched: true },
+      applied: { parent: request.head_sha, sha: head, cloud_task_id: 'task_synthetic_1' },
+      delivery: { phase: 'sending', body, hash: createHash('sha256').update(body).digest('hex'), id: null, attempted: true },
+      direct_cloud: { request_key: request.request_key, environment: 'env_1', branch: 'probe-56', phase: 'sent', task_id: 'task_synthetic_1' } });
+    f.ciDone = true;
+    expect((await runLoop(options)).state).toBe('waiting-transport');
+    const saved = f.store.state.tasks[0]!;
+    expect(saved.phase).toBe('review'); expect(saved.direct_cloud).toBeUndefined();
+    expect(saved.direct_history).toMatchObject([{ request, direct_cloud: { task_id: 'task_synthetic_1' }, applied: { parent: request.head_sha, sha: head } }]);
+    expect(f.sends).toHaveLength(0);
+  });
   it('holds an unsent development request without a PR comment or attempted receipt', async () => {
     const f = new FixtureAPI();
     const result = await runLoop({ ...f.options(), config: { ...config, cloud_transport: 'disabled' } });

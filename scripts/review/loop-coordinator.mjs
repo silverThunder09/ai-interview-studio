@@ -98,6 +98,16 @@ export function parseLoopState(value, config) {
       const d = obj(t.direct_cloud);
       ensure(Object.keys(d).sort().join(',') === 'branch,environment,phase,request_key,task_id' && HASH.test(d.request_key ?? '') && d.request_key === t.request?.request_key && typeof d.environment === 'string' && /^[a-zA-Z0-9][a-zA-Z0-9_./-]{0,127}$/.test(d.environment) && d.branch === t.branch && ['attempting', 'sent'].includes(d.phase) && (d.phase === 'attempting' ? d.task_id === null : CLOUD_TASK.test(d.task_id ?? '')) && t.delivery?.attempted === true, 'invalid_direct_cloud_journal');
     }
+    if (t.direct_history !== undefined) {
+      ensure(Array.isArray(t.direct_history) && t.direct_history.length <= 4, 'invalid_direct_cloud_history');
+      const keys = new Set(), ids = new Set();
+      for (const entry of t.direct_history) {
+        const d = entry?.direct_cloud, request = entry?.request, delivery = entry?.delivery, applied = entry?.applied;
+        ensure(entry && Object.keys(entry).sort().join(',') === 'applied,delivery,direct_cloud,request' && d && Object.keys(d).sort().join(',') === 'branch,environment,phase,request_key,task_id' && d.phase === 'sent' && CLOUD_TASK.test(d.task_id ?? '') && HASH.test(d.request_key ?? '') && typeof d.environment === 'string' && /^[a-zA-Z0-9][a-zA-Z0-9_./-]{0,127}$/.test(d.environment) && d.branch === t.branch && d.request_key === request?.request_key && request.pr_number === t.pr && SHA.test(request.head_sha ?? '') && SHA.test(request.base_sha ?? '') && delivery?.attempted === true && delivery.phase === 'sending' && delivery.id === null && HASH.test(delivery.hash ?? '') && typeof delivery.body === 'string' && hash(delivery.body) === delivery.hash && applied?.parent === request.head_sha && applied.cloud_task_id === d.task_id && SHA.test(applied?.sha ?? '') && applied.sha !== applied.parent && !keys.has(d.request_key) && !ids.has(d.task_id), 'invalid_direct_cloud_history');
+        keys.add(d.request_key); ids.add(d.task_id);
+      }
+      ensure(!t.direct_cloud || (!keys.has(t.direct_cloud.request_key) && !ids.has(t.direct_cloud.task_id)), 'invalid_direct_cloud_history');
+    }
     if (t.policy_update !== undefined && t.policy_update !== null) ensure(number(t.policy_update.after_run) && HASH.test(t.policy_update.body_hash ?? ''), 'invalid_policy_update');
     if (t.waiting !== undefined && t.waiting !== null) ensure(['workflow_approval', 'ci_running', 'native_ci_registration', 'native_policy_registration', 'mergeability'].includes(t.waiting.reason) && t.waiting.head === t.head && t.waiting.base === t.base && SHA.test(t.waiting.head ?? '') && SHA.test(t.waiting.base ?? ''), 'invalid_loop_waiting');
     if (t.sync_intent !== undefined && t.sync_intent !== null) ensure(['head', 'base', 'main'].every(k => SHA.test(t.sync_intent[k] ?? '')), 'invalid_sync_intent');
@@ -185,9 +195,24 @@ export class LoopStore {
 /** A checkpoint may record a receipt, but cannot erase or rewrite a dispatch. */
 export function preserveDirectCloud(before, after) {
   const old = before.direct_cloud, next = after.direct_cloud;
+  const previous = before.direct_history ?? [], history = after.direct_history ?? [];
+  ensure(Array.isArray(previous) && Array.isArray(history) && history.length >= previous.length && history.length <= previous.length + 1 && previous.every((entry, i) => JSON.stringify(entry) === JSON.stringify(history[i])), 'direct_cloud_history_changed');
+  if (history.length > previous.length) {
+    const contexts = ['checks', 'package', 'pr-policy'];
+    ensure(old?.phase === 'sent' && next === undefined && before.phase === 'ci' && after.phase === 'review' && [before.head, before.base, before.checkout].every(value => SHA.test(value ?? '')) && before.applied?.parent === before.request?.head_sha && before.applied?.cloud_task_id === old.task_id && before.request?.base_sha === before.base && before.applied?.sha === before.head && after.head === before.head && after.base === before.base && after.checkout === before.checkout && JSON.stringify(after.applied) === JSON.stringify(before.applied) && Array.isArray(after.validated_ci) && after.validated_ci.length === contexts.length && contexts.every(context => after.validated_ci.filter(proof => proof.context === context && proof.repository === REPO && proof.pr_number === before.pr && proof.head_sha === before.head && proof.base_sha === before.base && proof.checkout_sha === before.checkout && /^[1-9][0-9]*$/.test(proof.run_id ?? '')).length === 1) && JSON.stringify(history.at(-1)) === JSON.stringify({ request: before.request, delivery: before.delivery, direct_cloud: old, applied: before.applied }), 'direct_cloud_history_changed');
+    return;
+  }
   if (old === undefined) return;
   ensure(next && ['request_key', 'environment', 'branch'].every(k => next[k] === old[k]) && after.delivery?.attempted === true, 'direct_cloud_history_changed');
   ensure(old.phase === 'attempting' ? (next.phase === 'attempting' && next.task_id === null || next.phase === 'sent' && CLOUD_TASK.test(next.task_id ?? '')) : next.phase === 'sent' && next.task_id === old.task_id, 'direct_cloud_history_changed');
+}
+
+/** Keep the authenticated development receipt when review gets a new request. */
+export function archiveDirectCloud(task) {
+  if (task.direct_cloud === undefined) return;
+  ensure(task.phase === 'ci' && task.direct_cloud.phase === 'sent' && task.applied?.parent === task.request?.head_sha && task.applied?.cloud_task_id === task.direct_cloud.task_id && task.request?.base_sha === task.base && task.applied?.sha === task.head && task.applied.sha !== task.applied.parent, 'direct_cloud_not_applied');
+  (task.direct_history ??= []).push({ request: task.request, delivery: task.delivery, direct_cloud: task.direct_cloud, applied: task.applied });
+  delete task.direct_cloud;
 }
 
 export function buildReviewRequest(request) {
@@ -688,7 +713,7 @@ export async function runLoop({ api, sender, store, config, policy, writer, now 
         for (const context of policy.required_checks) proofs.push(await jobEvidence(api, { repository: REPO, pr_number: task.pr, context, head_sha: task.head, base_sha: task.base, checkout_sha: pr.merge_commit_sha }, checks));
         const request = requestFor(task.pr, task.head, task.base, 'read-only', [], now), body = buildReviewRequest(request) + '\n\n승인된 작업 범위(진단 데이터):\n' + definition.goal +
           (definition.acceptance ? '\n완료 조건:\n' + definition.acceptance.map(a => `- ${a}`).join('\n') : '') + '\n허용 경로: ' + JSON.stringify(definition.allowed_paths) + buildRepairReviewAddition(task, request);
-        await update(t => { t.phase = 'review'; t.waiting = null; t.validated_ci = proofs; t.request = request; t.delivery = { phase: 'sending', hash: hash(body), body, id: null, attempted: false }; }); continue;
+        await update(t => { archiveDirectCloud(t); t.phase = 'review'; t.waiting = null; t.validated_ci = proofs; t.request = request; t.delivery = { phase: 'sending', hash: hash(body), body, id: null, attempted: false }; }); continue;
       }
       if (task.phase === 'merge') {
         // Rendering the review record edits the body and starts a fresh PR policy
