@@ -11,6 +11,7 @@ export function parseLoopState(state: unknown, config: unknown): LoopState;
 export function appendApprovedTasks(state: unknown, config: unknown): LoopState;
 export function scope(api: unknown, task: unknown, definition: unknown): Promise<{ pr: unknown; main: string; files: unknown[] }>;
 export function preserveDirectCloud(before: Record<string, unknown>, after: Record<string, unknown>): void;
+export function archiveDirectCloud(task: Record<string, unknown>): void;
 export function approvedDevelopmentBody(request: unknown, definition: unknown, task: unknown): string;
 export function buildReviewRequest(request: unknown): string;
 export function parseReviewResult(comment: unknown, request: unknown): { findings: string[]; comment_id: number; task_url: string };

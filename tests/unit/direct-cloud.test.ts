@@ -1,11 +1,12 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 import { dispatchApprovedCloud } from '../../scripts/review/direct-cloud.mjs';
-import { approvedDevelopmentBody, emptyLoopState, parseLoopState, preserveDirectCloud, type LoopState } from '../../scripts/review/loop-coordinator.mjs';
+import { approvedDevelopmentBody, archiveDirectCloud, emptyLoopState, parseLoopState, preserveDirectCloud, type LoopState } from '../../scripts/review/loop-coordinator.mjs';
 
 const repo = 'silverThunder09/ai-interview-studio';
 const sha = (n: string) => n.repeat(40);
 const key = 'a'.repeat(64);
+const ci = () => ['checks', 'package', 'pr-policy'].map(context => ({ context, repository: repo, pr_number: 80, head_sha: sha('4'), base_sha: sha('1'), checkout_sha: sha('5'), run_id: '123' }));
 const config = { schema: 1, repository: repo, enabled: true, cloud_transport: 'disabled', tasks: [{ id: 'work-a', pr: 80, goal: '승인된 합성 작업', approval: '사용자 승인', allowed_paths: ['src/a.ts'] }] };
 
 function fixture() {
@@ -93,6 +94,33 @@ describe('direct Cloud delivery journal', () => {
     const broken = structuredClone(f.store.state);
     (broken.tasks[0]!.direct_cloud as { phase: string }).phase = 'unknown';
     expect(() => parseLoopState(broken, config)).toThrow('invalid_direct_cloud_journal');
+  });
+  it('preserves a sent and applied receipt when CI advances to a separate review request', async () => {
+    const f = fixture(); await dispatchApprovedCloud(f.options);
+    const before = structuredClone(f.store.state.tasks[0]!);
+    Object.assign(before, { phase: 'ci', head: sha('4'), base: sha('1'), checkout: sha('5'), applied: { parent: sha('2'), sha: sha('4'), cloud_task_id: 'task_synthetic_1' } });
+    const after = structuredClone(before); archiveDirectCloud(after);
+    Object.assign(after, { phase: 'review', validated_ci: ci(), request: { ...(before.request as object), request_key: 'c'.repeat(64), head_sha: sha('4') }, delivery: { phase: 'sending', hash: createHash('sha256').update('review').digest('hex'), body: 'review', id: null, attempted: false } });
+    expect(() => preserveDirectCloud(before, after)).not.toThrow();
+    const next = structuredClone(f.store.state); next.tasks[0] = after;
+    expect(() => parseLoopState(next, config)).not.toThrow();
+    expect(after.direct_cloud).toBeUndefined();
+    expect(after.direct_history).toEqual([{ request: before.request, delivery: before.delivery, direct_cloud: before.direct_cloud, applied: before.applied }]);
+  });
+  it('rejects premature archival and later deletion or alteration of the retained receipt', async () => {
+    const f = fixture(); await dispatchApprovedCloud(f.options);
+    const early = structuredClone(f.store.state.tasks[0]!);
+    expect(() => archiveDirectCloud(early)).toThrow('direct_cloud_not_applied');
+    const before = structuredClone(early);
+    Object.assign(before, { phase: 'ci', head: sha('4'), base: sha('1'), checkout: sha('5'), applied: { parent: sha('2'), sha: sha('4'), cloud_task_id: 'task_synthetic_1' } });
+    const after = structuredClone(before); archiveDirectCloud(after); after.phase = 'review'; after.validated_ci = ci();
+    const stale = structuredClone(after); stale.validated_ci = [{ head_sha: sha('3'), base_sha: sha('1') }];
+    expect(() => preserveDirectCloud(before, stale)).toThrow('direct_cloud_history_changed');
+    const malformed = structuredClone(after); (malformed.direct_history as { direct_cloud: { task_id: string } }[])[0]!.direct_cloud.task_id = 'task_other';
+    expect(() => preserveDirectCloud(before, malformed)).toThrow('direct_cloud_history_changed');
+    const removed = structuredClone(after); delete removed.direct_history;
+    expect(() => preserveDirectCloud(after, removed)).toThrow('direct_cloud_history_changed');
+    expect(() => preserveDirectCloud(after, malformed)).toThrow('direct_cloud_history_changed');
   });
   it('does not send when the PR or main changes after the intent checkpoint', async () => {
     const f = fixture(); const original = f.api.request; let reads = 0;
