@@ -19,10 +19,12 @@ export async function readTaskPages(run, maxPages = 50) {
       if (!task || !TASK_ID.test(task.id ?? '') || typeof task.status !== 'string' || seen.has(task.id)) throw new Error('invalid_cloud_task');
       if (task.environment_id !== undefined && task.environment_id !== null && typeof task.environment_id !== 'string') throw new Error('invalid_cloud_task');
       if (task.attempt_total !== undefined && task.attempt_total !== null && (!Number.isSafeInteger(task.attempt_total) || task.attempt_total < 0)) throw new Error('invalid_cloud_task');
+      if (task.updated_at !== undefined && task.updated_at !== null && (typeof task.updated_at !== 'string' || !Number.isFinite(Date.parse(task.updated_at)))) throw new Error('invalid_cloud_task');
       seen.add(task.id);
       tasks.push({ id: task.id, status: task.status, known_status: STATES.has(task.status),
         ...(task.environment_id !== undefined ? { environment_id: task.environment_id } : {}),
-        ...(task.attempt_total !== undefined ? { attempt_total: task.attempt_total } : {}) });
+        ...(task.attempt_total !== undefined ? { attempt_total: task.attempt_total } : {}),
+        ...(task.updated_at !== undefined ? { updated_at: task.updated_at } : {}) });
     }
     if (data.cursor == null || data.cursor === '') return tasks;
     if (typeof data.cursor !== 'string' || cursors.has(data.cursor)) throw new Error('invalid_cloud_cursor');

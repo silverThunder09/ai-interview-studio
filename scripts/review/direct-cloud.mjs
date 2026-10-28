@@ -3,6 +3,7 @@ import { randomBytes } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { approvedDevelopmentBody, parseLoopConfig, parseLoopState, REPO, scope } from './loop-coordinator.mjs';
+import { createDirectHistoryVerifier } from './direct-history.mjs';
 
 const exec = promisify(execFile);
 const TASK = /^task_[a-zA-Z0-9_-]+$/;
@@ -27,7 +28,8 @@ export async function launchCloud({ environment, branch, body }) {
  */
 export async function dispatchApprovedCloud({ api, store, config, taskId, environment, verifyHistory, launch = launchCloud, now = Date.now }) {
   const c = parseLoopConfig(config);
-  ensure(c.enabled && c.cloud_transport === 'disabled' && ENV.test(environment ?? '') && typeof verifyHistory === 'function', 'direct_cloud_disabled');
+  const history = verifyHistory ?? createDirectHistoryVerifier({ api, config: c });
+  ensure(c.enabled && c.cloud_transport === 'disabled' && ENV.test(environment ?? '') && typeof history === 'function', 'direct_cloud_disabled');
   let snap = await store.load(); parseLoopState(snap.state, c);
   const index = snap.state.tasks.findIndex(t => t.id === taskId);
   ensure(index >= 0 && index === snap.state.tasks.findIndex(t => t.phase !== 'completed'), 'not_current_approved_task');
@@ -36,7 +38,7 @@ export async function dispatchApprovedCloud({ api, store, config, taskId, enviro
   ensure(task.delivery.body === approvedDevelopmentBody(task.request, definition, task), 'untrusted_cloud_body');
   ensure(snap.state.bootstrap?.ready === true && (!snap.state.lease || snap.state.lease.until <= now()), 'loop_busy_or_unverified');
   // Reconciliation must use authoritative, complete evidence; a list alone is insufficient.
-  ensure(await verifyHistory({ task, state: snap.state }) === true, 'cloud_history_unreconciled');
+  ensure(await history({ task, state: snap.state }) === true, 'cloud_history_unreconciled');
   const check = async () => {
     const { pr, main } = await scope(api, task, definition);
     ensure(pr.state === 'open' && pr.merged === false && pr.head.sha === task.request.head_sha && pr.head.ref === task.branch && pr.base.sha === task.request.base_sha && main === task.request.base_sha && pr.head.repo.full_name === REPO, 'stale_cloud_request');
@@ -52,7 +54,7 @@ export async function dispatchApprovedCloud({ api, store, config, taskId, enviro
   await save(s => { s.lease = { owner, until: now() + 300000 }; });
   try {
     await check();
-    ensure(await verifyHistory({ task, state: snap.state }) === true, 'cloud_history_unreconciled');
+    ensure(await history({ task, state: snap.state }) === true, 'cloud_history_unreconciled');
     await save(s => {
       const t = s.tasks[index];
       ensure(s.lease?.owner === owner && s.lease.until > now() && !t.direct_cloud && t.delivery.attempted === false, 'direct_cloud_conflict');
@@ -61,7 +63,7 @@ export async function dispatchApprovedCloud({ api, store, config, taskId, enviro
     });
     try {
       await check();
-      ensure(await verifyHistory({ task, state: snap.state }) === true, 'cloud_history_unreconciled');
+      ensure(await history({ task, state: snap.state }) === true, 'cloud_history_unreconciled');
       const current = await store.load();
       ensure(current.head === snap.head && current.state.lease?.owner === owner && current.state.lease.until > now(), 'direct_cloud_conflict');
     } catch { return { state: 'preflight_changed' }; }
