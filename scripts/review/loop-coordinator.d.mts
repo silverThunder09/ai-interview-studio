@@ -4,7 +4,7 @@ export function acceptsLoopWakeup(event: unknown): boolean;
 export function nativeCIStatus(api: unknown, task: unknown, policy: unknown): Promise<{ checks: unknown[]; waiting: string | null }>;
 export function isCurrentMergeCheckout(pr: unknown, main: unknown, commit: unknown): boolean;
 export interface LoopTask { id: string; pr: number | null; phase: string; cycles: number; request: unknown; delivery: unknown; operation: unknown; applied: unknown; review: unknown; merged: unknown; reason: unknown; [key: string]: unknown }
-export interface LoopState { schema: number; repository: string; revision: number; config_hash: string; lease: null | { owner: string; until: number }; bootstrap?: null | { main: string; key: string; ready: boolean; checks?: { main: string; key: string; ready: boolean }[] }; tasks: LoopTask[] }
+export interface LoopState { schema: number; repository: string; revision: number; config_hash: string; lease: null | { owner: string; until: number }; bootstrap?: null | { main: string; key: string; ready: boolean; checks?: { main: string; key: string; ready: boolean }[] }; direct_inventory?: { schema: 1; queue_ids: string[]; tasks: { id: string; status: 'ready' | 'error'; attempt_total: number; updated_at: string }[] }; tasks: LoopTask[] }
 export function emptyLoopState(config: unknown): LoopState;
 export function parseLoopConfig(config: unknown): { enabled: boolean; tasks: unknown[]; next_decision?: string };
 export function parseLoopState(state: unknown, config: unknown): LoopState;

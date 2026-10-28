@@ -106,6 +106,11 @@ export function parseLoopState(value, config) {
     if (t.repairs !== undefined) ensure(Array.isArray(t.repairs) && t.repairs.length <= 3 && t.repairs.every(r => SHA.test(r.head ?? '') && SHA.test(r.base ?? '') && Array.isArray(r.issues) && r.issues.length > 0 && r.issues.length <= 10), 'invalid_repair_history');
     if (t.repair_findings !== undefined && t.repair_findings !== null) ensure(Array.isArray(t.repair_findings) && t.repair_findings.length > 0 && t.repair_findings.length <= 10 && t.repair_findings.every(f => number(f.id) && number(f.issue) && c.tasks[i].allowed_paths.includes(f.path) && typeof f.marker === 'string' && f.marker.startsWith(`<!-- ais-repair-issue:${t.pr}:`)), 'invalid_repair_findings');
   });
+  if (v.direct_inventory !== undefined) {
+    const inventory = obj(v.direct_inventory);
+    ensure(Object.keys(inventory).sort().join(',') === 'queue_ids,schema,tasks' && inventory.schema === 1 && Array.isArray(inventory.queue_ids) && inventory.queue_ids.length === new Set(inventory.queue_ids).size && inventory.queue_ids.length <= v.tasks.length && inventory.queue_ids.every((id, i) => id === v.tasks[i].id && v.tasks[i].phase === 'completed'), 'invalid_direct_inventory');
+    ensure(Array.isArray(inventory.tasks) && inventory.tasks.length <= 1000 && inventory.tasks.every((item, i) => item && Object.keys(item).sort().join(',') === 'attempt_total,id,status,updated_at' && typeof item.id === 'string' && item.id.length <= 128 && CLOUD_TASK.test(item.id) && ['ready', 'error'].includes(item.status) && Number.isSafeInteger(item.attempt_total) && item.attempt_total > 0 && typeof item.updated_at === 'string' && Number.isFinite(Date.parse(item.updated_at)) && (i === 0 || inventory.tasks[i - 1].id < item.id)), 'invalid_direct_inventory');
+  }
   return v;
 }
 
@@ -150,6 +155,8 @@ export class LoopStore {
   async save(old, next) {
     parseLoopState(next, this.config); ensure(next.revision === old.state.revision + 1, 'invalid_state_revision');
     const current = await this.load(); ensure(current.head === old.head && JSON.stringify(current.state) === JSON.stringify(old.state), 'loop_cas_conflict');
+    if (old.state.direct_inventory !== undefined) ensure(JSON.stringify(next.direct_inventory) === JSON.stringify(old.state.direct_inventory), 'direct_inventory_changed');
+    else if (next.direct_inventory !== undefined) ensure(old.state.lease === null && old.state.bootstrap?.ready === true && old.state.tasks.every(t => t.phase === 'completed') && JSON.stringify(old.state.tasks) === JSON.stringify(next.tasks), 'invalid_direct_inventory_install');
     if (old.state.bootstrap) ensure(next.bootstrap?.main === old.state.bootstrap.main && next.bootstrap.key === old.state.bootstrap.key && (!old.state.bootstrap.ready || next.bootstrap.ready === true), 'bootstrap_history_changed');
     const beforeChecks = old.state.bootstrap?.checks ?? [], afterChecks = next.bootstrap?.checks ?? [];
     ensure(afterChecks.length >= beforeChecks.length && afterChecks.length <= beforeChecks.length + 1 && (!old.state.bootstrap?.ready || JSON.stringify(beforeChecks) === JSON.stringify(afterChecks)), 'bootstrap_history_changed');
