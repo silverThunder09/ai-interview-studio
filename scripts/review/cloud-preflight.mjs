@@ -17,8 +17,12 @@ export async function readTaskPages(run, maxPages = 50) {
     if (!data || !Array.isArray(data.tasks) || data.tasks.length > 20) throw new Error('invalid_cloud_list');
     for (const task of data.tasks) {
       if (!task || !TASK_ID.test(task.id ?? '') || typeof task.status !== 'string' || seen.has(task.id)) throw new Error('invalid_cloud_task');
+      if (task.environment_id !== undefined && task.environment_id !== null && typeof task.environment_id !== 'string') throw new Error('invalid_cloud_task');
+      if (task.attempt_total !== undefined && task.attempt_total !== null && (!Number.isSafeInteger(task.attempt_total) || task.attempt_total < 0)) throw new Error('invalid_cloud_task');
       seen.add(task.id);
-      tasks.push({ id: task.id, status: task.status, known_status: STATES.has(task.status) });
+      tasks.push({ id: task.id, status: task.status, known_status: STATES.has(task.status),
+        ...(task.environment_id !== undefined ? { environment_id: task.environment_id } : {}),
+        ...(task.attempt_total !== undefined ? { attempt_total: task.attempt_total } : {}) });
     }
     if (data.cursor == null || data.cursor === '') return tasks;
     if (typeof data.cursor !== 'string' || cursors.has(data.cursor)) throw new Error('invalid_cloud_cursor');

@@ -10,6 +10,8 @@
 
 `scripts/review/direct-cloud.mjs`는 기존 승인 큐의 현재 개발 요청을 대상으로 직접 Cloud 발신 의도를 먼저 checkpoint하고, 같은 요청의 중복 발신을 거절하는 호출 가능한 구성요소다. CLI 응답이나 checkpoint 응답이 유실되면 자동 재시도하지 않는다. 기존 중지 라벨·범위·최신 head/base 검사와 완료 이력은 유지한다. 호출자는 신뢰하는 main의 설정과 완전한 과거 Cloud 결과 대조를 제공해야 한다. 이 구성요소는 아직 실행기 또는 결과 수신·재시도에 연결되지 않았으며, 합성 시험의 성공은 실제 Cloud 작업 발신 성공이 아니다.
 
+`scripts/review/direct-result.mjs`는 기록된 직접 작업 ID·환경·단일 시도와 공식 CLI의 종료 상태를 대조하고, 완료 결과의 diff를 승인된 경로와 해당 head의 실제 blob에 맞춰 읽기 전용으로 검증한다. 산출물은 CI·리뷰·머지 승인이 아닌 변경 후보일 뿐이다. `error`의 원인을 추정하거나 재시도하지 않으며, 빈 diff·환경 불일치·변경된 head/base·잘린 tree·문맥 불일치는 보류한다. 기존 실행기에서 이 후보를 반영하는 경로는 아직 연결되지 않았다.
+
 - 공식 Codex 영수증은 issue comments 또는 원본 REST reviews의 COMMENTED 리뷰에 올 수 있다. REST 영수증은 Bot 작성자·정확한 전체 commit_id·PR URL·요청 이후 submitted_at·구조화된 완료 요약을 함께 검증한다. `pull_request_review` submitted/edited도 같은 저장소·main 대상·공식 bot만 조정자를 깨운다. 원본 reviews는 필터링하지 않고 별도로 머지 판정에 모두 전달한다.
 - 완료된 공식 리뷰의 실제 finding은 병합 성공으로 해석하지 않는다. 기존 승인 파일·3회 상한 안에서 같은 task의 요청/영수증/결함/이슈 이력을 보존하고 새 key로 수정 작업을 요청한다. P0·허용 밖 파일·모호하거나 과대한 결과·사람의 변경 요청은 보류한다. 새 권한이나 스펙을 댓글에서 가져오지 않는다.
 - 수정된 파일·새 head의 실제 CI3개와 새 AI 검토 finding0을 확인한 뒤 그 수정에 연결된 이슈를 닫는다. 기록된 해당 AI finding의 **공식 Bot 댓글만 있는** 스레드만 해결한다. outdated 스레드는 기존 절차를 따른다. GitHub가 현재 줄에 계속 연결한 과거 finding은 다음 조건을 모두 만족해야 한다: 신뢰하는 main이 보낸 새 read-only 요청에 미해결 원결함 전체·재현·수정 AC가 명시되어 있고, 그 요청의 key·head/base·본문 hash·전송 영수증이 일치하며, 해당 과거 finding을 포함한 새 AI 검토가 완료되어 finding0이어야 한다. 스레드의 모든 댓글은 보존한 과거 finding의 URL·본문과 정확히 같아야 한다. 새 head에서 처음 발견된 finding, 일반 리뷰만 완료한 과거 영수증, 사람 댓글, 누락/페이지 잘림은 해결하지 않는다. 해결 전 전체 대상 스레드를 먼저 검사하고, 해결 직후 재조회에서 사람 댓글이나 내용 변경이 확인되면 unresolved로 복원하고 멈춘다. 사람의 결정 리뷰를 dismiss/APPROVE하지 않으며 최종 원본 리뷰/스레드/라벨/현재 SHA 검증과 3회 수정 상한은 그대로 수행한다.
