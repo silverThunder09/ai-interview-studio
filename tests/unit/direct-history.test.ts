@@ -8,7 +8,9 @@ const repo = 'silverThunder09/ai-interview-studio', sha = (s: string) => s.repea
 const definition = (id: string, pr: number) => ({ id, pr, goal: '승인 작업', approval: '사용자 승인', allowed_paths: ['src/a.ts'] });
 const config = { schema: 1, repository: repo, enabled: true, cloud_transport: 'disabled', tasks: [definition('old', 80)] };
 const later = { ...config, tasks: [...config.tasks, definition('next', 81)] };
-const baseline = [{ id: 'task_old_a', status: 'ready', known_status: true, attempt_total: 1, updated_at: '2026-10-27T00:00:00Z' }, { id: 'task_old_b', status: 'error', known_status: true, attempt_total: 1, updated_at: '2026-10-27T00:00:00Z' }];
+const historical = [{ id: 'task_old_a', status: 'ready', known_status: true, attempt_total: 1, updated_at: '2026-10-27T00:00:00Z' }, { id: 'task_old_b', status: 'error', known_status: true, attempt_total: 1, updated_at: '2026-10-27T00:00:00Z' }];
+
+const baseline: typeof historical = [];
 
 function fixture() {
   const state = emptyLoopState(config); state.bootstrap = { main: sha('1'), key: 'b'.repeat(64), ready: true };
@@ -49,7 +51,7 @@ function nextState(state: LoopState) {
 describe('direct Cloud history inventory', () => {
   it('installs a stable terminal snapshot without changing the completed queue', async () => {
     const f = fixture(), original = structuredClone(f.store.state.tasks);
-    await expect(installDirectInventory(f.options)).resolves.toEqual({ state: 'installed', count: 2 });
+    await expect(installDirectInventory(f.options)).resolves.toEqual({ state: 'installed', count: 0 });
     expect(f.store.state.tasks).toEqual(original); expect(f.store.state.direct_inventory?.queue_ids).toEqual(['old']);
     expect(await installDirectInventory(f.options)).toEqual({ state: 'already_present' }); expect(f.store.writes).toBe(1);
   });
@@ -58,10 +60,25 @@ describe('direct Cloud history inventory', () => {
     await expect(installDirectInventory(f.options)).rejects.toThrow('response_lost');
     expect(await installDirectInventory(f.options)).toEqual({ state: 'already_present' }); expect(f.store.writes).toBe(1);
   });
+  it('refuses stable terminal history until each task is correlated with a consumed result', async () => {
+    for (const entry of historical) {
+      const f = fixture(); f.list.mockResolvedValue([entry]);
+      await expect(installDirectInventory(f.options)).rejects.toThrow('cloud_history_unreconciled');
+      expect(f.store.writes).toBe(0);
+    }
+  });
+  it('refuses an existing nonempty inventory that lacks authenticated reconciliation', async () => {
+    const f = fixture(); await installDirectInventory(f.options);
+    const state = nextState(f.store.state);
+    const { id, status, attempt_total, updated_at } = historical[0]!;
+    state.direct_inventory!.tasks = [{ id, status: status as 'ready', attempt_total, updated_at }];
+    const verify = createDirectHistoryVerifier({ api: f.api, config: later, list: f.list });
+    await expect(verify({ task: state.tasks[1], state })).rejects.toThrow('cloud_history_unreconciled');
+  });
   it('does not initialize with running work, different snapshots, paused labels or an unfinished queue', async () => {
-    const a = fixture(); a.list.mockResolvedValue([{ ...baseline[0]!, status: 'running' }]);
+    const a = fixture(); a.list.mockResolvedValue([{ ...historical[0]!, status: 'running' }]);
     await expect(installDirectInventory(a.options)).rejects.toThrow('unsettled_cloud_history');
-    const b = fixture(); b.list.mockResolvedValueOnce(baseline).mockResolvedValueOnce(baseline.slice(0, 1));
+    const b = fixture(); b.list.mockResolvedValueOnce(baseline).mockResolvedValueOnce(historical.slice(0, 1));
     await expect(installDirectInventory(b.options)).rejects.toThrow('cloud_history_changed');
     const c = fixture(); c.setLabels([{ name: 'agent-paused' }]);
     await expect(installDirectInventory(c.options)).rejects.toThrow('loop_control_paused');
@@ -99,15 +116,15 @@ describe('direct Cloud history inventory', () => {
     const state = nextState(f.store.state), verify = createDirectHistoryVerifier({ api: f.api, config: later, list: f.list });
     f.list.mockResolvedValueOnce([...baseline, { id: 'task_new', status: 'ready', known_status: true, attempt_total: 1, updated_at: '2026-10-28T01:00:00Z' }]);
     await expect(verify({ task: state.tasks[1], state })).rejects.toThrow('cloud_history_changed');
-    f.list.mockResolvedValueOnce([{ ...baseline[0]!, status: 'running' }, baseline[1]!]);
+    f.list.mockResolvedValueOnce([{ ...historical[0]!, status: 'running' }]);
     await expect(verify({ task: state.tasks[1], state })).rejects.toThrow('unsettled_cloud_history');
   });
-  it('holds when a previously observed Cloud task has a new attempt or changed result', async () => {
+  it('holds when an untracked Cloud task reports an attempt or changed result', async () => {
     const f = fixture(); await installDirectInventory(f.options);
     const state = nextState(f.store.state), verify = createDirectHistoryVerifier({ api: f.api, config: later, list: f.list });
-    f.list.mockResolvedValueOnce([{ ...baseline[0]!, attempt_total: 2 }, baseline[1]!]);
+    f.list.mockResolvedValueOnce([{ ...historical[0]!, attempt_total: 2 }]);
     await expect(verify({ task: state.tasks[1], state })).rejects.toThrow('cloud_history_changed');
-    f.list.mockResolvedValueOnce([{ ...baseline[0]!, updated_at: '2026-10-28T01:00:00Z' }, baseline[1]!]);
+    f.list.mockResolvedValueOnce([{ ...historical[0]!, updated_at: '2026-10-28T01:00:00Z' }]);
     await expect(verify({ task: state.tasks[1], state })).rejects.toThrow('cloud_history_changed');
   });
   it('holds a same-key prior request or any later ambiguous Codex mention', async () => {

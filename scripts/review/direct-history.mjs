@@ -26,6 +26,10 @@ export async function installDirectInventory({ api, store, config, list = cloudT
   await ensureNotStopped(api);
   const first = terminalSnapshot(await list()), second = terminalSnapshot(await list());
   ensure(JSON.stringify(first) === JSON.stringify(second), 'cloud_history_changed');
+  // A terminal status alone does not bind an old Cloud task to an approved
+  // request or prove that its result was consumed. Until that evidence can be
+  // authenticated, only an empty account history is safe to initialize.
+  ensure(first.length === 0, 'cloud_history_unreconciled');
   await ensureNotStopped(api);
   const current = await store.load();
   ensure(current.head === old.head && JSON.stringify(current.state) === JSON.stringify(old.state), 'loop_cas_conflict');
@@ -42,6 +46,7 @@ export function createDirectHistoryVerifier({ api, config, list = cloudTasks }) 
   return async ({ task, state }) => {
     parseLoopState(state, c);
     const inventory = state.direct_inventory;
+    ensure(inventory && inventory.tasks.length === 0, 'cloud_history_unreconciled');
     const index = state.tasks.findIndex(t => t.id === task.id);
     ensure(inventory && index >= inventory.queue_ids.length && state.tasks[index].phase === 'development' && state.tasks[index].request?.request_key === task.request?.request_key && KEY.test(task.request?.request_key ?? '') && task.delivery?.attempted === false && task.direct_cloud === undefined, 'direct_history_unverified');
     const expected = new Map(inventory.tasks.map(t => [t.id, t]));
