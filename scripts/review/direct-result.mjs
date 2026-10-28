@@ -15,7 +15,17 @@ export async function cloudTasks() {
 }
 export async function cloudDiff(id) {
   ensure(/^task_[a-zA-Z0-9_-]+$/.test(id ?? ''), 'invalid_cloud_task');
-  return (await exec('codex', ['cloud', 'diff', '--attempt', '1', id], { timeout: 30000, maxBuffer: 128 * 1024, windowsHide: true })).stdout;
+  try {
+    return (await exec('codex', ['cloud', 'diff', '--attempt', '1', id], { timeout: 30000, maxBuffer: 128 * 1024, windowsHide: true })).stdout;
+  } catch (error) {
+    // This exact CLI message is not proof of completion. The caller first
+    // verifies READY and then treats an empty diff as a hold, never success.
+    const message = `Error: No diff available for task ${id}; it may still be running.`;
+    if (error?.code === 1 && error.killed !== true && typeof error.stderr === 'string' && error.stderr.split(/\r?\n/).includes(message)) return '';
+    // CLI stderr may include remote text; do not attach it to a logged error.
+    // eslint-disable-next-line preserve-caught-error
+    throw new Error('cloud_diff_unavailable');
+  }
 }
 
 /**
@@ -37,7 +47,11 @@ export async function inspectDirectResult({ api, store, config, taskId, list = c
   await check();
   const tasks = await list(); ensure(Array.isArray(tasks), 'invalid_cloud_list');
   const found = tasks.filter(t => t.id === direct.task_id);
-  ensure(found.length === 1 && found[0].known_status === true && found[0].environment_id === direct.environment && found[0].attempt_total === 1, 'uncorrelated_cloud_task');
+  // The authenticated creation receipt already binds this exact task ID to
+  // the requested environment. Legacy Cloud can omit its environment ID in
+  // list results; a conflicting ID is still rejected, and a missing field is
+  // not accepted. Never use the CLI's environment filter as identity evidence.
+  ensure(found.length === 1 && found[0].known_status === true && (found[0].environment_id === null || found[0].environment_id === direct.environment) && found[0].attempt_total === 1, 'uncorrelated_cloud_task');
   const status = found[0].status;
   if (['pending', 'running', 'queued'].includes(status)) return { state: 'waiting' };
   if (status !== 'ready') return { state: 'hold_unknown_failure' };
