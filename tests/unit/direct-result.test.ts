@@ -30,7 +30,7 @@ function fixture() {
     if (path === `/git/blobs/${blobSha}`) return { encoding: 'base64', size: Buffer.byteLength(blobContent), content: Buffer.from(blobContent).toString('base64') };
     throw new Error('unexpected_request');
   } };
-  const list = vi.fn(async () => [{ id: 'task_one', status: 'ready', known_status: true, environment_id: 'env_1', attempt_total: 1 }]);
+  const list = vi.fn(async (): Promise<{ id: string; status: string; known_status: boolean; environment_id: string | null; attempt_total: number }[]> => [{ id: 'task_one', status: 'ready', known_status: true, environment_id: 'env_1', attempt_total: 1 }]);
   const diff = vi.fn(async () => patch);
   return { store, api, calls, list, diff, options: { api, store, config, taskId: 'work-a', list, diff } };
 }
@@ -42,6 +42,11 @@ describe('direct Cloud result inspection', () => {
     expect(result).toMatchObject({ state: 'candidate', task_id: 'task_one', files: [{ path: 'src/a.ts', content: 'after\n' }] });
     expect(f.diff).toHaveBeenCalledWith('task_one'); expect(f.store.state).toEqual(before);
     expect(f.calls.every(call => call.startsWith('GET '))).toBe(true);
+  });
+  it('uses the exact stored creation receipt when the server explicitly returns a null environment ID', async () => {
+    const f = fixture();
+    f.list.mockResolvedValue([{ id: 'task_one', status: 'ready', known_status: true, environment_id: null, attempt_total: 1 }]);
+    expect(await inspectDirectResult(f.options)).toMatchObject({ state: 'candidate', task_id: 'task_one' });
   });
   it('waits for a running task and holds an error without assuming it is transient', async () => {
     const f = fixture(); f.list.mockResolvedValueOnce([{ id: 'task_one', status: 'running', known_status: true, environment_id: 'env_1', attempt_total: 1 }]);
@@ -57,6 +62,14 @@ describe('direct Cloud result inspection', () => {
       [{ id: 'task_one', status: 'ready', known_status: false, environment_id: 'env_1', attempt_total: 1 }],
       Array(2).fill({ id: 'task_one', status: 'ready', known_status: true, environment_id: 'env_1', attempt_total: 1 }),
     ]) { const f = fixture(); f.list.mockResolvedValue(tasks); await expect(inspectDirectResult(f.options)).rejects.toThrow('uncorrelated_cloud_task'); expect(f.diff).not.toHaveBeenCalled(); }
+  });
+  it('rejects a missing environment field or a different task even when environment metadata is null', async () => {
+    const f = fixture();
+    await expect(inspectDirectResult({ ...f.options, list: async () => [{ id: 'task_one', status: 'ready', known_status: true, attempt_total: 1 }] })).rejects.toThrow('uncorrelated_cloud_task');
+    const other = fixture();
+    other.list.mockResolvedValue([{ id: 'task_other', status: 'ready', known_status: true, environment_id: null, attempt_total: 1 }]);
+    await expect(inspectDirectResult(other.options)).rejects.toThrow('uncorrelated_cloud_task');
+    expect(f.diff).not.toHaveBeenCalled(); expect(other.diff).not.toHaveBeenCalled();
   });
   it('rejects patches outside the approval and changes to the state during inspection', async () => {
     const f = fixture(); f.diff.mockResolvedValue(patch.replaceAll('src/a.ts', 'src/private.ts'));
