@@ -4,6 +4,11 @@
   "pr_auth": "github-app",
   "repository": "silverThunder09/ai-interview-studio",
   "enabled": true,
+  "direct_history_cutoff": {
+    "count": 38,
+    "fingerprint": "d78a888859fb20283f25cad917c3ce4ad9826f5013226206f96b86070e32fd8b",
+    "approval": "2026-10-29 사용자 요청: 기존 38건은 과거 이력으로 보존하고 이후 승인 작업부터 진행"
+  },
   "tasks": [
     {
       "id": "ci-dispatch-origin",

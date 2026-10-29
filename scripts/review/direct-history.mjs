@@ -24,22 +24,28 @@ async function ensureNotStopped(api) {
 }
 
 /** Install once only while the existing approved queue is entirely completed. */
-export async function installDirectInventory({ api, store, config, list = cloudTasks }) {
+export async function installDirectInventory({ api, store, config, list = cloudTasks, expectedMain }) {
   const c = parseLoopConfig(config), old = await store.load(); parseLoopState(old.state, c);
   if (old.state.direct_inventory !== undefined) return { state: 'already_present' };
+  const checkMain = async () => { if (expectedMain !== undefined) ensure(SHA.test(expectedMain) && (await api.request('GET', '/branches/main')).commit.sha === expectedMain, 'trusted_main_moved'); };
+  await checkMain();
   ensure(c.enabled && c.cloud_transport === 'disabled' && old.state.lease === null && old.state.bootstrap?.ready === true && old.state.tasks.length > 0 && old.state.tasks.every(t => t.phase === 'completed'), 'inventory_queue_not_idle');
   await ensureNotStopped(api);
   const first = terminalSnapshot(await list()), second = terminalSnapshot(await list());
   ensure(JSON.stringify(first) === JSON.stringify(second), 'cloud_history_changed');
-  // A terminal status alone does not bind an old Cloud task to an approved
-  // request or prove that its result was consumed. Until that evidence can be
-  // authenticated, only an empty account history is safe to initialize.
-  ensure(first.length === 0, 'cloud_history_unreconciled');
+  // A terminal status does not prove that a result was consumed. A nonempty
+  // baseline is permitted only for the exact historical snapshot explicitly
+  // excluded by the user in trusted-main configuration.
+  const cutoff = c.direct_history_cutoff;
+  const fingerprint = createHash('sha256').update(JSON.stringify(first)).digest('hex');
+  if (cutoff) ensure(first.length === cutoff.count && fingerprint === cutoff.fingerprint, 'cloud_cutoff_mismatch');
+  else ensure(first.length === 0, 'cloud_history_unreconciled');
   await ensureNotStopped(api);
+  await checkMain();
   const current = await store.load();
   ensure(current.head === old.head && JSON.stringify(current.state) === JSON.stringify(old.state), 'loop_cas_conflict');
   const next = JSON.parse(JSON.stringify(old.state));
-  next.direct_inventory = { schema: 1, queue_ids: old.state.tasks.map(t => t.id), tasks: first };
+  next.direct_inventory = cutoff ? { schema: 2, queue_ids: old.state.tasks.map(t => t.id), tasks: first, fingerprint } : { schema: 1, queue_ids: old.state.tasks.map(t => t.id), tasks: first };
   next.revision++;
   await store.save(old, next);
   return { state: 'installed', count: first.length };
@@ -51,7 +57,7 @@ export function createDirectHistoryVerifier({ api, config, list = cloudTasks, di
   return async ({ task, state }) => {
     parseLoopState(state, c);
     const inventory = state.direct_inventory;
-    ensure(inventory && inventory.tasks.length === 0, 'cloud_history_unreconciled');
+    ensure(inventory && (inventory.schema === 2 || inventory.tasks.length === 0), 'cloud_history_unreconciled');
     const index = state.tasks.findIndex(t => t.id === task.id);
     ensure(inventory && index >= inventory.queue_ids.length && state.tasks[index].phase === 'development' && state.tasks[index].request?.request_key === task.request?.request_key && KEY.test(task.request?.request_key ?? '') && task.delivery?.attempted === false && task.direct_cloud === undefined, 'direct_history_unverified');
     const expected = new Map(inventory.tasks.map(t => [t.id, t]));

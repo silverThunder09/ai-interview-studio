@@ -51,6 +51,10 @@ export function parseLoopConfig(value) {
   ensure(c.schema === 1 && c.repository === REPO && typeof c.enabled === 'boolean' && Array.isArray(c.tasks) && c.tasks.length <= 256, 'invalid_loop_config');
   ensure(c.pr_auth === undefined || ['workflow-token', 'github-app'].includes(c.pr_auth), 'invalid_pr_auth_mode');
   ensure(c.cloud_transport === undefined || ['legacy-comment', 'disabled'].includes(c.cloud_transport), 'invalid_cloud_transport');
+  if (c.direct_history_cutoff !== undefined) {
+    const cutoff = obj(c.direct_history_cutoff);
+    ensure(Object.keys(cutoff).sort().join(',') === 'approval,count,fingerprint' && Number.isSafeInteger(cutoff.count) && cutoff.count > 0 && cutoff.count <= 1000 && HASH.test(cutoff.fingerprint ?? '') && typeof cutoff.approval === 'string' && cutoff.approval.length > 0 && cutoff.approval.length <= 500, 'invalid_direct_cutoff');
+  }
   if (c.next_decision !== undefined) ensure(typeof c.next_decision === 'string' && c.next_decision.length > 0 && c.next_decision.length <= 2000, 'invalid_next_decision');
   const ids = new Set(), prs = new Set();
   for (const t of c.tasks) {
@@ -118,8 +122,9 @@ export function parseLoopState(value, config) {
   });
   if (v.direct_inventory !== undefined) {
     const inventory = obj(v.direct_inventory);
-    ensure(Object.keys(inventory).sort().join(',') === 'queue_ids,schema,tasks' && inventory.schema === 1 && Array.isArray(inventory.queue_ids) && inventory.queue_ids.length === new Set(inventory.queue_ids).size && inventory.queue_ids.length <= v.tasks.length && inventory.queue_ids.every((id, i) => id === v.tasks[i].id && v.tasks[i].phase === 'completed'), 'invalid_direct_inventory');
+    ensure((inventory.schema === 1 && Object.keys(inventory).sort().join(',') === 'queue_ids,schema,tasks' || inventory.schema === 2 && Object.keys(inventory).sort().join(',') === 'fingerprint,queue_ids,schema,tasks') && Array.isArray(inventory.queue_ids) && inventory.queue_ids.length === new Set(inventory.queue_ids).size && inventory.queue_ids.length <= v.tasks.length && inventory.queue_ids.every((id, i) => id === v.tasks[i].id && v.tasks[i].phase === 'completed'), 'invalid_direct_inventory');
     ensure(Array.isArray(inventory.tasks) && inventory.tasks.length <= 1000 && inventory.tasks.every((item, i) => item && Object.keys(item).sort().join(',') === 'attempt_total,id,status,updated_at' && typeof item.id === 'string' && item.id.length <= 128 && CLOUD_TASK.test(item.id) && ['ready', 'error'].includes(item.status) && Number.isSafeInteger(item.attempt_total) && item.attempt_total > 0 && typeof item.updated_at === 'string' && Number.isFinite(Date.parse(item.updated_at)) && (i === 0 || inventory.tasks[i - 1].id < item.id)), 'invalid_direct_inventory');
+    if (inventory.schema === 2) ensure(c.direct_history_cutoff && inventory.tasks.length === c.direct_history_cutoff.count && inventory.fingerprint === c.direct_history_cutoff.fingerprint && hash(JSON.stringify(inventory.tasks)) === inventory.fingerprint, 'invalid_direct_inventory');
   }
   return v;
 }
