@@ -1,0 +1,26 @@
+name: Existing writer readiness
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  readiness:
+    if: github.repository == 'silverThunder09/ai-interview-studio' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - name: Check existing App access and revoke the temporary token
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          AIS_PR_WRITER_APP_ID: ${{ vars.AIS_PR_WRITER_APP_ID }}
+          AIS_PR_WRITER_INSTALLATION_ID: ${{ vars.AIS_PR_WRITER_INSTALLATION_ID }}
+          AIS_PR_WRITER_PRIVATE_KEY: ${{ secrets.AIS_PR_WRITER_PRIVATE_KEY }}
+        run: node --experimental-strip-types scripts/review/writer-readiness.mjs
