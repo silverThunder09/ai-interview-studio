@@ -7,6 +7,7 @@ import { AppCredentials, ProductWriter } from './pr-writer.mjs';
 import { allPages } from './event-worker.ts';
 import { REPO, RuntimeAPI, LoopStore, parseLoopConfig } from './loop-coordinator.mjs';
 import { runDirectTick, validateDirectContext } from './direct-tick.mjs';
+import { readActionsWriterEvidence } from './actions-writer-evidence.mjs';
 
 const exec = promisify(execFile), SHA = /^[a-f0-9]{40}$/, ENV = /^[a-zA-Z0-9][a-zA-Z0-9_./-]{0,127}$/;
 function ensure(value, code) { if (!value) throw new Error(code); }
@@ -42,6 +43,12 @@ export async function runDirectRunner({ token, environment, root = process.cwd()
     result = await runDirectTick({ api, store, config, policy, writer, environment, expectedRequestKey });
   } finally {
     try { await credentials.dispose(); } catch { cleanupFailed = true; }
+  }
+  if (!cleanupFailed && result.state === 'writer-hold') {
+    // Evidence from a separate job is informational until the result handoff
+    // is implemented; it must never turn a hold into submission permission.
+    try { result.actions_writer = await readActionsWriterEvidence({ api, main: head }); }
+    catch { result.actions_writer = { state: 'hold', reason: 'proof_unavailable' }; }
   }
   return cleanupFailed ? { ...result, credential_cleanup: 'unconfirmed' } : result;
 }
