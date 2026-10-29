@@ -26,7 +26,7 @@ export async function launchCloud({ environment, branch, body }) {
  * A persisted attempt is never automatically sent again, even on lost responses.
  * This function does not interpret an ERROR as a transient failure or retry it.
  */
-export async function dispatchApprovedCloud({ api, store, config, taskId, environment, verifyHistory, launch = launchCloud, now = Date.now }) {
+export async function dispatchApprovedCloud({ api, store, config, taskId, environment, expectedRequestKey, verifyHistory, launch = launchCloud, now = Date.now }) {
   const c = parseLoopConfig(config);
   const history = verifyHistory ?? createDirectHistoryVerifier({ api, config: c });
   ensure(c.enabled && c.cloud_transport === 'disabled' && ENV.test(environment ?? '') && typeof history === 'function', 'direct_cloud_disabled');
@@ -34,6 +34,7 @@ export async function dispatchApprovedCloud({ api, store, config, taskId, enviro
   const index = snap.state.tasks.findIndex(t => t.id === taskId);
   ensure(index >= 0 && index === snap.state.tasks.findIndex(t => t.phase !== 'completed'), 'not_current_approved_task');
   const task = snap.state.tasks[index], definition = c.tasks[index];
+  ensure(expectedRequestKey === undefined || KEY.test(expectedRequestKey) && task.request?.request_key === expectedRequestKey, 'resumption_request_changed');
   ensure(task.phase === 'development' && task.pr !== null && task.request && KEY.test(task.request.request_key ?? '') && task.delivery?.phase === 'sending' && task.delivery.attempted === false && task.delivery.id === null && !task.direct_cloud && BRANCH.test(task.branch ?? ''), 'not_ready_for_direct_cloud');
   ensure(task.delivery.body === approvedDevelopmentBody(task.request, definition, task), 'untrusted_cloud_body');
   ensure(snap.state.bootstrap?.ready === true && (!snap.state.lease || snap.state.lease.until <= now()), 'loop_busy_or_unverified');

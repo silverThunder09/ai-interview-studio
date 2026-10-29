@@ -49,10 +49,14 @@ export function validateDirectContext(config, policy) {
   return c;
 }
 
-export async function runDirectTick({ api, store, config, policy, writer, environment, now = Date.now, cloud = {} }) {
+export async function runDirectTick({ api, store, config, policy, writer, environment, expectedRequestKey, now = Date.now, cloud = {} }) {
   const c = validateDirectContext(config, policy);
   const snap = await store.load(); parseLoopState(snap.state, c);
   const index = snap.state.tasks.findIndex(t => t.phase !== 'completed');
+  if (expectedRequestKey !== undefined) {
+    const t = snap.state.tasks[index];
+    if (!/^[a-f0-9]{64}$/.test(expectedRequestKey) || !t || t.phase !== 'development' || t.request?.request_key !== expectedRequestKey || t.delivery?.phase !== 'sending' || t.delivery.attempted !== false || t.direct_cloud !== undefined) return { state: 'resumption-hold' };
+  }
   if (index < 0) return { state: 'idle' };
   if (snap.state.lease && snap.state.lease.until > now()) return { state: 'leased' };
   const task = snap.state.tasks[index];
@@ -72,13 +76,13 @@ export async function runDirectTick({ api, store, config, policy, writer, enviro
     let quota;
     try { quota = capacity(await (cloud.limits ?? readLimits)()); }
     catch { return { state: 'limits-hold', reason: 'unavailable' }; }
-    if (quota !== 'available') return { state: 'limits-hold', reason: quota };
+    if (quota !== 'available') return { state: 'limits-hold', reason: quota, ...(quota === 'limited' ? { request_key: task.request.request_key } : {}) };
     await notStopped(api);
     const { pr, main } = await scope(api, task, c.tasks[index]);
     ensure(pr.state === 'open' && pr.merged === false && pr.head.sha === task.request.head_sha && pr.head.ref === task.branch && pr.base.sha === base && main === base && (await api.request('GET', `/git/ref/heads/${task.branch}`)).object.sha === task.request.head_sha, 'stale_cloud_request');
     // Do not start work that the approved GitHub App writer cannot later apply.
     if (!await writerReady(c, writer)) return { state: 'writer-hold', reason: 'unavailable' };
-    return dispatchApprovedCloud({ api, store, config: c, taskId: task.id, environment, now, verifyHistory, ...(cloud.launch ? { launch: cloud.launch } : {}) });
+    return dispatchApprovedCloud({ api, store, config: c, taskId: task.id, environment, expectedRequestKey, now, verifyHistory, ...(cloud.launch ? { launch: cloud.launch } : {}) });
   }
   if (task.direct_cloud?.phase === 'attempting') return { state: 'waiting-direct-cloud' };
   await notStopped(api);
