@@ -42,8 +42,8 @@ function fixture() {
   const list = vi.fn(async () => structuredClone(baseline));
   return { store, api, list, setComments: (x: typeof comments) => { comments = x; }, setLabels: (x: typeof labels) => { labels = x; }, options: { api, store, config, list } };
 }
-function nextState(state: LoopState) {
-  const s = appendApprovedTasks(state, later);
+function nextState(state: LoopState, nextConfig = later) {
+  const s = appendApprovedTasks(state, nextConfig);
   const request = { schema: 2, repository: repo, pr_number: 81, request_key: key, head_sha: sha('3'), base_sha: sha('1'), requested_at: '2026-10-28T00:00:00.000Z', mode: 'repair', allowed_paths: ['src/a.ts'] };
   const body = approvedDevelopmentBody(request, later.tasks[1], {});
   Object.assign(s.tasks[1]!, { phase: 'development', branch: 'work/next', request, delivery: { phase: 'sending', hash: createHash('sha256').update(body).digest('hex'), body, id: null, attempted: false } });
@@ -164,6 +164,38 @@ describe('one-shot direct coordinator', () => {
 });
 
 describe('direct Cloud history inventory', () => {
+  it('records only the exact user-approved terminal snapshot without claiming the results were consumed', async () => {
+    const f = fixture(), before = structuredClone(f.store.state.tasks);
+    const saved = historical.map(({ id, status, attempt_total, updated_at }) => ({ id, status, attempt_total, updated_at }));
+    const cutoff = { count: saved.length, fingerprint: createHash('sha256').update(JSON.stringify(saved)).digest('hex'), approval: '사용자가 이전 이력 제외 승인' };
+    const approved = { ...config, direct_history_cutoff: cutoff }, nextConfig = { ...later, direct_history_cutoff: cutoff };
+    f.store.validationConfig = approved; f.list.mockResolvedValue(historical);
+    await expect(installDirectInventory({ api: f.api, store: f.store, config: approved, list: f.list })).resolves.toEqual({ state: 'installed', count: 2 });
+    expect(f.store.state.tasks).toEqual(before);
+    expect(f.store.state.direct_inventory).toMatchObject({ schema: 2, fingerprint: cutoff.fingerprint, tasks: saved });
+    const state = nextState(f.store.state, nextConfig), verify = createDirectHistoryVerifier({ api: f.api, config: nextConfig, list: f.list });
+    await expect(verify({ task: state.tasks[1], state })).resolves.toBe(true);
+    f.list.mockResolvedValueOnce([...historical, { ...historical[0]!, id: 'task_other' }]);
+    await expect(verify({ task: state.tasks[1], state })).rejects.toThrow('cloud_history_changed');
+  });
+  it('refuses a changed approved cutoff, running work, or a changed main without writing', async () => {
+    const f = fixture(), cutoff = { count: 2, fingerprint: 'd'.repeat(64), approval: '사용자 승인' }, approved = { ...config, direct_history_cutoff: cutoff };
+    f.store.validationConfig = approved; f.list.mockResolvedValue(historical);
+    await expect(installDirectInventory({ api: f.api, store: f.store, config: approved, list: f.list })).rejects.toThrow('cloud_cutoff_mismatch');
+    f.list.mockResolvedValue([{ ...historical[0]!, status: 'running' }]);
+    await expect(installDirectInventory({ api: f.api, store: f.store, config: approved, list: f.list })).rejects.toThrow('unsettled_cloud_history');
+    await expect(installDirectInventory({ api: f.api, store: f.store, config: approved, list: f.list, expectedMain: sha('2') })).rejects.toThrow('trusted_main_moved');
+    expect(f.store.writes).toBe(0);
+  });
+  it('rejects a cutoff that was altered after it was recorded', async () => {
+    const f = fixture(), saved = historical.map(({ id, status, attempt_total, updated_at }) => ({ id, status, attempt_total, updated_at }));
+    const cutoff = { count: saved.length, fingerprint: createHash('sha256').update(JSON.stringify(saved)).digest('hex'), approval: '사용자 승인' };
+    const approved = { ...config, direct_history_cutoff: cutoff };
+    f.store.validationConfig = approved; f.list.mockResolvedValue(historical);
+    await installDirectInventory({ api: f.api, store: f.store, config: approved, list: f.list });
+    f.store.state.direct_inventory!.tasks[0]!.status = 'error';
+    expect(() => parseLoopState(f.store.state, approved)).toThrow('invalid_direct_inventory');
+  });
   it('installs a stable terminal snapshot without changing the completed queue', async () => {
     const f = fixture(), original = structuredClone(f.store.state.tasks);
     await expect(installDirectInventory(f.options)).resolves.toEqual({ state: 'installed', count: 0 });
