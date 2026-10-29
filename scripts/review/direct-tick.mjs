@@ -66,7 +66,7 @@ export async function runDirectTick({ api, store, config, policy, writer, enviro
     // A later unrelated main change needs separate authenticated main CI.
     const base = task.request?.base_sha, previous = snap.state.tasks[index - 1];
     if (previous ? previous.phase !== 'completed' || previous.merged !== base : snap.state.bootstrap?.ready !== true || snap.state.bootstrap.main !== base) return { state: 'main-ci-hold' };
-    const verifyHistory = createDirectHistoryVerifier({ api, config: c, list: cloud.list });
+    const verifyHistory = createDirectHistoryVerifier({ api, config: c, list: cloud.list, diff: cloud.diff });
     try { await verifyHistory({ task, state: snap.state }); }
     catch (error) { return { state: 'history-hold', reason: /^[a-z0-9_]+$/.test(error?.message ?? '') ? error.message : 'history_unavailable' }; }
     let quota;
