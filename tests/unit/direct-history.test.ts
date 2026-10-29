@@ -232,7 +232,7 @@ describe('verified direct history continuation', () => {
     const state = nextState(baseState), prior = state.tasks[1]!;
     const oldRequest = structuredClone(prior.request!) as Record<string, unknown>, oldDelivery = structuredClone(prior.delivery!) as Record<string, unknown>;
     oldDelivery.attempted = true;
-    Object.assign(prior, { phase: 'completed', merged: sha('6'), direct_history: [{ request: oldRequest, delivery: oldDelivery,
+    Object.assign(prior, { phase: 'completed', merged: sha('6'), head: sha('5'), direct_history: [{ request: oldRequest, delivery: oldDelivery,
       direct_cloud: { request_key: key, environment: 'env_1', branch: 'work/next', phase: 'sent', task_id: 'task_prior' },
       applied: { parent: sha('3'), sha: sha('4'), cloud_task_id: 'task_prior' } }] });
     const three = { ...later, tasks: [...later.tasks, definition('third', 82)] }, expanded = appendApprovedTasks(state, three);
@@ -244,7 +244,8 @@ describe('verified direct history continuation', () => {
     const list = vi.fn(async () => [{ id: 'task_prior', status: 'ready', known_status: true, environment_id: 'env_1', attempt_total: 1, updated_at: '2026-10-28T01:00:00Z' }]);
     const diff = vi.fn(async () => patch);
     const api = { async request(method: string, path: string): Promise<unknown> {
-      if (path === '/pulls/81') return { merged: true, merge_commit_sha: sha('6'), base: { ref: 'main', repo: { full_name: repo } } };
+      if (path === '/pulls/81') return { merged: true, merge_commit_sha: sha('6'), head: { sha: sha('5') }, base: { ref: 'main', repo: { full_name: repo } } };
+      if (path === `/compare/${sha('4')}...${sha('5')}`) return { status: 'ahead', base_commit: { sha: sha('4') }, merge_base_commit: { sha: sha('4') } };
       if (path === `/git/commits/${sha('3')}`) return { sha: sha('3'), tree: { sha: sha('7') } };
       if (path === `/git/commits/${sha('4')}`) return { sha: sha('4'), tree: { sha: sha('8') }, parents: [{ sha: sha('3') }] };
       if (path === `/git/trees/${sha('7')}?recursive=1`) return tree(priorBlob);
@@ -279,6 +280,11 @@ describe('verified direct history continuation', () => {
     await expect(f.verify({ task: f.expanded.tasks[2], state: f.expanded })).rejects.toThrow('direct_history_unverified');
     const original = f.api.request;
     f.api.request = async (method, path) => path === '/pulls/81' ? { merged: false } : original(method, path);
+    await expect(f.verify({ task: f.expanded.tasks[2], state: f.expanded })).rejects.toThrow('direct_history_unverified');
+  });
+  it('rejects a result commit that is absent from the reviewed head history', async () => {
+    const f = continuation(), original = f.api.request;
+    f.api.request = async (method, path) => path.startsWith('/compare/') ? { status: 'diverged', base_commit: { sha: sha('4') }, merge_base_commit: { sha: sha('3') } } : original(method, path);
     await expect(f.verify({ task: f.expanded.tasks[2], state: f.expanded })).rejects.toThrow('direct_history_unverified');
   });
 });

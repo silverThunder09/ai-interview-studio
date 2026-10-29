@@ -58,12 +58,14 @@ export function createDirectHistoryVerifier({ api, config, list = cloudTasks, di
     const firstRaw = await list(), first = terminalSnapshot(firstRaw);
     for (let i = inventory.queue_ids.length; i < index; i++) {
       const prior = state.tasks[i], definition = c.tasks[i];
-      ensure(prior.phase === 'completed' && SHA.test(prior.merged ?? '') && Array.isArray(prior.direct_history) && prior.direct_history.length > 0 && prior.direct_cloud === undefined, 'direct_history_unverified');
+      ensure(prior.phase === 'completed' && SHA.test(prior.merged ?? '') && SHA.test(prior.head ?? '') && Array.isArray(prior.direct_history) && prior.direct_history.length > 0 && prior.direct_cloud === undefined, 'direct_history_unverified');
       const pr = await api.request('GET', `/pulls/${prior.pr}`);
-      ensure(pr.merged === true && pr.merge_commit_sha === prior.merged && pr.base?.repo?.full_name === c.repository && pr.base.ref === 'main', 'direct_history_unverified');
+      ensure(pr.merged === true && pr.merge_commit_sha === prior.merged && pr.head?.sha === prior.head && pr.base?.repo?.full_name === c.repository && pr.base.ref === 'main', 'direct_history_unverified');
       for (const entry of prior.direct_history) {
         const direct = entry.direct_cloud, observed = first.find(t => t.id === direct.task_id), identity = firstRaw.find(t => t.id === direct.task_id);
         ensure(!expected.has(direct.task_id) && observed?.status === 'ready' && observed.attempt_total === 1 && (identity.environment_id === null || identity.environment_id === direct.environment), 'direct_history_unverified');
+        const ancestry = await api.request('GET', `/compare/${entry.applied.sha}...${prior.head}`);
+        ensure(['identical', 'ahead'].includes(ancestry?.status) && ancestry.base_commit?.sha === entry.applied.sha && ancestry.merge_base_commit?.sha === entry.applied.sha, 'direct_history_unverified');
         const original = await api.request('GET', `/git/commits/${entry.applied.parent}`);
         const applied = await api.request('GET', `/git/commits/${entry.applied.sha}`);
         ensure(original?.sha === entry.applied.parent && applied?.sha === entry.applied.sha && applied.parents?.length === 1 && applied.parents[0].sha === entry.applied.parent && SHA.test(original.tree?.sha ?? '') && SHA.test(applied.tree?.sha ?? ''), 'direct_history_unverified');
