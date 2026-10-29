@@ -608,6 +608,9 @@ export async function runLoop({ api, sender, store, config, policy, writer, dire
           // interpreted as a missing legacy PR-comment receipt.
           if (task.direct_cloud !== undefined) {
             if (task.phase !== 'development' || task.direct_cloud.phase !== 'sent') return { state: 'waiting-direct-cloud', changes };
+            // GitHub Actions has no authenticated Cloud CLI. Only an explicit,
+            // trusted, authenticated runner may inspect results; other wakeups wait.
+            if (directCloud.enabled !== true) return { state: 'waiting-direct-cloud', changes };
             // The authenticated result is a change candidate; CI and review follow.
             const { inspectDirectResult } = await import('./direct-result.mjs');
             const result = await inspectDirectResult({ api, store, config: c, taskId: task.id, list: directCloud.list, diff: directCloud.diff });
