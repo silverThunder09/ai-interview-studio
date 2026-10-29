@@ -20,3 +20,4 @@ export function renderLoopPRBody(original: string, task: unknown, review: unknow
 export function gatherMergeEvidence(...args: unknown[]): Promise<unknown>;
 export function runLoop(options: Record<string, unknown>): Promise<{ state: string; changes: number }>;
 export class LoopStore { constructor(api: unknown, config: unknown); load(): Promise<{ head: string; tree: string; state: LoopState }>; appendApprovedTasks(): Promise<boolean>; save(old: unknown, next: unknown): Promise<unknown> }
+export class RuntimeAPI { constructor(token: string); request(method: string, path: string, body?: unknown): Promise<unknown>; repository(): Promise<unknown>; graphql(query: string, variables: unknown): Promise<unknown>; pagesObject(path: string, field: string): Promise<unknown[]>; jobLog(id: number): Promise<string> }

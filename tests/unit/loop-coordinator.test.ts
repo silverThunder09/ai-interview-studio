@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { approvedDevelopmentBody, gatherMergeEvidence, nativeCIStatus, acceptsLoopWakeup, isCurrentMergeCheckout, emptyLoopState, parseLoopConfig, parseLoopState, parseReviewResult, buildReviewRequest, renderLoopReview, renderLoopPRBody, runLoop, LoopStore, type LoopState } from '../../scripts/review/loop-coordinator.mjs';
 import { readFileSync } from 'node:fs';
 import { GitHub } from '../../scripts/review/event-worker';
+import { runDirectTick } from '../../scripts/review/direct-tick.mjs';
 
 const repository = 'silverThunder09/ai-interview-studio', head = '1'.repeat(40), base = '2'.repeat(40), checkout = '3'.repeat(40), merged = '4'.repeat(40);
 const config = { schema: 1, repository, enabled: true, cloud_transport: 'legacy-comment', tasks: [56, 57].map((pr, i) => ({ id: `probe-${i}`, pr, goal: '합성 실패 경계 검증 테스트를 추가합니다.', approval: '사용자가 승인한 검증 범위', allowed_paths: ['tests/unit/probe.test.ts'] })) };
@@ -127,12 +128,12 @@ describe('disabled Cloud transport', () => {
       if (path === `/git/commits/${checkout}`) return { sha: checkout, parents: [{ sha: base }, { sha: f.currentHead }] };
       return original(method, path, value);
     };
-    const directCloud = { enabled: true, list: async () => [{ id: 'task_one', status: 'ready', known_status: true, environment_id: null, attempt_total: 1 }],
+    const directCloud = { list: async () => [{ id: 'task_one', status: 'ready', known_status: true, environment_id: null, attempt_total: 1 }],
       diff: async () => 'diff --git a/tests/unit/probe.test.ts b/tests/unit/probe.test.ts\n--- a/tests/unit/probe.test.ts\n+++ b/tests/unit/probe.test.ts\n@@ -1 +1 @@\n-test\n+changed\n' };
-    expect((await runLoop({ ...options, directCloud })).state).toBe('waiting-ci');
+    expect((await runDirectTick({ ...options, environment: 'env_1', cloud: directCloud })).state).toBe('waiting-ci');
     expect(f.store.state.tasks[0]).toMatchObject({ phase: 'ci', head: nextHead, applied: { parent: head, sha: nextHead, cloud_task_id: 'task_one' } });
     expect(commits).toBe(1); expect(refs).toBe(1); expect(f.sends).toHaveLength(0);
-    expect((await runLoop({ ...options, directCloud })).state).toBe('waiting-ci');
+    expect((await runDirectTick({ ...options, environment: 'env_1', cloud: directCloud })).state).toBe('waiting-ci');
     expect(commits).toBe(1); expect(refs).toBe(1);
   });
   it('does not commit a direct result if main changes after tree preparation', async () => {

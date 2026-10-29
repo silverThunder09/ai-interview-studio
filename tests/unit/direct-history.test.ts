@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 import { installDirectInventory, createDirectHistoryVerifier } from '../../scripts/review/direct-history.mjs';
 import { dispatchApprovedCloud } from '../../scripts/review/direct-cloud.mjs';
+import { runDirectTick } from '../../scripts/review/direct-tick.mjs';
 import { approvedDevelopmentBody, appendApprovedTasks, emptyLoopState, parseLoopState, type LoopState } from '../../scripts/review/loop-coordinator.mjs';
 
 const repo = 'silverThunder09/ai-interview-studio', sha = (s: string) => s.repeat(40), key = 'a'.repeat(64);
@@ -14,7 +15,7 @@ const baseline: typeof historical = [];
 
 function fixture() {
   const state = emptyLoopState(config); state.bootstrap = { main: sha('1'), key: 'b'.repeat(64), ready: true };
-  Object.assign(state.tasks[0]!, { phase: 'completed', cycles: 2, merged: sha('2'), retained: { receipt: 'existing' } });
+  Object.assign(state.tasks[0]!, { phase: 'completed', cycles: 2, merged: sha('1'), retained: { receipt: 'existing' } });
   const store = {
     state, head: 1, writes: 0, loseReply: false, validationConfig: config,
     async load() { return { head: this.head, state: structuredClone(this.state) }; },
@@ -47,6 +48,93 @@ function nextState(state: LoopState) {
   Object.assign(s.tasks[1]!, { phase: 'development', branch: 'work/next', request, delivery: { phase: 'sending', hash: createHash('sha256').update(body).digest('hex'), body, id: null, attempted: false } });
   return s;
 }
+
+const tickPolicy = { repository: repo, max_prs_per_run: 2, max_fix_cycles: 3, protected_paths: [], required_checks: ['checks', 'package', 'pr-policy'] };
+const tickLimits = async () => ({ primary: { usedPercent: 20 }, secondary: { usedPercent: 30 }, rateLimitReachedType: null, rateLimitReachedTypeKnown: true });
+
+describe('one-shot direct coordinator', () => {
+  it('does nothing when all approved work is complete', async () => {
+    const f = fixture(), launch = vi.fn();
+    await expect(runDirectTick({ api: f.api, store: f.store, config, policy: tickPolicy, environment: 'env_1', cloud: { launch } })).resolves.toEqual({ state: 'idle' });
+    expect(launch).not.toHaveBeenCalled(); expect(f.list).not.toHaveBeenCalled(); expect(f.store.writes).toBe(0);
+  });
+  it('dispatches one prepared task using real history checks', async () => {
+    const f = fixture(); await installDirectInventory(f.options);
+    f.store.state = nextState(f.store.state); f.store.validationConfig = later;
+    const launch = vi.fn(async () => ({ id: 'task_new' }));
+    const options = { api: f.api, store: f.store, config: later, policy: tickPolicy, environment: 'env_1', now: () => 1000000, cloud: { list: f.list, limits: tickLimits, launch } };
+    await expect(runDirectTick(options)).resolves.toEqual({ state: 'sent', task_id: 'task_new' });
+    expect(launch).toHaveBeenCalledTimes(1);
+    expect(f.store.state.tasks[1]!.direct_cloud).toMatchObject({ phase: 'sent', task_id: 'task_new' });
+  });
+  it('holds before submission when prior work or official capacity is unknown', async () => {
+    const f = fixture(), initial = nextState(f.store.state), launch = vi.fn(async () => ({ id: 'task_new' }));
+    f.store.state = initial; f.store.validationConfig = later;
+    const options = { api: f.api, store: f.store, config: later, policy: tickPolicy, environment: 'env_1', now: () => 1000000, cloud: { list: f.list, limits: tickLimits, launch } };
+    await expect(runDirectTick(options)).resolves.toMatchObject({ state: 'history-hold' });
+    f.store.state = fixture().store.state; f.store.validationConfig = config;
+    await installDirectInventory(f.options); f.store.state = nextState(f.store.state); f.store.validationConfig = later;
+    await expect(runDirectTick({ ...options, cloud: { ...options.cloud, limits: async () => ({ primary: null, secondary: null, rateLimitReachedType: null, rateLimitReachedTypeKnown: true }) } })).resolves.toEqual({ state: 'limits-hold', reason: 'unknown' });
+    await expect(runDirectTick({ ...options, cloud: { ...options.cloud, limits: async () => ({ primary: { usedPercent: 1 }, secondary: { usedPercent: 20 }, rateLimitReachedType: null, rateLimitReachedTypeKnown: false }) } })).resolves.toEqual({ state: 'limits-hold', reason: 'unknown' });
+    await expect(runDirectTick({ ...options, cloud: { ...options.cloud, limits: async () => ({ primary: { usedPercent: 100 }, secondary: { usedPercent: 20 }, rateLimitReachedType: null, rateLimitReachedTypeKnown: true }) } })).resolves.toEqual({ state: 'limits-hold', reason: 'limited' });
+    expect(launch).not.toHaveBeenCalled(); expect(f.store.state.tasks[1]!.direct_cloud).toBeUndefined();
+  });
+  it('does not dispatch after main moves beyond the verified completed predecessor', async () => {
+    const f = fixture(); f.store.state.tasks[0]!.merged = sha('2'); await installDirectInventory(f.options);
+    f.store.state = nextState(f.store.state); f.store.validationConfig = later;
+    const launch = vi.fn(async () => ({ id: 'task_new' }));
+    await expect(runDirectTick({ api: f.api, store: f.store, config: later, policy: tickPolicy, environment: 'env_1', now: () => 1000000, cloud: { list: f.list, limits: tickLimits, launch } })).resolves.toEqual({ state: 'main-ci-hold' });
+    expect(launch).not.toHaveBeenCalled();
+  });
+  it('rejects weakened CI policy or a stop label before dispatching', async () => {
+    const f = fixture(); await installDirectInventory(f.options);
+    f.store.state = nextState(f.store.state); f.store.validationConfig = later;
+    const launch = vi.fn(async () => ({ id: 'task_new' }));
+    const options = { api: f.api, store: f.store, config: later, policy: tickPolicy, environment: 'env_1', now: () => 1000000, cloud: { list: f.list, limits: tickLimits, launch } };
+    await expect(runDirectTick({ ...options, policy: { ...tickPolicy, required_checks: ['checks', 'pr-policy'] } })).rejects.toThrow('direct_tick_disabled');
+    f.setLabels([{ name: 'agent-paused' }]);
+    await expect(runDirectTick(options)).rejects.toThrow('loop_control_paused');
+    expect(launch).not.toHaveBeenCalled();
+  });
+  it('does not submit when the existing GitHub App writer is unavailable', async () => {
+    const f = fixture(); await installDirectInventory(f.options);
+    f.store.state = nextState(f.store.state); f.store.validationConfig = later;
+    const launch = vi.fn(async () => ({ id: 'task_new' }));
+    await expect(runDirectTick({ api: f.api, store: f.store, config: { ...later, pr_auth: 'github-app' }, policy: tickPolicy, environment: 'env_1', now: () => 1000000, cloud: { list: f.list, limits: tickLimits, launch } })).resolves.toEqual({ state: 'writer-hold', reason: 'unavailable' });
+    expect(launch).not.toHaveBeenCalled();
+  });
+  it('keeps a sent task intact when the existing GitHub App writer is unavailable', async () => {
+    const f = fixture(); await installDirectInventory(f.options);
+    f.store.state = nextState(f.store.state); f.store.validationConfig = later;
+    const task = f.store.state.tasks[1]!;
+    Object.assign(task.delivery as object, { attempted: true });
+    task.direct_cloud = { request_key: key, environment: 'env_1', branch: 'work/next', phase: 'sent', task_id: 'task_new' };
+    const writes = f.store.writes; f.list.mockClear();
+    await expect(runDirectTick({ api: f.api, store: f.store, config: { ...later, pr_auth: 'github-app' }, policy: tickPolicy, environment: 'env_1', now: () => 1000000, cloud: { list: f.list } })).resolves.toEqual({ state: 'writer-hold', reason: 'unavailable' });
+    expect(f.list).not.toHaveBeenCalled(); expect(f.store.writes).toBe(writes);
+    expect(f.store.state.tasks[1]).toMatchObject({ phase: 'development', direct_cloud: { phase: 'sent', task_id: 'task_new' } });
+  });
+  it('never reuses a writer whose credential validation failed', async () => {
+    const f = fixture(); await installDirectInventory(f.options);
+    f.store.state = nextState(f.store.state); f.store.validationConfig = later;
+    const client = vi.fn().mockRejectedValueOnce(new Error('invalid_token')).mockResolvedValue({});
+    const dispose = vi.fn(async () => {}), launch = vi.fn(async () => ({ id: 'task_new' }));
+    const options = { api: f.api, store: f.store, config: { ...later, pr_auth: 'github-app' }, policy: tickPolicy, environment: 'env_1', now: () => 1000000, writer: { credentials: { client, dispose } }, cloud: { list: f.list, limits: tickLimits, launch } };
+    await expect(runDirectTick(options)).resolves.toEqual({ state: 'writer-hold', reason: 'unavailable' });
+    await expect(runDirectTick(options)).resolves.toEqual({ state: 'writer-hold', reason: 'unavailable' });
+    expect(client).toHaveBeenCalledTimes(1); expect(dispose).toHaveBeenCalledTimes(1); expect(launch).not.toHaveBeenCalled();
+  });
+  it('does not resend an attempt with an unknown delivery outcome', async () => {
+    const f = fixture(); await installDirectInventory(f.options);
+    f.store.state = nextState(f.store.state); f.store.validationConfig = later;
+    const task = f.store.state.tasks[1]!;
+    Object.assign(task.delivery as object, { attempted: true });
+    task.direct_cloud = { request_key: key, environment: 'env_1', branch: 'work/next', phase: 'attempting', task_id: null };
+    const writes = f.store.writes, launch = vi.fn();
+    await expect(runDirectTick({ api: f.api, store: f.store, config: later, policy: tickPolicy, environment: 'env_1', now: () => 1000000, cloud: { list: f.list, limits: tickLimits, launch } })).resolves.toEqual({ state: 'waiting-direct-cloud' });
+    expect(launch).not.toHaveBeenCalled(); expect(f.store.writes).toBe(writes);
+  });
+});
 
 describe('direct Cloud history inventory', () => {
   it('installs a stable terminal snapshot without changing the completed queue', async () => {
