@@ -224,3 +224,67 @@ describe('direct Cloud history inventory', () => {
     await expect(verify({ task: state.tasks[1], state })).rejects.toThrow('ambiguous_prior_request');
   });
 });
+
+describe('verified direct history continuation', () => {
+  function continuation() {
+    const f = fixture(), baseState = fixture().store.state;
+    baseState.direct_inventory = { schema: 1, queue_ids: ['old'], tasks: [] };
+    const state = nextState(baseState), prior = state.tasks[1]!;
+    const oldRequest = structuredClone(prior.request!) as Record<string, unknown>, oldDelivery = structuredClone(prior.delivery!) as Record<string, unknown>;
+    oldDelivery.attempted = true;
+    Object.assign(prior, { phase: 'completed', merged: sha('6'), head: sha('5'), direct_history: [{ request: oldRequest, delivery: oldDelivery,
+      direct_cloud: { request_key: key, environment: 'env_1', branch: 'work/next', phase: 'sent', task_id: 'task_prior' },
+      applied: { parent: sha('3'), sha: sha('4'), cloud_task_id: 'task_prior' } }] });
+    const three = { ...later, tasks: [...later.tasks, definition('third', 82)] }, expanded = appendApprovedTasks(state, three);
+    Object.assign(expanded.tasks[2]!, { phase: 'development', request: { ...oldRequest, pr_number: 82, request_key: 'c'.repeat(64) }, delivery: { ...oldDelivery, attempted: false } });
+    const priorBlob = 'before\n', resultBlob = 'after\n';
+    const blobHash = (v: string) => createHash('sha1').update(`blob ${Buffer.byteLength(v)}\0${v}`).digest('hex');
+    const tree = (value: string) => ({ truncated: false, tree: [{ path: 'src/a.ts', type: 'blob', mode: '100644', sha: blobHash(value) }] });
+    const patch = 'diff --git a/src/a.ts b/src/a.ts\n--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1 +1 @@\n-before\n+after\n';
+    const list = vi.fn(async () => [{ id: 'task_prior', status: 'ready', known_status: true, environment_id: 'env_1', attempt_total: 1, updated_at: '2026-10-28T01:00:00Z' }]);
+    const diff = vi.fn(async () => patch);
+    const api = { async request(method: string, path: string): Promise<unknown> {
+      if (path === '/pulls/81') return { merged: true, merge_commit_sha: sha('6'), head: { sha: sha('5') }, base: { ref: 'main', repo: { full_name: repo } } };
+      if (path === `/compare/${sha('4')}...${sha('5')}`) return { status: 'ahead', base_commit: { sha: sha('4') }, merge_base_commit: { sha: sha('4') } };
+      if (path === `/git/commits/${sha('3')}`) return { sha: sha('3'), tree: { sha: sha('7') } };
+      if (path === `/git/commits/${sha('4')}`) return { sha: sha('4'), tree: { sha: sha('8') }, parents: [{ sha: sha('3') }] };
+      if (path === `/git/trees/${sha('7')}?recursive=1`) return tree(priorBlob);
+      if (path === `/git/trees/${sha('8')}?recursive=1`) return tree(resultBlob);
+      if (path === `/git/blobs/${blobHash(priorBlob)}`) return { encoding: 'base64', size: Buffer.byteLength(priorBlob), content: Buffer.from(priorBlob).toString('base64') };
+      if (path.startsWith('/issues/82/comments')) return [];
+      return f.api.request(method, path);
+    } };
+    const verify = createDirectHistoryVerifier({ api, config: three, list, diff });
+    return { expanded, verify, list, diff, api };
+  }
+  it('allows a subsequent task only after the recorded Cloud diff matches its applied commit and merged PR', async () => {
+    const f = continuation();
+    await expect(f.verify({ task: f.expanded.tasks[2], state: f.expanded })).resolves.toBe(true);
+    expect(f.list).toHaveBeenCalledTimes(2); expect(f.diff).toHaveBeenCalledWith('task_prior');
+  });
+  it('holds if the old diff changes or the Cloud task is not uniquely settled', async () => {
+    const f = continuation(); f.diff.mockResolvedValueOnce('diff --git a/src/a.ts b/src/a.ts\n--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1 +1 @@\n-before\n+different\n');
+    await expect(f.verify({ task: f.expanded.tasks[2], state: f.expanded })).rejects.toThrow('direct_history_unverified');
+    f.list.mockResolvedValueOnce([{ id: 'task_prior', status: 'ready', known_status: true, environment_id: 'env_1', attempt_total: 2, updated_at: '2026-10-28T01:00:00Z' }]);
+    await expect(f.verify({ task: f.expanded.tasks[2], state: f.expanded })).rejects.toThrow('direct_history_unverified');
+  });
+  it('holds when a new task appears between the two snapshots', async () => {
+    const f = continuation();
+    f.list.mockResolvedValueOnce([{ id: 'task_prior', status: 'ready', known_status: true, environment_id: 'env_1', attempt_total: 1, updated_at: '2026-10-28T01:00:00Z' }])
+      .mockResolvedValueOnce([{ id: 'task_other', status: 'ready', known_status: true, environment_id: 'env_1', attempt_total: 1, updated_at: '2026-10-28T01:00:00Z' }]);
+    await expect(f.verify({ task: f.expanded.tasks[2], state: f.expanded })).rejects.toThrow('cloud_history_changed');
+  });
+  it('rejects a conflicting Cloud environment and a PR that is not merged', async () => {
+    const f = continuation();
+    f.list.mockResolvedValueOnce([{ id: 'task_prior', status: 'ready', known_status: true, environment_id: 'other', attempt_total: 1, updated_at: '2026-10-28T01:00:00Z' }]);
+    await expect(f.verify({ task: f.expanded.tasks[2], state: f.expanded })).rejects.toThrow('direct_history_unverified');
+    const original = f.api.request;
+    f.api.request = async (method, path) => path === '/pulls/81' ? { merged: false } : original(method, path);
+    await expect(f.verify({ task: f.expanded.tasks[2], state: f.expanded })).rejects.toThrow('direct_history_unverified');
+  });
+  it('rejects a result commit that is absent from the reviewed head history', async () => {
+    const f = continuation(), original = f.api.request;
+    f.api.request = async (method, path) => path.startsWith('/compare/') ? { status: 'diverged', base_commit: { sha: sha('4') }, merge_base_commit: { sha: sha('3') } } : original(method, path);
+    await expect(f.verify({ task: f.expanded.tasks[2], state: f.expanded })).rejects.toThrow('direct_history_unverified');
+  });
+});

@@ -1,9 +1,14 @@
 /** Fail-closed reconciliation of prior Cloud tasks before a new direct send. */
 import { allPages } from './event-worker.ts';
-import { cloudTasks } from './direct-result.mjs';
+import { createHash } from 'node:crypto';
+import { Buffer } from 'node:buffer';
+import { TextDecoder } from 'node:util';
+import { applyDevelopmentPatch, parseDevelopmentPatch } from './connected-controller.ts';
+import { cloudDiff, cloudTasks } from './direct-result.mjs';
 import { parseLoopConfig, parseLoopState } from './loop-coordinator.mjs';
 
 const TASK = /^task_[a-zA-Z0-9_-]{1,123}$/, KEY = /^[a-f0-9]{64}$/;
+const SHA = /^[a-f0-9]{40}$/;
 function ensure(value, code) { if (!value) throw new Error(code); }
 function terminalSnapshot(tasks) {
   ensure(Array.isArray(tasks) && tasks.length <= 1000, 'invalid_cloud_history');
@@ -41,7 +46,7 @@ export async function installDirectInventory({ api, store, config, list = cloudT
 }
 
 /** The returned verifier can be passed to dispatchApprovedCloud. */
-export function createDirectHistoryVerifier({ api, config, list = cloudTasks }) {
+export function createDirectHistoryVerifier({ api, config, list = cloudTasks, diff = cloudDiff }) {
   const c = parseLoopConfig(config);
   return async ({ task, state }) => {
     parseLoopState(state, c);
@@ -50,11 +55,44 @@ export function createDirectHistoryVerifier({ api, config, list = cloudTasks }) 
     const index = state.tasks.findIndex(t => t.id === task.id);
     ensure(inventory && index >= inventory.queue_ids.length && state.tasks[index].phase === 'development' && state.tasks[index].request?.request_key === task.request?.request_key && KEY.test(task.request?.request_key ?? '') && task.delivery?.attempted === false && task.direct_cloud === undefined, 'direct_history_unverified');
     const expected = new Map(inventory.tasks.map(t => [t.id, t]));
-    // No authenticated completion checkpoint exists yet for subsequent direct
-    // tasks, so never trust a caller-supplied observation as a completed task.
-    ensure(index === inventory.queue_ids.length, 'direct_history_unverified');
+    const firstRaw = await list(), first = terminalSnapshot(firstRaw);
+    for (let i = inventory.queue_ids.length; i < index; i++) {
+      const prior = state.tasks[i], definition = c.tasks[i];
+      ensure(prior.phase === 'completed' && SHA.test(prior.merged ?? '') && SHA.test(prior.head ?? '') && Array.isArray(prior.direct_history) && prior.direct_history.length > 0 && prior.direct_cloud === undefined, 'direct_history_unverified');
+      const pr = await api.request('GET', `/pulls/${prior.pr}`);
+      ensure(pr.merged === true && pr.merge_commit_sha === prior.merged && pr.head?.sha === prior.head && pr.base?.repo?.full_name === c.repository && pr.base.ref === 'main', 'direct_history_unverified');
+      for (const entry of prior.direct_history) {
+        const direct = entry.direct_cloud, observed = first.find(t => t.id === direct.task_id), identity = firstRaw.find(t => t.id === direct.task_id);
+        ensure(!expected.has(direct.task_id) && observed?.status === 'ready' && observed.attempt_total === 1 && (identity.environment_id === null || identity.environment_id === direct.environment), 'direct_history_unverified');
+        const ancestry = await api.request('GET', `/compare/${entry.applied.sha}...${prior.head}`);
+        ensure(['identical', 'ahead'].includes(ancestry?.status) && ancestry.base_commit?.sha === entry.applied.sha && ancestry.merge_base_commit?.sha === entry.applied.sha, 'direct_history_unverified');
+        const original = await api.request('GET', `/git/commits/${entry.applied.parent}`);
+        const applied = await api.request('GET', `/git/commits/${entry.applied.sha}`);
+        ensure(original?.sha === entry.applied.parent && applied?.sha === entry.applied.sha && applied.parents?.length === 1 && applied.parents[0].sha === entry.applied.parent && SHA.test(original.tree?.sha ?? '') && SHA.test(applied.tree?.sha ?? ''), 'direct_history_unverified');
+        const before = await api.request('GET', `/git/trees/${original.tree.sha}?recursive=1`);
+        const after = await api.request('GET', `/git/trees/${applied.tree.sha}?recursive=1`);
+        ensure(before?.truncated === false && after?.truncated === false && Array.isArray(before.tree) && Array.isArray(after.tree), 'direct_history_unverified');
+        const patch = await diff(direct.task_id), paths = parseDevelopmentPatch(patch, definition.allowed_paths).map(f => f.path), originals = {};
+        for (const path of paths) {
+          const matches = before.tree.filter(x => x.path === path);
+          ensure(matches.length === 1 && matches[0].type === 'blob' && matches[0].mode === '100644' && SHA.test(matches[0].sha ?? ''), 'direct_history_unverified');
+          const blob = await api.request('GET', `/git/blobs/${matches[0].sha}`);
+          ensure(blob?.encoding === 'base64' && Number.isSafeInteger(blob.size) && blob.size >= 0 && blob.size <= 1024 * 1024 && typeof blob.content === 'string', 'direct_history_unverified');
+          const bytes = Buffer.from(blob.content, 'base64');
+          ensure(bytes.length === blob.size && createHash('sha1').update(`blob ${bytes.length}\0`).update(bytes).digest('hex') === matches[0].sha, 'direct_history_unverified');
+          const content = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
+          ensure(Buffer.from(content, 'utf8').equals(bytes), 'direct_history_unverified'); originals[path] = content;
+        }
+        const files = applyDevelopmentPatch(patch, definition.allowed_paths, originals);
+        const changed = new Map(files.map(f => [f.path, createHash('sha1').update(`blob ${Buffer.byteLength(f.content)}\0`).update(f.content).digest('hex')]));
+        const leaves = tree => tree.filter(x => x.type !== 'tree').map(x => [x.path, x.mode, x.type, x.sha]).sort((a, b) => a[0].localeCompare(b[0]));
+        const left = leaves(before.tree), right = leaves(after.tree);
+        ensure(left.length === right.length && left.every((x, n) => x[0] === right[n][0] && x[1] === right[n][1] && x[2] === right[n][2] && right[n][3] === (changed.get(x[0]) ?? x[3])), 'direct_history_unverified');
+        expected.set(direct.task_id, observed);
+      }
+    }
     const actual = terminalSnapshot(await list());
-    ensure(actual.length === expected.size && actual.every(t => { const saved = expected.get(t.id); return saved && ['id', 'status', 'attempt_total', 'updated_at'].every(k => saved[k] === t[k]); }), 'cloud_history_changed');
+    ensure(JSON.stringify(first) === JSON.stringify(actual) && actual.length === expected.size && actual.every(t => { const saved = expected.get(t.id); return saved && ['id', 'status', 'attempt_total', 'updated_at'].every(k => saved[k] === t[k]); }), 'cloud_history_changed');
     const when = Date.parse(task.request.requested_at);
     ensure(Number.isFinite(when), 'invalid_request_time');
     const comments = await allPages(api, `/issues/${task.pr}/comments`);
