@@ -112,6 +112,58 @@ describe('disabled Cloud transport', () => {
     expect(task.phase).toBe('development'); expect(f.store.state.tasks[0]!.phase).toBe('development');
     expect(f.sends).toHaveLength(0);
   });
+  it('applies an authenticated direct result once and waits for CI without sending a comment', async () => {
+    const f = new FixtureAPI(), options = { ...f.options(), config: { ...config, cloud_transport: 'disabled' } };
+    await runLoop(options);
+    const task = f.store.state.tasks[0]!, request = task.request as ReturnType<typeof reviewRequest>;
+    Object.assign(task.delivery as object, { attempted: true });
+    task.direct_cloud = { request_key: request.request_key, environment: 'env_1', branch: task.branch, phase: 'sent', task_id: 'task_one' };
+    const original = f.request.bind(f), nextHead = '7'.repeat(40), nextTree = '8'.repeat(40);
+    let commits = 0, refs = 0;
+    f.request = async (method, path, value) => {
+      if (method === 'POST' && path === '/git/trees') return { sha: nextTree };
+      if (method === 'POST' && path === '/git/commits') { commits++; return { sha: nextHead }; }
+      if (method === 'PATCH' && path.startsWith('/git/refs/heads/')) { refs++; f.currentHead = nextHead; return {}; }
+      if (path === `/git/commits/${checkout}`) return { sha: checkout, parents: [{ sha: base }, { sha: f.currentHead }] };
+      return original(method, path, value);
+    };
+    const directCloud = { list: async () => [{ id: 'task_one', status: 'ready', known_status: true, environment_id: null, attempt_total: 1 }],
+      diff: async () => 'diff --git a/tests/unit/probe.test.ts b/tests/unit/probe.test.ts\n--- a/tests/unit/probe.test.ts\n+++ b/tests/unit/probe.test.ts\n@@ -1 +1 @@\n-test\n+changed\n' };
+    expect((await runLoop({ ...options, directCloud })).state).toBe('waiting-ci');
+    expect(f.store.state.tasks[0]).toMatchObject({ phase: 'ci', head: nextHead, applied: { parent: head, sha: nextHead, cloud_task_id: 'task_one' } });
+    expect(commits).toBe(1); expect(refs).toBe(1); expect(f.sends).toHaveLength(0);
+    expect((await runLoop({ ...options, directCloud })).state).toBe('waiting-ci');
+    expect(commits).toBe(1); expect(refs).toBe(1);
+  });
+  it('does not commit a direct result if main changes after tree preparation', async () => {
+    const f = new FixtureAPI(), options = { ...f.options(), config: { ...config, cloud_transport: 'disabled' } };
+    await runLoop(options);
+    const task = f.store.state.tasks[0]!, request = task.request as ReturnType<typeof reviewRequest>;
+    Object.assign(task.delivery as object, { attempted: true });
+    task.direct_cloud = { request_key: request.request_key, environment: 'env_1', branch: task.branch, phase: 'sent', task_id: 'task_one' };
+    const original = f.request.bind(f);
+    f.request = async (method, path, value) => {
+      if (method === 'POST' && path === '/git/trees') { f.main = '9'.repeat(40); return { sha: '8'.repeat(40) }; }
+      return original(method, path, value);
+    };
+    const directCloud = { list: async () => [{ id: 'task_one', status: 'ready', known_status: true, environment_id: null, attempt_total: 1 }],
+      diff: async () => 'diff --git a/tests/unit/probe.test.ts b/tests/unit/probe.test.ts\n--- a/tests/unit/probe.test.ts\n+++ b/tests/unit/probe.test.ts\n@@ -1 +1 @@\n-test\n+changed\n' };
+    await expect(runLoop({ ...options, directCloud })).rejects.toThrow('stale_cloud_result');
+    expect(f.reads).not.toContain('POST /git/commits');
+    expect(f.reads.some(path => path.startsWith('PATCH /git/refs/'))).toBe(false);
+    expect(f.sends).toHaveLength(0);
+  });
+  it('keeps an unknown direct failure on hold without applying or redispatching', async () => {
+    const f = new FixtureAPI(), options = { ...f.options(), config: { ...config, cloud_transport: 'disabled' } };
+    await runLoop(options);
+    const task = f.store.state.tasks[0]!, request = task.request as ReturnType<typeof reviewRequest>;
+    Object.assign(task.delivery as object, { attempted: true });
+    task.direct_cloud = { request_key: request.request_key, environment: 'env_1', branch: task.branch, phase: 'sent', task_id: 'task_one' };
+    const directCloud = { list: async () => [{ id: 'task_one', status: 'error', known_status: true, environment_id: null, attempt_total: 1 }] };
+    expect((await runLoop({ ...options, directCloud })).state).toBe('direct-hold_unknown_failure');
+    expect(f.store.state.tasks[0]!.phase).toBe('development'); expect(f.sends).toHaveLength(0);
+    expect(f.reads.some(path => path.startsWith('POST /git/'))).toBe(false);
+  });
   it('continues reading a result for a previously sent request without sending another', async () => {
     const f = new FixtureAPI(), options = { ...f.options(), config: { ...config, cloud_transport: 'disabled' } };
     expect((await runLoop(options)).state).toBe('waiting-transport');

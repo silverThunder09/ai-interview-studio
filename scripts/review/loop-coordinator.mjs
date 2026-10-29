@@ -464,7 +464,7 @@ async function mainSuccess(api, task) {
 }
 
 /** Runs until the next external event is needed; only trusted-main approved work is selected. */
-export async function runLoop({ api, sender, store, config, policy, writer, now = Date.now, sleep = pause, verifyMerge = gatherMergeEvidence, verifyMain = mainSuccess }) {
+export async function runLoop({ api, sender, store, config, policy, writer, directCloud = {}, now = Date.now, sleep = pause, verifyMerge = gatherMergeEvidence, verifyMain = mainSuccess }) {
   const c = parseLoopConfig(config); if (!c.enabled) return { state: 'disabled', changes: 0 };
   const native = c.pr_auth === 'github-app';
   ensure(!native || writer, 'missing_product_writer');
@@ -606,7 +606,24 @@ export async function runLoop({ api, sender, store, config, policy, writer, now 
         if (task.delivery.phase === 'sending') {
           // A direct Cloud attempt is a separate transport and must never be
           // interpreted as a missing legacy PR-comment receipt.
-          if (task.direct_cloud !== undefined) return { state: 'waiting-direct-cloud', changes };
+          if (task.direct_cloud !== undefined) {
+            if (task.phase !== 'development' || task.direct_cloud.phase !== 'sent') return { state: 'waiting-direct-cloud', changes };
+            // The authenticated result is a change candidate; CI and review follow.
+            const { inspectDirectResult } = await import('./direct-result.mjs');
+            const result = await inspectDirectResult({ api, store, config: c, taskId: task.id, list: directCloud.list, diff: directCloud.diff });
+            if (result.state !== 'candidate') return { state: `direct-${result.state}`, changes };
+            ensure(result.task_id === task.direct_cloud.task_id && result.head_sha === task.head && result.base_sha === task.base && Array.isArray(result.files) && result.files.length > 0, 'invalid_direct_candidate');
+            ensure(definition.pr !== null || result.files.some(f => f.path.startsWith('src/')), 'planned_task_not_implemented');
+            if (task.repair_findings?.length) ensure(task.repair_findings.every(f => result.files.some(p => p.path === f.path)), 'repair_file_not_changed');
+            const original = await api.request('GET', `/git/commits/${task.head}`);
+            const tree = await product.request('POST', '/git/trees', { base_tree: identity(original.tree.sha), tree: result.files.map(f => ({ path: f.path, mode: '100644', type: 'blob', content: f.content })) });
+            if (await controlPaused(api)) return { state: 'stopped', changes };
+            const fresh = await scope(api, task, definition);
+            ensure(fresh.main === task.base && fresh.pr.head.sha === task.head && fresh.pr.base.sha === task.base && (await api.request('GET', `/git/ref/heads/${task.branch}`)).object.sha === task.head, 'stale_cloud_result');
+            const commit = await product.request('POST', '/git/commits', { message: `fix: ${definition.id}`, parents: [task.head], tree: identity(tree.sha) });
+            await update(t => { t.phase = 'apply'; t.applied = { parent: task.head, sha: identity(commit.sha), cloud_task_id: result.task_id }; });
+            continue;
+          }
           let sent = await receipt(api, task);
           if (!sent && task.delivery.attempted) throw new Error('ambiguous_request_delivery');
           if (!sent) {
