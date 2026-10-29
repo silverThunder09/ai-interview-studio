@@ -1,0 +1,52 @@
+/** A single, explicit tick using a clean checkout of the current trusted main. */
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { readFile, realpath } from 'node:fs/promises';
+import { pathToFileURL } from 'node:url';
+import { AppCredentials, ProductWriter } from './pr-writer.mjs';
+import { allPages } from './event-worker.ts';
+import { REPO, RuntimeAPI, LoopStore, parseLoopConfig } from './loop-coordinator.mjs';
+import { runDirectTick, validateDirectContext } from './direct-tick.mjs';
+
+const exec = promisify(execFile), SHA = /^[a-f0-9]{40}$/, ENV = /^[a-zA-Z0-9][a-zA-Z0-9_./-]{0,127}$/;
+function ensure(value, code) { if (!value) throw new Error(code); }
+async function git(args) { return (await exec('git', args, { timeout: 15000, maxBuffer: 1024 * 1024, windowsHide: true })).stdout.trim(); }
+
+/** No checkout or token manipulation; fail closed if local main is not trusted. */
+export async function runDirectRunner({ token, environment, root = process.cwd() }) {
+  ensure(typeof token === 'string' && token.length > 0 && ENV.test(environment ?? ''), 'missing_runner_context');
+  const rootPath = await realpath(root), gitRoot = await realpath(await git(['rev-parse', '--show-toplevel']));
+  ensure(rootPath === gitRoot && await realpath(process.cwd()) === rootPath, 'wrong_runner_directory');
+  const head = await git(['rev-parse', '--verify', 'HEAD']);
+  ensure(SHA.test(head) && (await git(['status', '--porcelain=v1', '--untracked-files=no'])) === '', 'untrusted_runner_checkout');
+  const api = new RuntimeAPI(token), repository = await api.repository();
+  ensure(repository?.full_name === REPO && (await api.request('GET', '/branches/main')).commit.sha === head, 'trusted_main_moved');
+  const config = parseLoopConfig(JSON.parse(await readFile('.github/approved-loop.json', 'utf8')));
+  const policy = JSON.parse(await readFile('.github/review-policy.json', 'utf8'));
+  validateDirectContext(config, policy);
+  const labels = await allPages(api, '/issues/35/labels');
+  ensure(labels.every(label => label && typeof label.name === 'string') && !labels.some(label => ['agent-paused', 'needs-user'].includes(label.name)), 'loop_control_paused');
+  // This only appends a trusted-main suffix to an unlocked, completed queue;
+  // the store preserves every previous task and uses a Git ref CAS.
+  const store = new LoopStore(api, config);
+  ensure((await api.request('GET', '/branches/main')).commit.sha === head, 'trusted_main_moved');
+  await store.appendApprovedTasks();
+  // The default GitHub Actions masker prints its argument as a workflow
+  // directive. A standalone runner must never print a private key or token.
+  const credentials = new AppCredentials({ api, appId: process.env.AIS_PR_WRITER_APP_ID, installationId: process.env.AIS_PR_WRITER_INSTALLATION_ID, privateKey: process.env.AIS_PR_WRITER_PRIVATE_KEY, redact: () => {} });
+  let result, cleanupFailed = false;
+  try {
+    const writer = config.pr_auth === 'github-app' ? new ProductWriter({ api, credentials, config }) : undefined;
+    result = await runDirectTick({ api, store, config, policy, writer, environment });
+  } finally {
+    try { await credentials.dispose(); } catch { cleanupFailed = true; }
+  }
+  return cleanupFailed ? { ...result, credential_cleanup: 'unconfirmed' } : result;
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  if (process.argv.length !== 4 || process.argv[2] !== '--env') { console.error('Usage: node scripts/review/direct-runner.mjs --env ENV_ID'); process.exitCode = 2; }
+  else runDirectRunner({ token: process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN, environment: process.argv[3] })
+    .then(result => console.log(JSON.stringify(result)))
+    .catch(error => { console.error(JSON.stringify({ state: 'hold', reason: /^[a-z0-9_]+$/.test(error?.message ?? '') ? error.message : 'runner_unavailable' })); process.exitCode = 1; });
+}

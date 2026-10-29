@@ -1,0 +1,1 @@
+export function runDirectRunner(input: { token: string; environment: string; root?: string }): Promise<{ state: string; reason?: string; task_id?: string; changes?: number; credential_cleanup?: string }>;

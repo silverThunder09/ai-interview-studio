@@ -57,7 +57,7 @@ export async function readLimits() {
         const rate = msg.result.rateLimits;
         if (!rate || typeof rate !== 'object') return done(new Error('rate_limits_unavailable'));
         const bucket = value => value && typeof value === 'object' ? { usedPercent: value.usedPercent ?? null, windowDurationMins: value.windowDurationMins ?? null, resetsAt: value.resetsAt ?? null } : null;
-        done(null, { primary: bucket(rate.primary), secondary: bucket(rate.secondary), rateLimitReachedType: rate.rateLimitReachedType ?? null });
+        done(null, { primary: bucket(rate.primary), secondary: bucket(rate.secondary), rateLimitReachedType: rate.rateLimitReachedType ?? null, rateLimitReachedTypeKnown: Object.hasOwn(rate, 'rateLimitReachedType') });
       }
     });
     send({ id: 1, method: 'initialize', params: { clientInfo: { name: 'ais_cloud_preflight', version: '1.0' } } });

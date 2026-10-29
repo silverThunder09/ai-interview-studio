@@ -785,7 +785,7 @@ export async function runLoop({ api, sender, store, config, policy, writer, dire
   } finally { await save(s => { s.lease = null; }); }
 }
 
-class RuntimeAPI extends GitHub {
+export class RuntimeAPI extends GitHub {
   constructor(token) { super(token); this.authorization = token; }
   async repository() {
     const r = await fetch(`https://api.github.com/repos/${REPO}`, { headers: { Authorization: `Bearer ${this.authorization}`, Accept: 'application/vnd.github+json' }, redirect: 'error', signal: AbortSignal.timeout(30000) });
