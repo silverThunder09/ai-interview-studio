@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { installDirectInventory, createDirectHistoryVerifier } from '../../scripts/review/direct-history.mjs';
 import { dispatchApprovedCloud } from '../../scripts/review/direct-cloud.mjs';
 import { runDirectTick } from '../../scripts/review/direct-tick.mjs';
+import { runCapacityRunner } from '../../scripts/review/direct-capacity-runner.mjs';
 import { approvedDevelopmentBody, appendApprovedTasks, emptyLoopState, parseLoopState, type LoopState } from '../../scripts/review/loop-coordinator.mjs';
 
 const repo = 'silverThunder09/ai-interview-studio', sha = (s: string) => s.repeat(40), key = 'a'.repeat(64);
@@ -76,7 +77,7 @@ describe('one-shot direct coordinator', () => {
     await installDirectInventory(f.options); f.store.state = nextState(f.store.state); f.store.validationConfig = later;
     await expect(runDirectTick({ ...options, cloud: { ...options.cloud, limits: async () => ({ primary: null, secondary: null, rateLimitReachedType: null, rateLimitReachedTypeKnown: true }) } })).resolves.toEqual({ state: 'limits-hold', reason: 'unknown' });
     await expect(runDirectTick({ ...options, cloud: { ...options.cloud, limits: async () => ({ primary: { usedPercent: 1 }, secondary: { usedPercent: 20 }, rateLimitReachedType: null, rateLimitReachedTypeKnown: false }) } })).resolves.toEqual({ state: 'limits-hold', reason: 'unknown' });
-    await expect(runDirectTick({ ...options, cloud: { ...options.cloud, limits: async () => ({ primary: { usedPercent: 100 }, secondary: { usedPercent: 20 }, rateLimitReachedType: null, rateLimitReachedTypeKnown: true }) } })).resolves.toEqual({ state: 'limits-hold', reason: 'limited' });
+    await expect(runDirectTick({ ...options, cloud: { ...options.cloud, limits: async () => ({ primary: { usedPercent: 100 }, secondary: { usedPercent: 20 }, rateLimitReachedType: null, rateLimitReachedTypeKnown: true }) } })).resolves.toEqual({ state: 'limits-hold', reason: 'limited', request_key: key });
     expect(launch).not.toHaveBeenCalled(); expect(f.store.state.tasks[1]!.direct_cloud).toBeUndefined();
   });
   it('does not dispatch after main moves beyond the verified completed predecessor', async () => {
@@ -132,6 +133,32 @@ describe('one-shot direct coordinator', () => {
     task.direct_cloud = { request_key: key, environment: 'env_1', branch: 'work/next', phase: 'attempting', task_id: null };
     const writes = f.store.writes, launch = vi.fn();
     await expect(runDirectTick({ api: f.api, store: f.store, config: later, policy: tickPolicy, environment: 'env_1', now: () => 1000000, cloud: { list: f.list, limits: tickLimits, launch } })).resolves.toEqual({ state: 'waiting-direct-cloud' });
+    expect(launch).not.toHaveBeenCalled(); expect(f.store.writes).toBe(writes);
+  });
+  it('waits for official capacity and submits the same untouched request once', async () => {
+    const f = fixture(); await installDirectInventory(f.options);
+    f.store.state = nextState(f.store.state); f.store.validationConfig = later;
+    const launch = vi.fn(async () => ({ id: 'task_new' }));
+    const limits = vi.fn().mockResolvedValueOnce({ primary: { usedPercent: 100 }, secondary: { usedPercent: 20 }, rateLimitReachedType: null, rateLimitReachedTypeKnown: true }).mockImplementation(tickLimits);
+    const wait = vi.fn(async () => {});
+    const tick = async ({ expectedRequestKey }: { expectedRequestKey?: string }) => runDirectTick({ api: f.api, store: f.store, config: later, policy: tickPolicy, environment: 'env_1', expectedRequestKey, now: () => 1000000, cloud: { list: f.list, limits, launch } });
+    await expect(runCapacityRunner({ token: 'synthetic', environment: 'env_1', tick, wait })).resolves.toEqual({ state: 'sent', task_id: 'task_new' });
+    expect(wait).toHaveBeenCalledTimes(1); expect(launch).toHaveBeenCalledTimes(1);
+  });
+  it('holds if the waiting request was attempted before capacity returned', async () => {
+    const f = fixture(); await installDirectInventory(f.options);
+    f.store.state = nextState(f.store.state); f.store.validationConfig = later;
+    const launch = vi.fn(async () => ({ id: 'task_new' }));
+    const options = { api: f.api, store: f.store, config: later, policy: tickPolicy, environment: 'env_1', expectedRequestKey: key, now: () => 1000000, cloud: { list: f.list, limits: tickLimits, launch } };
+    Object.assign(f.store.state.tasks[1]!.delivery as object, { attempted: true });
+    await expect(runDirectTick(options)).resolves.toEqual({ state: 'resumption-hold' });
+    expect(launch).not.toHaveBeenCalled();
+  });
+  it('refuses a different request even if it replaces the request before the dispatcher reloads', async () => {
+    const f = fixture(); await installDirectInventory(f.options);
+    f.store.state = nextState(f.store.state); f.store.validationConfig = later;
+    const launch = vi.fn(async () => ({ id: 'task_new' })), writes = f.store.writes;
+    await expect(dispatchApprovedCloud({ api: f.api, store: f.store, config: later, taskId: 'next', environment: 'env_1', expectedRequestKey: 'c'.repeat(64), launch })).rejects.toThrow('resumption_request_changed');
     expect(launch).not.toHaveBeenCalled(); expect(f.store.writes).toBe(writes);
   });
 });
