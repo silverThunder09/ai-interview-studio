@@ -213,11 +213,33 @@ describe('durable SQLite sessions and transitions', () => {
     fixture.close();
   });
   it('caps the session count without silently evicting existing records', () => {
-    const store = storage();
-    for (let index = 0; index < INTERVIEW_LIMITS.sessions; index++) store.start(startFixture());
+    const file = path(), store = storage(file), original = store.start(startFixture());
+    const fixture = new DatabaseSync(file, { enableForeignKeyConstraints: true });
+    const seedSession = fixture.prepare('INSERT INTO sessions(id,request_id,request_hash,created_at,status,reviewed_text,sources,ai_config) SELECT ?,?,request_hash,created_at,status,reviewed_text,sources,ai_config FROM sessions WHERE id=?');
+    const seedTurn = fixture.prepare('INSERT INTO turns(session_id,sequence,question_id,question,answer) VALUES(?,?,?,?,NULL)');
+    const ids = new Set([original.id]); let seededId = '';
+    fixture.exec('BEGIN IMMEDIATE');
+    try {
+      for (let index = 1; index < INTERVIEW_LIMITS.sessions - 1; index++) {
+        const id = randomUUID(), questionId = randomUUID();
+        seedSession.run(id, randomUUID(), original.id);
+        seedTurn.run(id, 0, questionId, JSON.stringify({ ...original.turns[0]!.question, id: questionId }));
+        ids.add(id);
+        seededId = id;
+      }
+      fixture.exec('COMMIT');
+    } catch (error) { fixture.exec('ROLLBACK'); throw error; }
+    finally { fixture.close(); }
+    expect(store.history().sessions).toHaveLength(INTERVIEW_LIMITS.sessions - 1);
+    const request = startFixture(), last = store.start(request);
+    ids.add(last.id);
+    expect(store.start(request)).toEqual(last);
     expect(() => store.start(startFixture())).toThrow('100개까지');
-    expect(store.history().sessions).toHaveLength(100);
-  }, 20_000);
+    expect(new Set(store.history().sessions.map(session => session.id))).toEqual(ids);
+    expect(store.get(original.id)).toEqual(original);
+    expect(store.get(seededId)).toMatchObject({ id: seededId, status: 'active', reviewedText: original.reviewedText });
+    expect(store.get(last.id)).toEqual(last);
+  });
 });
 
 describe('local question provenance', () => {
