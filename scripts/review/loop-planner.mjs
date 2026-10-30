@@ -1,12 +1,29 @@
 /** Materialize the next approved main-owned task. No model output can add authority. */
+/* global fetch, AbortSignal */
 import { createHash } from 'node:crypto';
 import { Buffer } from 'node:buffer';
-import { APIError, allPages } from './event-worker.ts';
+import { APIError, GitHub, allPages } from './event-worker.ts';
 
 const REPO = 'silverThunder09/ai-interview-studio', SHA = /^[a-f0-9]{40}$/;
 const hash = value => createHash('sha256').update(value).digest('hex');
 function ensure(value, code) { if (!value) throw new Error(code); }
 function sha(value) { ensure(typeof value === 'string' && SHA.test(value), 'invalid_planner_sha'); return value; }
+/** Existing user sender may create only a normal planned PR, never a comment. */
+export function directPlannerSender({ token, client = new GitHub(token), verify = async () => {
+  const response = await fetch('https://api.github.com/user', { headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' }, redirect: 'error', signal: AbortSignal.timeout(30_000) });
+  if (!response.ok) return false;
+  const user = await response.json(); return user?.login === 'silverThunder09' && user.type === 'User';
+} }) {
+  ensure(typeof token === 'string' && token.length > 0, 'missing_planner_sender');
+  return {
+    ready: async () => await verify() === true,
+    async request(method, path, body) {
+      ensure(method === 'POST' && path === '/pulls' && body && Object.keys(body).sort().join(',') === 'base,body,draft,head,title' && body.base === 'main' && body.draft === false && /^work\/[a-z0-9-]+$/.test(body.head ?? '') && typeof body.title === 'string' && typeof body.body === 'string', 'unapproved_planner_operation');
+      ensure(await verify() === true, 'planner_sender_unverified');
+      return client.request(method, path, body);
+    },
+  };
+}
 async function optional(api, path) {
   try { return await api.request('GET', path); }
   catch (error) { if (error instanceof APIError && error.status === 404) return null; throw error; }
@@ -38,8 +55,8 @@ function body(definition) {
     '## 리뷰 결과\n개발 및 정확한 head의 AI 검토 대기. 사람의 독립 승인으로 표현하지 않습니다.\n\n' +
     '## 머지 조건\n완료 조건을 구현하고 최신 CI·실제 증거·원본 리뷰·라벨·스레드·사람의 변경 요청을 확인합니다. main 검증 후 다음 승인 작업으로 이어갑니다.\n';
 }
-function checkPR(pr, definition, preparation) {
-  ensure(Number.isSafeInteger(pr?.number) && pr.number > 0 && pr.state === 'open' && pr.merged !== true && pr.draft === true &&
+function checkPR(pr, definition, preparation, draft) {
+  ensure(Number.isSafeInteger(pr?.number) && pr.number > 0 && pr.state === 'open' && pr.merged !== true && pr.draft === draft &&
     pr.user?.login === 'silverThunder09' && pr.head?.repo?.full_name === REPO && pr.head.repo.fork === false &&
     pr.base?.repo?.full_name === REPO && pr.base.ref === 'main' && pr.head.ref === preparation.branch && pr.head.sha === preparation.commit &&
     pr.title === definition.title && pr.body === body(definition), 'unconfirmed_planned_pr');
@@ -47,7 +64,8 @@ function checkPR(pr, definition, preparation) {
 }
 
 /** All writes are journaled before delivery. Unknown/failed reads never mean "absent". */
-export async function preparePlannedPR({ api, sender, task, definition, update, writer }) {
+export async function preparePlannedPR({ api, sender, task, definition, update, writer, draft = true }) {
+  ensure(typeof draft === 'boolean', 'invalid_planned_pr_type');
   ensure(definition.pr === null && task.pr === null && task.phase === 'queued', 'invalid_planned_task');
   const base = sha((await api.request('GET', '/branches/main')).commit.sha);
   await verifyPlannedSpec(api, definition, base);
@@ -80,12 +98,12 @@ export async function preparePlannedPR({ api, sender, task, definition, update, 
   }
   const matches = await allPages(api, `/pulls?state=all&base=main&head=silverThunder09%3A${encodeURIComponent(branch)}`);
   ensure(matches.length <= 1, 'ambiguous_planned_pr');
-  if (matches.length) return checkPR(await api.request('GET', `/pulls/${matches[0].number}`), definition, preparation);
+  if (matches.length) return checkPR(await api.request('GET', `/pulls/${matches[0].number}`), definition, preparation, draft);
   ensure(!preparation.pr_attempted, 'ambiguous_planned_pr');
   await update(t => { t.preparation.pr_attempted = true; });
   ensure((await api.request('GET', '/branches/main')).commit.sha === base &&
     (await api.request('GET', `/git/ref/heads/${branch}`)).object.sha === preparation.commit, 'planned_snapshot_changed');
   // Existing approved PR-write sender gives the PR the allowed author. No new credential.
-  const created = await sender.request('POST', '/pulls', { title: definition.title, body: body(definition), head: branch, base: 'main', draft: true });
-  return checkPR(await api.request('GET', `/pulls/${created.number}`), definition, preparation);
+  const created = await sender.request('POST', '/pulls', { title: definition.title, body: body(definition), head: branch, base: 'main', draft });
+  return checkPR(await api.request('GET', `/pulls/${created.number}`), definition, preparation, draft);
 }

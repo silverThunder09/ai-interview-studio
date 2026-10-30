@@ -10,7 +10,7 @@ import { GitHub, APIError, allPages } from './event-worker.ts';
 import { countChangeRequests, evaluateMergeGate, validatePRBody } from './policy.mjs';
 import { latestCheck, readAllReviews, readJobCIEvidence } from './ci-proof.mjs';
 import { parseNativeReviewResult, parseNativeRepairResult } from './native-review.mjs';
-import { preparePlannedPR, verifyPlannedSeed, verifyPlannedSpec } from './loop-planner.mjs';
+import { directPlannerSender, preparePlannedPR, verifyPlannedSeed, verifyPlannedSpec } from './loop-planner.mjs';
 import { AppCredentials, ProductWriter } from './pr-writer.mjs';
 import { startReviewRepair, finishReviewRepair, buildRepairReviewAddition } from './review-repair.mjs';
 
@@ -477,7 +477,7 @@ async function mainSuccess(api, task) {
 }
 
 /** Runs until the next external event is needed; only trusted-main approved work is selected. */
-export async function runLoop({ api, sender, store, config, policy, writer, directCloud = {}, now = Date.now, sleep = pause, verifyMerge = gatherMergeEvidence, verifyMain = mainSuccess }) {
+export async function runLoop({ api, sender, planner, store, config, policy, writer, directCloud = {}, now = Date.now, sleep = pause, verifyMerge = gatherMergeEvidence, verifyMain = mainSuccess }) {
   const c = parseLoopConfig(config); if (!c.enabled) return { state: 'disabled', changes: 0 };
   const native = c.pr_auth === 'github-app';
   ensure(!native || writer, 'missing_product_writer');
@@ -549,7 +549,13 @@ export async function runLoop({ api, sender, store, config, policy, writer, dire
       const update = fn => save(s => fn(s.tasks[index]));
       if (task.phase === 'paused') return { state: 'paused', changes };
       if (task.pr === null) {
-        if (c.cloud_transport !== 'legacy-comment') return { state: 'waiting-transport', changes };
+        const directPlanning = c.cloud_transport !== 'legacy-comment';
+        if (directPlanning && (!planner || !writer)) return { state: 'waiting-transport', changes };
+        if (directPlanning) {
+          let ready = false;
+          try { ready = await planner.ready() === true; } catch { /* Missing or unverifiable sender always holds. */ }
+          if (!ready) return { state: 'waiting-planner-auth', changes };
+        }
         const main = identity((await api.request('GET', '/branches/main')).commit.sha);
         const preceding = snap.state.tasks[index - 1];
         // A newly installed planner must pass main CI too. Later tasks reuse the
@@ -564,7 +570,7 @@ export async function runLoop({ api, sender, store, config, policy, writer, dire
           ensure(task.planning_ci.main === main, 'planned_main_changed');
           if (!await verifyMain(api, { merged: main, operation: { key: task.planning_ci.key } })) return { state: 'waiting-planning-ci', changes };
         }
-        const pr = await preparePlannedPR({ api, sender, task, definition, update, writer });
+        const pr = await preparePlannedPR({ api, sender: directPlanning ? planner : sender, task, definition, update, writer, draft: !directPlanning });
         await update(t => { t.pr = pr.number; }); continue;
       }
       const { pr, main, files } = await scope(api, task, definition);
@@ -854,7 +860,9 @@ async function main() {
     const sender = config.cloud_transport !== 'legacy-comment'
       ? { request: async () => { throw new Error('cloud_transport_disabled'); } }
       : new GitHub(process.env.AIS_CODEX_COMMENT_TOKEN);
-    const result = await runLoop({ api, sender, store, config, policy, writer });
+    const planner = config.cloud_transport === 'disabled' && process.env.AIS_CODEX_COMMENT_TOKEN
+      ? directPlannerSender({ token: process.env.AIS_CODEX_COMMENT_TOKEN }) : undefined;
+    const result = await runLoop({ api, sender, planner, store, config, policy, writer });
     console.log(JSON.stringify({ repository: REPO, ...result }));
   } finally { await credentials.dispose(); }
 }

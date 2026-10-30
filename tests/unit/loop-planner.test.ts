@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { APIError } from '../../scripts/review/event-worker';
 import { emptyLoopState, parseLoopConfig, parseLoopState, runLoop, type LoopState, type LoopTask } from '../../scripts/review/loop-coordinator.mjs';
-import { plannedSeed, preparePlannedPR } from '../../scripts/review/loop-planner.mjs';
+import { directPlannerSender, plannedSeed, preparePlannedPR } from '../../scripts/review/loop-planner.mjs';
 import { isPendingWakeup } from '../../scripts/review/loop-waiter.mjs';
 import { ProductWriter } from '../../scripts/review/pr-writer.mjs';
 
@@ -61,6 +61,41 @@ function preparation(api: API) {
 }
 
 describe('approved goal → next PR preparation', () => {
+  it('creates a normal PR for direct Cloud without sending a comment or a Cloud request', async () => {
+    const direct = { ...config, cloud_transport: 'disabled' }, api = new API(), store = new Store(direct);
+    const planner = { ready: async () => true, request: (method: string, path: string, body: unknown) => api.request(method, path, body) };
+    const writer = { bind: () => api };
+    const options = { api, sender: { request: async () => { throw new Error('comment_not_allowed'); } }, planner, writer, store, config: direct, policy, verifyMain: async () => true };
+    expect(await runLoop(options)).toMatchObject({ state: 'waiting-transport' });
+    expect(api.pr).toMatchObject({ number: 80, draft: false, user: { login: 'silverThunder09' } });
+    expect(api.sends).toBe(0); expect(api.writes.filter(w => w.path === '/pulls')).toHaveLength(1);
+    expect(await runLoop(options)).toMatchObject({ state: 'waiting-transport' });
+    expect(api.writes.filter(w => w.path === '/pulls')).toHaveLength(1); expect(api.sends).toBe(0);
+  });
+  it('holds before product writes when direct planner identity is unavailable', async () => {
+    const direct = { ...config, cloud_transport: 'disabled' }, api = new API(), store = new Store(direct);
+    const planner = { ready: async () => false, request: async () => { throw new Error('must_not_send'); } };
+    expect(await runLoop({ api, sender: api, planner, writer: { bind: () => api }, store, config: direct, policy, verifyMain: async () => true })).toMatchObject({ state: 'waiting-planner-auth' });
+    expect(api.writes).toHaveLength(0); expect(store.state.tasks[0]!.pr).toBeNull();
+  });
+  it('recovers a direct normal PR after a lost create response without sending twice', async () => {
+    const api = new API(), { options } = preparation(api); api.losePRReply = true;
+    await expect(preparePlannedPR({ ...options, draft: false })).rejects.toThrow('lost_reply');
+    expect(await preparePlannedPR({ ...options, draft: false })).toMatchObject({ number: 80 });
+    expect(api.pr).toMatchObject({ draft: false });
+    expect(api.writes.filter(w => w.path === '/pulls')).toHaveLength(1);
+  });
+  it('limits the existing user sender to normal PR creation and verifies identity again', async () => {
+    const request = vi.fn(async () => ({ number: 80 })), verify = vi.fn(async () => true);
+    const sender = directPlannerSender({ token: 'synthetic', client: { request }, verify });
+    const body = { title: 'Task', body: 'Scope', head: 'work/task-a', base: 'main', draft: false };
+    await expect(sender.request('POST', '/pulls', body)).resolves.toEqual({ number: 80 });
+    await expect(sender.request('POST', '/issues/80/comments', { body: 'text' })).rejects.toThrow('unapproved_planner_operation');
+    await expect(sender.request('POST', '/pulls', { ...body, draft: true })).rejects.toThrow('unapproved_planner_operation');
+    verify.mockResolvedValueOnce(false);
+    await expect(sender.request('POST', '/pulls', body)).rejects.toThrow('planner_sender_unverified');
+    expect(request).toHaveBeenCalledTimes(1);
+  });
   it('uses the App only for seed objects/ref, keeps Draft creation with the user sender and recovers without duplicates', async () => {
     const api = new API(), { options } = preparation(api), appWrites: string[] = [], senderWrites: string[] = [];
     const credentials = { client: async () => ({ request: async (method: string, path: string, body: unknown) => { appWrites.push(path); return api.request(method, path, body); } }) };
