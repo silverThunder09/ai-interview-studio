@@ -4,7 +4,7 @@ import { prepareAvatar, type AvatarAsset } from '../../../shared/avatar';
 
 export interface Actor {
   root: T.Group;
-  update(time: number, delta: number, speaking: boolean, reduced: boolean): void;
+  update(time: number, delta: number, speaking: boolean, reduced: boolean, audioLevel?: number): void;
   dispose(): void;
   capability: string;
 }
@@ -64,16 +64,17 @@ export async function loadActor(asset: AvatarAsset): Promise<Actor> {
   });
   const rest = head?.quaternion.clone(), rotation = new T.Quaternion();
   return { root, capability: `불러온 3D 모델 · 눈 ${morphs.some(m => m.kind === 'blink') ? '지원' : '미지원'} · 입 ${morphs.some(m => m.kind === 'mouth') ? '지원' : '미지원'} · 고개 ${head ? '지원' : '미지원'}`,
-    update(time, delta, speaking, reduced) {
+    update(time, delta, speaking, reduced, audioLevel) {
       if (!reduced) mixer.update(delta);
       if (head && rest) head.quaternion.copy(rest).multiply(rotation.setFromEuler(new T.Euler(reduced ? 0 : Math.sin(time * 0.8) * 0.035, reduced ? 0 : Math.sin(time * 0.45) * 0.07, 0)));
-      for (const m of morphs) if (m.node.morphTargetInfluences) m.node.morphTargetInfluences[m.index] = m.kind === 'blink' ? (reduced ? 0 : blink(time)) : (speaking ? mouth(time) : 0);
+      for (const m of morphs) if (m.node.morphTargetInfluences) m.node.morphTargetInfluences[m.index] = m.kind === 'blink' ? (reduced ? 0 : blink(time)) : (speaking ? measuredMouth(audioLevel, time) : 0);
     },
     dispose() { mixer.stopAllAction(); mixer.uncacheRoot(model); gltf.scenes.forEach(disposeObject); textures.forEach(t => { (t.source.data as ImageBitmap).close(); t.dispose(); }); root.clear(); },
   };
 }
 export const blink = (time: number) => { const phase = time % 4.1; return phase < 0.16 ? Math.sin(phase / 0.16 * Math.PI) : 0; };
 export const mouth = (time: number) => 0.15 + 0.65 * Math.abs(Math.sin(time * 10.5));
+const measuredMouth = (level: number | undefined, time: number) => level === undefined ? mouth(time) : Number.isFinite(level) ? Math.min(1, Math.max(0, level)) : 0;
 
 export function defaultActor(technical: boolean): Actor {
   const root = new T.Group(), body = new T.Group(), head = new T.Group(); root.add(body); body.add(head); head.position.y = 1.77;
@@ -100,10 +101,10 @@ export function defaultActor(technical: boolean): Actor {
   }
   mesh(new T.SphereGeometry(0.033, 10, 8), skin, head, 0, -0.025, 0.219, [0.7, 1.1, 0.7]);
   const lip = mesh(new T.SphereGeometry(0.045, 14, 8), 0x754c46, head, 0, -0.115, 0.196, [1, 0.15, 0.25]);
-  return { root, capability: '기본 3D 캐릭터 · 실사 에셋 아님', update(time, _delta, speaking, reduced) {
+  return { root, capability: '기본 3D 캐릭터 · 실사 에셋 아님', update(time, _delta, speaking, reduced, audioLevel) {
     head.rotation.set(reduced ? 0 : Math.sin(time * 0.8) * 0.035, reduced ? 0 : Math.sin(time * 0.6) * 0.07, 0);
     body.position.y = reduced ? 0 : Math.sin(time * 1.6) * 0.009;
     eyes.forEach(e => { e.scale.y = Math.max(0.02, 0.65 * (1 - (reduced ? 0 : blink(time)))); });
-    lip.scale.y = speaking ? mouth(time) : 0.15;
+    lip.scale.y = speaking ? (audioLevel === undefined ? mouth(time) : 0.15 + 0.85 * measuredMouth(audioLevel, time)) : 0.15;
   }, dispose() { disposeObject(root); root.clear(); } };
 }

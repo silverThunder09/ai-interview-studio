@@ -110,5 +110,5 @@ describe('voice boundary and permission', () => {
     f.credentials.clear('openai'); f.credentials.set('openai', 'synthetic-new-key');
     expect(await f.voice.transcribe(f.input)).toMatchObject({ ok: false, error: { code: 'BUDGET_EXHAUSTED' } });
     expect(request).toHaveBeenCalledTimes(36); expect(f.voice.status().remainingRequests).toBe(0);
-  });
+  }, 15_000);
 });

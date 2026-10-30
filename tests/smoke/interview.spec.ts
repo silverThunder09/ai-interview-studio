@@ -21,7 +21,7 @@ test('local practice requires consent, survives restart, preserves failed answer
     application = await electron.launch({
       chromiumSandbox: true, env,
       ...(process.env.SMOKE_EXECUTABLE ? { executablePath: resolve(process.env.SMOKE_EXECUTABLE) } : {}),
-      args: [...(process.env.SMOKE_EXECUTABLE ? [] : ['.']), `--user-data-dir=${profile}`],
+      args: [...(process.env.SMOKE_EXECUTABLE ? [] : ['.']), ...(process.env.STUDIO_SMOKE_HEADLESS === '1' ? ['--ozone-platform=headless', '--use-gl=angle', '--use-angle=swiftshader'] : []), `--user-data-dir=${profile}`],
     });
     // Launch with an isolated profile before any settings/history request.
     const page = await application.firstWindow();
@@ -58,6 +58,22 @@ test('local practice requires consent, survives restart, preserves failed answer
       if (!session.ok) throw new Error('Expected synthetic session');
       return session.value;
     });
+    const localVoiceCheck = await page.evaluate(async (session) => {
+      const status = await window.studio!.getLocalSpeechStatus();
+      if (!status.ok) return { state: 'error' as const };
+      const voice = status.value.voices[0];
+      if (!voice) return { state: 'not-installed' as const };
+      const question = session.turns[0]!.question, operationId = crypto.randomUUID();
+      const result = await window.studio!.generateLocalSpeech({ operationId, sessionId: session.id, questionId: question.id,
+        preview: question.text, speakerId: question.speakerId ?? (question.kind === 'technical' ? 'a' : 'b'), voiceId: voice.id });
+      await window.studio!.cancelLocalSpeech(operationId);
+      if (!result.ok) return { state: 'error' as const };
+      return { state: 'generated' as const, riff: Array.from(result.value.subarray(0, 4)), wave: Array.from(result.value.subarray(8, 12)) };
+    }, initial);
+    expect(localVoiceCheck.state).not.toBe('error');
+    if (localVoiceCheck.state === 'generated') {
+      expect(localVoiceCheck.riff).toEqual([82, 73, 70, 70]); expect(localVoiceCheck.wave).toEqual([87, 65, 86, 69]);
+    } else test.info().annotations.push({ type: 'local-voice', description: 'No installed Korean voice; actual synthesis was not tested.' });
     const firstAnswer = '합성 API를 구현했습니다. <script>window.interviewLeak=1</script>';
     await page.getByLabel('내 답변', { exact: true }).fill(firstAnswer);
     await page.getByRole('button', { name: '답변 저장하고 다음 질문', exact: true }).click();

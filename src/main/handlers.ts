@@ -1,4 +1,5 @@
 import { DEFAULT_SETTINGS, isSettings, type AvatarQuality, type Result, type Settings, type Snapshot } from '../shared/contracts';
+import { isLocalSpeechVoices, type LocalSpeechVoices } from '../shared/local-speech';
 
 export function createHandlers(version: string, persistence?: { settings(): Settings; updateSettings(settings: Settings): void }) {
   let settings: Settings = persistence?.settings() ?? { ...DEFAULT_SETTINGS };
@@ -26,6 +27,14 @@ export function createHandlers(version: string, persistence?: { settings(): Sett
       catch { return { ok: false, error: { code: 'UNAVAILABLE', message: '품질 설정을 저장하지 못했습니다. 이전 저장값은 유지됩니다.' } }; }
       settings = next;
       return { ok: true, value: args[0] };
+    },
+    localSpeechVoices(args: unknown[]): Result<LocalSpeechVoices> {
+      if (args.length !== 1 || !isLocalSpeechVoices(args[0])) return invalid();
+      const voices = { ...args[0] }, next: Settings = { ...settings, localSpeechVoices: voices };
+      try { persistence?.updateSettings(next); }
+      catch { return { ok: false, error: { code: 'UNAVAILABLE', message: '목소리 설정을 저장하지 못했습니다. 이전 저장값은 유지됩니다.' } }; }
+      settings = next;
+      return { ok: true, value: voices };
     },
   };
 }
