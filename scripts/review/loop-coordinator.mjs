@@ -55,6 +55,14 @@ export function parseLoopConfig(value) {
     const cutoff = obj(c.direct_history_cutoff);
     ensure(Object.keys(cutoff).sort().join(',') === 'approval,count,fingerprint' && Number.isSafeInteger(cutoff.count) && cutoff.count > 0 && cutoff.count <= 1000 && HASH.test(cutoff.fingerprint ?? '') && typeof cutoff.approval === 'string' && cutoff.approval.length > 0 && cutoff.approval.length <= 500, 'invalid_direct_cutoff');
   }
+  if (c.manual_cloud_receipts !== undefined) {
+    ensure(Array.isArray(c.manual_cloud_receipts) && c.manual_cloud_receipts.length <= 10, 'invalid_manual_cloud_receipts');
+    const identities = new Set();
+    for (const receipt of c.manual_cloud_receipts) {
+      ensure(receipt && Object.keys(receipt).sort().join(',') === 'base,diff_hash,head,merged,pr,task_hash,updated_at' && HASH.test(receipt.task_hash ?? '') && HASH.test(receipt.diff_hash ?? '') && [receipt.base, receipt.head, receipt.merged].every(x => SHA.test(x ?? '')) && number(receipt.pr) && typeof receipt.updated_at === 'string' && Number.isFinite(Date.parse(receipt.updated_at)) && !identities.has(receipt.task_hash), 'invalid_manual_cloud_receipts');
+      identities.add(receipt.task_hash);
+    }
+  }
   if (c.next_decision !== undefined) ensure(typeof c.next_decision === 'string' && c.next_decision.length > 0 && c.next_decision.length <= 2000, 'invalid_next_decision');
   const ids = new Set(), prs = new Set();
   for (const t of c.tasks) {

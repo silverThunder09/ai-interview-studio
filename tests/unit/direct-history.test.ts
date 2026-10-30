@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
+import { GitHub } from '../../scripts/review/event-worker';
 import { installDirectInventory, createDirectHistoryVerifier } from '../../scripts/review/direct-history.mjs';
 import { dispatchApprovedCloud } from '../../scripts/review/direct-cloud.mjs';
 import { runDirectTick } from '../../scripts/review/direct-tick.mjs';
@@ -181,6 +182,49 @@ describe('one-shot direct coordinator', () => {
 });
 
 describe('direct Cloud history inventory', () => {
+  it('uses a GitHub compare path accepted by the real client without weakening traversal rejection', async () => {
+    const fetchMock = vi.fn(async () => new Response('{}', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      const api = new GitHub('synthetic');
+      await expect(api.request('GET', `/compare/${sha('4')}%2E%2E%2E${sha('5')}`)).resolves.toEqual({});
+      await expect(api.request('GET', `/compare/${sha('4')}...${sha('5')}`)).rejects.toThrow('Invalid API path');
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    } finally { vi.unstubAllGlobals(); }
+  });
+  it('recognizes only a specifically recorded manually adapted result with matching merged PR and diff', async () => {
+    const f = fixture(); await installDirectInventory(f.options);
+    const task = { ...historical[0]!, id: 'task_manual' }, patch = 'synthetic manual diff';
+    const digest = (value: string) => createHash('sha256').update(value).digest('hex');
+    const receipt = { task_hash: digest(task.id), diff_hash: digest(patch), updated_at: task.updated_at, pr: 90, head: sha('4'), base: sha('5'), merged: sha('6') };
+    const approved = { ...later, manual_cloud_receipts: [receipt] }, state = nextState(f.store.state, approved);
+    const pr = { merged: true, merge_commit_sha: receipt.merged, head: { sha: receipt.head }, base: { ref: 'main', repo: { full_name: repo } } };
+    const merge = { sha: receipt.merged, parents: [{ sha: receipt.base }] };
+    const ancestry = { status: 'ahead', base_commit: { sha: receipt.merged }, merge_base_commit: { sha: receipt.merged } };
+    const api = { request: async (method: string, path: string) => {
+      if (path === '/pulls/90') return pr;
+      if (path === `/git/commits/${receipt.merged}`) return merge;
+      if (path === `/compare/${receipt.merged}%2E%2E%2E${sha('1')}`) return ancestry;
+      return f.api.request(method, path);
+    } };
+    const list = vi.fn(async () => [task]), diff = vi.fn(async () => patch);
+    const verify = createDirectHistoryVerifier({ api, config: approved, list, diff });
+    await expect(verify({ task: state.tasks[1], state })).resolves.toBe(true);
+    expect(diff).toHaveBeenCalledWith(task.id);
+    diff.mockResolvedValueOnce('changed result');
+    await expect(verify({ task: state.tasks[1], state })).rejects.toThrow('manual_cloud_receipt_mismatch');
+    pr.merged = false;
+    await expect(verify({ task: state.tasks[1], state })).rejects.toThrow('manual_cloud_receipt_mismatch');
+    pr.merged = true; merge.parents[0]!.sha = sha('7');
+    await expect(verify({ task: state.tasks[1], state })).rejects.toThrow('manual_cloud_receipt_mismatch');
+    merge.parents[0]!.sha = receipt.base; ancestry.merge_base_commit.sha = sha('7');
+    await expect(verify({ task: state.tasks[1], state })).rejects.toThrow('manual_cloud_receipt_mismatch');
+    ancestry.merge_base_commit.sha = receipt.merged;
+    list.mockResolvedValueOnce([{ ...task, status: 'error' }]);
+    await expect(verify({ task: state.tasks[1], state })).rejects.toThrow('manual_cloud_receipt_mismatch');
+    list.mockResolvedValueOnce([task]).mockResolvedValueOnce([task, { ...task, id: 'task_unrecognized' }]);
+    await expect(verify({ task: state.tasks[1], state })).rejects.toThrow('cloud_history_changed');
+  });
   it('records only the exact user-approved terminal snapshot without claiming the results were consumed', async () => {
     const f = fixture(), before = structuredClone(f.store.state.tasks);
     const saved = historical.map(({ id, status, attempt_total, updated_at }) => ({ id, status, attempt_total, updated_at }));
@@ -321,7 +365,7 @@ describe('verified direct history continuation', () => {
     const diff = vi.fn(async () => patch);
     const api = { async request(method: string, path: string): Promise<unknown> {
       if (path === '/pulls/81') return { merged: true, merge_commit_sha: sha('6'), head: { sha: sha('5') }, base: { ref: 'main', repo: { full_name: repo } } };
-      if (path === `/compare/${sha('4')}...${sha('5')}`) return { status: 'ahead', base_commit: { sha: sha('4') }, merge_base_commit: { sha: sha('4') } };
+      if (path === `/compare/${sha('4')}%2E%2E%2E${sha('5')}`) return { status: 'ahead', base_commit: { sha: sha('4') }, merge_base_commit: { sha: sha('4') } };
       if (path === `/git/commits/${sha('3')}`) return { sha: sha('3'), tree: { sha: sha('7') } };
       if (path === `/git/commits/${sha('4')}`) return { sha: sha('4'), tree: { sha: sha('8') }, parents: [{ sha: sha('3') }] };
       if (path === `/git/trees/${sha('7')}?recursive=1`) return tree(priorBlob);
