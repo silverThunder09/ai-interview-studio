@@ -62,6 +62,21 @@ export function createDirectHistoryVerifier({ api, config, list = cloudTasks, di
     ensure(inventory && index >= inventory.queue_ids.length && state.tasks[index].phase === 'development' && state.tasks[index].request?.request_key === task.request?.request_key && KEY.test(task.request?.request_key ?? '') && task.delivery?.attempted === false && task.direct_cloud === undefined, 'direct_history_unverified');
     const expected = new Map(inventory.tasks.map(t => [t.id, t]));
     const firstRaw = await list(), first = terminalSnapshot(firstRaw);
+    // Separately record a manually adapted result without asserting that its
+    // Cloud patch was applied verbatim or changing the historical inventory.
+    for (const receipt of c.manual_cloud_receipts ?? []) {
+      const matches = first.filter(t => createHash('sha256').update(t.id).digest('hex') === receipt.task_hash);
+      ensure(matches.length === 1 && !expected.has(matches[0].id) && matches[0].status === 'ready' && matches[0].attempt_total === 1 && matches[0].updated_at === receipt.updated_at, 'manual_cloud_receipt_mismatch');
+      const pr = await api.request('GET', `/pulls/${receipt.pr}`);
+      ensure(pr.merged === true && pr.merge_commit_sha === receipt.merged && pr.head?.sha === receipt.head && pr.base?.repo?.full_name === c.repository && pr.base.ref === 'main', 'manual_cloud_receipt_mismatch');
+      const merge = await api.request('GET', `/git/commits/${receipt.merged}`);
+      ensure(merge?.sha === receipt.merged && merge.parents?.length === 1 && merge.parents[0].sha === receipt.base, 'manual_cloud_receipt_mismatch');
+      const ancestry = await api.request('GET', `/compare/${receipt.merged}%2E%2E%2E${task.request.base_sha}`);
+      ensure(['identical', 'ahead'].includes(ancestry?.status) && ancestry.base_commit?.sha === receipt.merged && ancestry.merge_base_commit?.sha === receipt.merged, 'manual_cloud_receipt_mismatch');
+      const patch = await diff(matches[0].id);
+      ensure(typeof patch === 'string' && patch.length > 0 && createHash('sha256').update(patch).digest('hex') === receipt.diff_hash, 'manual_cloud_receipt_mismatch');
+      expected.set(matches[0].id, matches[0]);
+    }
     for (let i = inventory.queue_ids.length; i < index; i++) {
       const prior = state.tasks[i], definition = c.tasks[i];
       ensure(prior.phase === 'completed' && SHA.test(prior.merged ?? '') && SHA.test(prior.head ?? '') && Array.isArray(prior.direct_history) && prior.direct_history.length > 0 && prior.direct_cloud === undefined, 'direct_history_unverified');
@@ -70,7 +85,7 @@ export function createDirectHistoryVerifier({ api, config, list = cloudTasks, di
       for (const entry of prior.direct_history) {
         const direct = entry.direct_cloud, observed = first.find(t => t.id === direct.task_id), identity = firstRaw.find(t => t.id === direct.task_id);
         ensure(!expected.has(direct.task_id) && observed?.status === 'ready' && observed.attempt_total === 1 && (identity.environment_id === null || identity.environment_id === direct.environment), 'direct_history_unverified');
-        const ancestry = await api.request('GET', `/compare/${entry.applied.sha}...${prior.head}`);
+        const ancestry = await api.request('GET', `/compare/${entry.applied.sha}%2E%2E%2E${prior.head}`);
         ensure(['identical', 'ahead'].includes(ancestry?.status) && ancestry.base_commit?.sha === entry.applied.sha && ancestry.merge_base_commit?.sha === entry.applied.sha, 'direct_history_unverified');
         const original = await api.request('GET', `/git/commits/${entry.applied.parent}`);
         const applied = await api.request('GET', `/git/commits/${entry.applied.sha}`);
