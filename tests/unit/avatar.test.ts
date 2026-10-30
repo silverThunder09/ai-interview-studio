@@ -45,6 +45,12 @@ describe('bounded, offline avatar import', () => {
       actor.update(0.08, 0.016, true, false);
       expect(target?.morphTargetInfluences?.[0]).toBeGreaterThan(0.9);
       expect(target?.morphTargetInfluences?.[1]).toBeGreaterThan(0.1);
+      actor.update(0.08, 0.016, true, false, 0);
+      expect(target?.morphTargetInfluences?.[1]).toBe(0);
+      actor.update(0.08, 0.016, true, false, 0.7);
+      expect(target?.morphTargetInfluences?.[1]).toBe(0.7);
+      actor.update(0.08, 0.016, false, false, 0.7);
+      expect(target?.morphTargetInfluences?.[1]).toBe(0);
       actor.update(1, 0.016, false, true); expect(target?.morphTargetInfluences).toEqual([0, 0]);
       const disposed = vi.fn(); target!.geometry.addEventListener('dispose', disposed);
       actor.dispose(); expect(disposed).toHaveBeenCalledOnce(); expect(actor.root.children).toHaveLength(0);

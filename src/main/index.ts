@@ -11,6 +11,7 @@ import { InterviewService } from './interview-service';
 import { AICredentials, createAIHandlers, InterviewProviderRouter } from './external-ai';
 import { createVoiceHandlers, VoiceService } from './voice';
 import { createSpeechHandlers, SpeechService } from './speech';
+import { createLocalSpeechHandlers, LocalSpeechService } from './local-speech';
 import { AvatarModels } from './avatar';
 import { APP_URL, assetPath, DEVELOPMENT_CSP, developmentURL, isTrustedSender, PRODUCTION_CSP } from './policy';
 
@@ -32,6 +33,8 @@ async function start(): Promise<void> {
   const voice = createVoiceHandlers(voiceService);
   const speechService = new SpeechService(store, credentials);
   const speech = createSpeechHandlers(speechService);
+  const localSpeechService = new LocalSpeechService(store);
+  const localSpeech = createLocalSpeechHandlers(localSpeechService);
   const avatars = new AvatarModels(join(app.getPath('userData'), 'avatar-models'), async () => {
     if (!window) throw new Error('Window unavailable');
     const selected = await dialog.showOpenDialog(window, {
@@ -41,7 +44,7 @@ async function start(): Promise<void> {
     return selected.canceled ? undefined : selected.filePaths[0];
   });
   const ai = createAIHandlers(credentials, () => { interview.cancelPending(); voiceService.cancel(); speechService.cancel(); });
-  app.on('will-quit', () => { speechService.cancel(); voiceService.cancel(); interview.close(); credentials.clearAll(); interviewStore?.close(); });
+  app.on('will-quit', () => { localSpeechService.cancel(); speechService.cancel(); voiceService.cancel(); interview.close(); credentials.clearAll(); interviewStore?.close(); });
   const selectResume = createResumeSelector(async () => {
     if (!window) throw new Error('Window unavailable');
     const selected = await dialog.showOpenDialog(window, {
@@ -72,7 +75,7 @@ async function start(): Promise<void> {
   });
   for (const [channel, handle] of [
     [CHANNELS.avatarSelect, avatars.select], [CHANNELS.avatarGet, avatars.get], [CHANNELS.avatarCommit, avatars.commit], [CHANNELS.avatarReset, avatars.reset],
-    [CHANNELS.snapshot, handlers.snapshot], [CHANNELS.settings, handlers.update], [CHANNELS.avatarQuality, handlers.avatarQuality],
+    [CHANNELS.snapshot, handlers.snapshot], [CHANNELS.settings, handlers.update], [CHANNELS.avatarQuality, handlers.avatarQuality], [CHANNELS.localSpeechVoices, handlers.localSpeechVoices],
     [CHANNELS.resume, selectResume],
     [CHANNELS.interviewHistory, interview.history], [CHANNELS.interviewGet, interview.get],
     [CHANNELS.interviewStart, interview.start], [CHANNELS.interviewAnswer, interview.answer],
@@ -83,6 +86,7 @@ async function start(): Promise<void> {
     [CHANNELS.aiPreferences, ai.preferences],
     [CHANNELS.voiceBegin, voice.begin], [CHANNELS.voiceStop, voice.stop], [CHANNELS.voiceCancel, voice.cancel],
     [CHANNELS.voiceTranscribe, voice.transcribe], [CHANNELS.voiceStatus, voice.status],
+    [CHANNELS.localSpeechGenerate, localSpeech.generate], [CHANNELS.localSpeechCancel, localSpeech.cancel], [CHANNELS.localSpeechStatus, localSpeech.status],
     [CHANNELS.speechGenerate, speech.generate], [CHANNELS.speechCancel, speech.cancel], [CHANNELS.speechStatus, speech.status],
   ] as const) {
     ipcMain.handle(channel, (event, ...args: unknown[]): Result<unknown> | Promise<Result<unknown>> => {
@@ -91,9 +95,10 @@ async function start(): Promise<void> {
           !isTrustedSender(frame.url, entry, frame === window.webContents.mainFrame)) {
         return { ok: false, error: { code: 'UNAUTHORIZED', message: '허용되지 않은 요청입니다.' } };
       }
-      if ([CHANNELS.interviewAnswer, CHANNELS.interviewDelete, CHANNELS.interviewDeleteAll].some(value => value === channel)) { voiceService.cancel(); speechService.cancel(); }
-      if (channel === CHANNELS.voiceBegin) speechService.cancel();
-      if (channel === CHANNELS.speechGenerate) voiceService.cancel();
+      if ([CHANNELS.interviewAnswer, CHANNELS.interviewDelete, CHANNELS.interviewDeleteAll].some(value => value === channel)) { voiceService.cancel(); speechService.cancel(); localSpeechService.cancel(); }
+      if (channel === CHANNELS.voiceBegin) { speechService.cancel(); localSpeechService.cancel(); }
+      if (channel === CHANNELS.speechGenerate) { voiceService.cancel(); localSpeechService.cancel(); }
+      if (channel === CHANNELS.localSpeechGenerate) { voiceService.cancel(); speechService.cancel(); }
       return handle(args);
     });
   }
@@ -111,7 +116,7 @@ async function start(): Promise<void> {
     window.webContents.on('will-navigate', (event) => event.preventDefault());
     window.webContents.on('will-redirect', (event) => event.preventDefault());
     window.webContents.on('will-attach-webview', (event) => event.preventDefault());
-    window.on('closed', () => { speechService.cancel(); voiceService.cancel(); interview.cancelPending(); credentials.clearAll(); window = null; });
+    window.on('closed', () => { localSpeechService.cancel(); speechService.cancel(); voiceService.cancel(); interview.cancelPending(); credentials.clearAll(); window = null; });
     void window.loadURL(entry).catch(() => {
       dialog.showErrorBox('시작 실패', '앱 화면을 불러오지 못했습니다. 앱을 다시 실행해 주세요.');
       app.exit(1);
