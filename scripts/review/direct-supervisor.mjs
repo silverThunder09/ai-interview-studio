@@ -7,6 +7,7 @@ import { runResultRunner } from './direct-result-runner.mjs';
 export async function runSupervisor({ token, environment, discover = readRecordedCloudTask, capacity = runCapacityRunner, resultRunner = runResultRunner, report = () => {} }) {
   const recorded = await discover({ token });
   if (recorded.state === 'hold') return { state: 'resumption-hold' };
+  if (recorded.state === 'processing') return { state: 'waiting-actions' };
   if (recorded.state === 'sent') return resultRunner({ token, environment, taskId: recorded.task_id, report });
   if (recorded.state !== 'none') return { state: 'resumption-hold' };
   const result = await capacity({ token, environment, report });

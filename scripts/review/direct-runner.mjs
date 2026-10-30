@@ -13,6 +13,14 @@ const exec = promisify(execFile), SHA = /^[a-f0-9]{40}$/, ENV = /^[a-zA-Z0-9][a-
 function ensure(value, code) { if (!value) throw new Error(code); }
 async function git(args) { return (await exec('git', args, { timeout: 15000, maxBuffer: 1024 * 1024, windowsHide: true })).stdout.trim(); }
 
+export function recordedCloudTask(state) {
+  const task = state.tasks.find(t => t.phase !== 'completed');
+  if (task && ['apply', 'ci', 'review', 'merge', 'main-ci'].includes(task.phase)) return { state: 'processing' };
+  if (!task?.direct_cloud) return { state: 'none' };
+  if (task.phase !== 'development' || task.direct_cloud.phase !== 'sent') return { state: 'hold' };
+  return { state: 'sent', task_id: task.direct_cloud.task_id };
+}
+
 /** Discover only a receipt in the trusted journal after a process restart. */
 export async function readRecordedCloudTask({ token, root = process.cwd() }) {
   ensure(typeof token === 'string' && token.length > 0, 'missing_runner_context');
@@ -27,10 +35,7 @@ export async function readRecordedCloudTask({ token, root = process.cwd() }) {
   // performs the guarded append only after recovery has ruled out a receipt.
   const state = appendApprovedTasks((await new LoopStore(api, config).readSnapshot()).state, config);
   ensure((await api.request('GET', '/branches/main')).commit.sha === head, 'trusted_main_moved');
-  const task = state.tasks.find(t => t.phase !== 'completed');
-  if (!task?.direct_cloud) return { state: 'none' };
-  if (task.phase !== 'development' || task.direct_cloud.phase !== 'sent') return { state: 'hold' };
-  return { state: 'sent', task_id: task.direct_cloud.task_id };
+  return recordedCloudTask(state);
 }
 
 /** No checkout or token manipulation; fail closed if local main is not trusted. */

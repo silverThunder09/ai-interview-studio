@@ -1,1 +1,2 @@
 export function runDirectRunner(input: { token: string; environment: string; root?: string; expectedRequestKey?: string }): Promise<{ state: string; reason?: string; request_key?: string; task_id?: string; changes?: number; credential_cleanup?: string; actions_writer?: { state: string; reason?: string; run_id?: number } }>;
+export function recordedCloudTask(state: { tasks: { phase: string; direct_cloud?: { phase: string; task_id: string | null } }[] }): { state: string; task_id?: string | null };
