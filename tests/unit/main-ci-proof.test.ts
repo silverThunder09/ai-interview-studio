@@ -49,6 +49,11 @@ describe('current main CI proof', () => {
     await expect(verifyNativeMainCI({ api: f.api, main: sha })).rejects.toThrow('main_ci_not_successful');
     expect(await readActionsMainCIEvidence({ api: f.api, main: sha })).toMatchObject({ state: 'hold' });
   });
+  it('does not ignore a newer manually dispatched failed main check', async () => {
+    const f = fixture(); f.runs.push({ ...native(13, '.github/workflows/ci.yml'), event: 'workflow_dispatch', conclusion: 'failure', updated_at: '2026-10-30T00:03:00Z' });
+    await expect(verifyNativeMainCI({ api: f.api, main: sha })).rejects.toThrow('main_ci_not_successful');
+    expect(await readActionsMainCIEvidence({ api: f.api, main: sha })).toMatchObject({ state: 'hold' });
+  });
   it('holds when a native rerun is newer than the proof or main changes', async () => {
     const f = fixture(); f.runs[0]!.updated_at = '2026-10-30T00:03:00Z';
     expect(await readActionsMainCIEvidence({ api: f.api, main: sha })).toMatchObject({ state: 'hold', reason: 'native_ci_newer_or_failed' });

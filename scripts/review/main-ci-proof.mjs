@@ -12,7 +12,7 @@ const validId = n => Number.isSafeInteger(n) && n > 0;
 function ensure(value, code) { if (!value) throw new Error(code); }
 
 export function selectNativeMainRun(runs, path, main) {
-  const matches = runs.filter(r => r.path === path && r.event === 'push' && r.head_sha === main && r.head_branch === 'main' && r.repository?.full_name === REPO && r.head_repository?.full_name === REPO);
+  const matches = runs.filter(r => r.path === path && ['push', 'workflow_dispatch'].includes(r.event) && r.head_sha === main && r.head_branch === 'main' && r.repository?.full_name === REPO && r.head_repository?.full_name === REPO);
   ensure(matches.length && matches.every(r => validId(r.id) && validId(r.run_attempt) && Number.isFinite(Date.parse(r.updated_at))), 'main_ci_missing');
   matches.sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at) || b.id - a.id);
   return matches[0];
@@ -20,7 +20,7 @@ export function selectNativeMainRun(runs, path, main) {
 
 export async function verifyNativeMainCI({ api, main }) {
   ensure(SHA.test(main ?? '') && (await api.request('GET', '/branches/main'))?.commit?.sha === main, 'main_changed');
-  const list = () => api.pagesObject(`/actions/runs?event=push&branch=main&head_sha=${main}`, 'workflow_runs');
+  const list = () => api.pagesObject(`/actions/runs?branch=main&head_sha=${main}`, 'workflow_runs');
   const runs = await list();
   for (const [path, name] of TYPES) {
     const selected = selectNativeMainRun(runs, path, main);

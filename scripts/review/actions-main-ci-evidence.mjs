@@ -16,7 +16,7 @@ export async function readActionsMainCIEvidence({ api, main }) {
   const selected = select(await list());
   if (!selected) return { state: 'hold', reason: 'proof_missing' };
   if (!Number.isFinite(Date.parse(selected.created_at))) return { state: 'hold', reason: 'invalid_proof_time' };
-  const native = () => api.pagesObject(`/actions/runs?event=push&branch=main&head_sha=${main}`, 'workflow_runs');
+  const native = () => api.pagesObject(`/actions/runs?branch=main&head_sha=${main}`, 'workflow_runs');
   const nativeRuns = await native();
   try {
     for (const path of ['.github/workflows/ci.yml', '.github/workflows/windows-build.yml']) {
