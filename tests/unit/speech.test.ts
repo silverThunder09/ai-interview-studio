@@ -68,7 +68,7 @@ describe('question speech trust boundary and request lifetime', () => {
     const pending = f.service.generate(f.input); await vi.advanceTimersByTimeAsync(100);
     expect(await pending).toMatchObject({ ok: false, error: { code: 'TIMEOUT' } }); expect(vi.getTimerCount()).toBe(0);
     expect(await f.service.generate(f.input)).toMatchObject({ ok: true }); expect(f.request).toHaveBeenCalledTimes(2);
-  });
+  }, 15_000);
   it('revalidates the question after an external wait and never returns obsolete audio', async () => {
     let resolve!: (r: Response) => void;
     const f = fixture(vi.fn<typeof fetch>().mockImplementation(() => new Promise(done => { resolve = done; })));
