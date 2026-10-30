@@ -104,6 +104,16 @@ describe('one-shot direct coordinator', () => {
     await expect(runDirectTick({ api: f.api, store: f.store, config: { ...later, pr_auth: 'github-app' }, policy: tickPolicy, environment: 'env_1', now: () => 1000000, cloud: { list: f.list, limits: tickLimits, launch } })).resolves.toEqual({ state: 'writer-hold', reason: 'unavailable' });
     expect(launch).not.toHaveBeenCalled();
   });
+  it('uses verified Actions writer readiness before a new submission', async () => {
+    const f = fixture(); await installDirectInventory(f.options);
+    f.store.state = nextState(f.store.state); f.store.validationConfig = later;
+    const launch = vi.fn(async () => ({ id: 'task_new' }));
+    const baseOptions = { api: f.api, store: f.store, config: { ...later, pr_auth: 'github-app' }, policy: tickPolicy, environment: 'env_1', now: () => 1000000 };
+    await expect(runDirectTick({ ...baseOptions, cloud: { list: f.list, limits: tickLimits, launch, actionsWriterReady: async () => { throw new Error('unknown'); } } })).resolves.toEqual({ state: 'writer-hold', reason: 'unavailable' });
+    expect(launch).not.toHaveBeenCalled();
+    await expect(runDirectTick({ ...baseOptions, cloud: { list: f.list, limits: tickLimits, launch, actionsWriterReady: async () => true } })).resolves.toEqual({ state: 'sent', task_id: 'task_new' });
+    expect(launch).toHaveBeenCalledTimes(1);
+  });
   it('keeps a sent task intact when the existing GitHub App writer is unavailable', async () => {
     const f = fixture(); await installDirectInventory(f.options);
     f.store.state = nextState(f.store.state); f.store.validationConfig = later;

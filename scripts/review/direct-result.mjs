@@ -81,5 +81,5 @@ export async function inspectDirectResult({ api, store, config, taskId, list = c
   await check();
   const current = await store.load();
   ensure(current.head === snap.head, 'cloud_result_state_changed');
-  return { state: 'candidate', task_id: direct.task_id, head_sha: task.request.head_sha, base_sha: task.request.base_sha, files };
+  return { state: 'candidate', task_id: direct.task_id, head_sha: task.request.head_sha, base_sha: task.request.base_sha, files, patch };
 }

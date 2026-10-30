@@ -1,7 +1,9 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 import { inspectDirectResult } from '../../scripts/review/direct-result.mjs';
-import { approvedDevelopmentBody, emptyLoopState } from '../../scripts/review/loop-coordinator.mjs';
+import { checkpointDirectResult, wakeCheckpointedResult } from '../../scripts/review/direct-handoff.mjs';
+import { runDirectTick } from '../../scripts/review/direct-tick.mjs';
+import { approvedDevelopmentBody, emptyLoopState, parseLoopState, preserveDirectCloud, type LoopState } from '../../scripts/review/loop-coordinator.mjs';
 
 const repo = 'silverThunder09/ai-interview-studio';
 const sha = (n: string) => n.repeat(40), key = 'a'.repeat(64);
@@ -16,7 +18,12 @@ function fixture() {
   Object.assign(state.tasks[0]!, { phase: 'development', branch: 'work/a', request,
     delivery: { phase: 'sending', hash: createHash('sha256').update(body).digest('hex'), body, id: null, attempted: true },
     direct_cloud: { request_key: key, environment: 'env_1', branch: 'work/a', phase: 'sent', task_id: 'task_one' } });
-  const store = { state, head: 'original', async load() { return { head: this.head, state: structuredClone(this.state) }; } };
+  const store = { state, head: 'original', async load() { return { head: this.head, state: structuredClone(this.state) }; },
+    async save(old: { head: string }, next: LoopState) {
+      if (old.head !== this.head) throw new Error('loop_cas_conflict');
+      parseLoopState(next, config); preserveDirectCloud(this.state.tasks[0]!, next.tasks[0]!);
+      this.state = structuredClone(next); this.head += 'x'; return this.load();
+    } };
   const calls: string[] = [];
   const api = { async request(method: string, path: string): Promise<unknown> {
     calls.push(method + ' ' + path);
@@ -94,5 +101,61 @@ describe('direct Cloud result inspection', () => {
     };
     f.diff.mockResolvedValue(patch.replace('@@ -1 +1 @@', '@@ -2 +2 @@'));
     expect(await inspectDirectResult(f.options)).toMatchObject({ state: 'candidate', files: [{ path: 'src/a.ts', content: '\ufeffkeep\nafter\n' }] });
+  });
+});
+
+describe('Cloud result handoff', () => {
+  it('resumes only the recorded task and delivers it through the Actions writer', async () => {
+    const f = fixture(), request = f.api.request;
+    const dispatch = vi.fn(async () => ({}));
+    f.api.request = async (method, path) => method === 'POST' && path === '/actions/workflows/approved-loop.yml/dispatches' ? dispatch() : request(method, path);
+    const policy = { repository: repo, max_prs_per_run: 2, max_fix_cycles: 3, protected_paths: [], required_checks: ['checks', 'package', 'pr-policy'] };
+    const options = { api: f.api, store: f.store, config: { ...config, pr_auth: 'github-app' }, policy, environment: 'env_1', cloud: { list: f.list, diff: f.diff } };
+    expect(await runDirectTick({ ...options, expectedCloudTaskId: 'task_other' })).toEqual({ state: 'resumption-hold' });
+    expect(await runDirectTick({ ...options, expectedCloudTaskId: 'task_one' })).toEqual({ state: 'wakeup-sent' });
+    expect(await runDirectTick({ ...options, expectedCloudTaskId: 'task_one' })).toEqual({ state: 'wakeup-pending' });
+    expect(dispatch).toHaveBeenCalledTimes(1);
+  });
+  it('checkpoints a validated result and wakes Actions only once', async () => {
+    const f = fixture();
+    expect(await checkpointDirectResult(f.options)).toEqual({ state: 'checkpointed' });
+    expect(f.store.state.tasks[0]!.direct_result).toMatchObject({ task_id: 'task_one', request_key: key, patch, wake_attempted: false });
+    const dispatch = vi.fn(async () => ({}));
+    const wake = { ...f.options, api: { request: dispatch } };
+    expect(await wakeCheckpointedResult(wake)).toEqual({ state: 'wakeup-sent' });
+    expect(await wakeCheckpointedResult(wake)).toEqual({ state: 'wakeup-pending' });
+    expect(dispatch).toHaveBeenCalledTimes(1);
+  });
+  it('holds ambiguous delivery and never automatically dispatches it again', async () => {
+    const f = fixture(); await checkpointDirectResult(f.options);
+    const dispatch = vi.fn(async () => { throw new Error('lost_response'); });
+    const wake = { ...f.options, api: { request: dispatch } };
+    expect(await wakeCheckpointedResult(wake)).toEqual({ state: 'wakeup-unknown' });
+    expect(await wakeCheckpointedResult(wake)).toEqual({ state: 'wakeup-pending' });
+    expect(dispatch).toHaveBeenCalledTimes(1);
+  });
+  it('allows at most one wake when two runners race', async () => {
+    const f = fixture(); await checkpointDirectResult(f.options);
+    const dispatch = vi.fn(async () => ({}));
+    const wake = { ...f.options, api: { request: dispatch } };
+    await Promise.allSettled([wakeCheckpointedResult(wake), wakeCheckpointedResult(wake)]);
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    expect(f.store.state.tasks[0]!.direct_result).toMatchObject({ wake_attempted: true });
+  });
+  it('does not checkpoint an unknown failure or a changed state', async () => {
+    const f = fixture(); f.list.mockResolvedValue([{ id: 'task_one', status: 'error', known_status: true, environment_id: 'env_1', attempt_total: 1 }]);
+    expect(await checkpointDirectResult(f.options)).toEqual({ state: 'hold_unknown_failure' });
+    expect(f.store.state.tasks[0]!.direct_result).toBeUndefined();
+    const changed = fixture(); changed.diff.mockImplementation(async () => { changed.store.head = 'moved'; return patch; });
+    await expect(checkpointDirectResult(changed.options)).rejects.toThrow('cloud_result_state_changed');
+    expect(changed.store.state.tasks[0]!.direct_result).toBeUndefined();
+  });
+  it('refuses a modified checkpoint or rollback of a recorded wake', async () => {
+    const f = fixture(); await checkpointDirectResult(f.options);
+    const original = structuredClone(f.store.state.tasks[0]!);
+    const modified = structuredClone(original); (modified.direct_result as { patch: string }).patch = 'changed';
+    expect(() => preserveDirectCloud(original, modified)).toThrow('direct_result_history_changed');
+    const awakened = structuredClone(original); (awakened.direct_result as { wake_attempted: boolean }).wake_attempted = true;
+    expect(() => preserveDirectCloud(awakened, original)).toThrow('direct_result_history_changed');
   });
 });
