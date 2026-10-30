@@ -4,6 +4,10 @@ import { isInterviewId } from './interview';
 
 export const SPEECH_LIMITS = Object.freeze({ textChars: 1_500, bytes: 8 * 1024 * 1024, timeoutMs: 30_000, playbackMs: 90_000 });
 export interface LocalSpeechVoice { id: string; name: string; culture: string }
+export interface LocalSpeechVoices { a: string; b: string }
+export function isLocalSpeechVoices(value: unknown): value is LocalSpeechVoices {
+  return exactRecord(value, ['a', 'b']) && [value.a, value.b].every(v => typeof v === 'string' && v.length > 0 && v.length <= 200 && !v.includes('\0'));
+}
 export interface SpeechRequest { operationId: string; sessionId: string; questionId: string; preview: string; speakerId: AvatarSlot; voiceId: string }
 export interface SpeechStatus { available: boolean; voices: LocalSpeechVoice[] }
 export function isSpeechRequest(value: unknown): value is SpeechRequest {

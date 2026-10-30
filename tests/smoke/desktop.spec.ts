@@ -25,7 +25,7 @@ test('desktop starts with secure boundaries, Korean UI and persistent settings',
     expect(await page.evaluate(() => ({
       require: typeof Reflect.get(window, 'require'), process: typeof Reflect.get(window, 'process'),
       api: Object.keys(window.studio ?? {}).sort(),
-    }))).toEqual({ require: 'undefined', process: 'undefined', api: ['beginVoice', 'cancelInterviewOperation', 'cancelLocalSpeech', 'cancelSpeech', 'cancelVoice', 'clearAIKey', 'commitAvatar', 'configureAIKey', 'deleteAllInterviews', 'deleteInterview', 'generateLocalSpeech', 'generateSpeech', 'getAIStatus', 'getAvatar', 'getInterview', 'getInterviewHistory', 'getLocalSpeechStatus', 'getSnapshot', 'getSpeechStatus', 'getVoiceStatus', 'resetAvatar', 'selectAvatar', 'selectResume', 'startInterview', 'stopVoice', 'submitInterviewAnswer', 'transcribeVoice', 'updateAIPreferences', 'updateAvatarQuality', 'updateSettings'] });
+    }))).toEqual({ require: 'undefined', process: 'undefined', api: ['beginVoice', 'cancelInterviewOperation', 'cancelLocalSpeech', 'cancelSpeech', 'cancelVoice', 'clearAIKey', 'commitAvatar', 'configureAIKey', 'deleteAllInterviews', 'deleteInterview', 'generateLocalSpeech', 'generateSpeech', 'getAIStatus', 'getAvatar', 'getInterview', 'getInterviewHistory', 'getLocalSpeechStatus', 'getSnapshot', 'getSpeechStatus', 'getVoiceStatus', 'resetAvatar', 'selectAvatar', 'selectResume', 'startInterview', 'stopVoice', 'submitInterviewAnswer', 'transcribeVoice', 'updateAIPreferences', 'updateAvatarQuality', 'updateLocalSpeechVoices', 'updateSettings'] });
     const localSpeech = await page.evaluate(() => window.studio!.getLocalSpeechStatus());
     expect(localSpeech.ok).toBe(true);
     if (localSpeech.ok) {

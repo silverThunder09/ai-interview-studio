@@ -2,7 +2,7 @@ import type { SelectedResume } from './resume';
 import type { AvatarAsset, AvatarSlot, StagedAvatar } from './avatar';
 import type { VoiceRequest, VoiceStart, VoiceStatus } from './voice';
 import type { SpeechRequest, SpeechStatus } from './speech';
-import type { SpeechRequest as LocalSpeechRequest, SpeechStatus as LocalSpeechStatus } from './local-speech';
+import { isLocalSpeechVoices, type LocalSpeechVoices, type SpeechRequest as LocalSpeechRequest, type SpeechStatus as LocalSpeechStatus } from './local-speech';
 import type { AIPreferences, AIKeyRequest, AIProvider, AIStatus } from './ai';
 import type { DeleteAllInterviewsRequest, DeleteInterviewRequest, InterviewHistory, InterviewSession, SharedContextPreview, SharedContextPreviewRequest, StartInterviewRequest, SubmitAnswerRequest } from './interview';
 
@@ -20,12 +20,13 @@ export const CHANNELS = {
   voiceBegin: 'studio:voice-begin', voiceStop: 'studio:voice-stop', voiceCancel: 'studio:voice-cancel',
   voiceTranscribe: 'studio:voice-transcribe', voiceStatus: 'studio:voice-status',
   localSpeechGenerate: 'studio:local-speech-generate', localSpeechCancel: 'studio:local-speech-cancel', localSpeechStatus: 'studio:local-speech-status',
+  localSpeechVoices: 'studio:local-speech-voices',
   speechGenerate: 'studio:speech-generate', speechCancel: 'studio:speech-cancel', speechStatus: 'studio:speech-status',
 } as const;
 export const THEMES = ['system', 'light', 'dark'] as const;
 export type Theme = (typeof THEMES)[number];
 export type AvatarQuality = 'low' | 'standard';
-export interface Settings { locale: 'ko-KR'; theme: Theme; interviewRole: 'backend'; avatarQuality?: AvatarQuality }
+export interface Settings { locale: 'ko-KR'; theme: Theme; interviewRole: 'backend'; avatarQuality?: AvatarQuality; localSpeechVoices?: LocalSpeechVoices }
 export const DEFAULT_SETTINGS: Readonly<Settings> = Object.freeze({
   locale: 'ko-KR', theme: 'system', interviewRole: 'backend',
 });
@@ -62,6 +63,7 @@ export interface DesktopAPI {
   generateLocalSpeech(request: LocalSpeechRequest): Promise<Result<Uint8Array>>;
   cancelLocalSpeech(operationId: string): Promise<Result<null>>;
   getLocalSpeechStatus(): Promise<Result<LocalSpeechStatus>>;
+  updateLocalSpeechVoices(voices: LocalSpeechVoices): Promise<Result<LocalSpeechVoices>>;
   generateSpeech(request: SpeechRequest): Promise<Result<Uint8Array>>;
   cancelSpeech(operationId: string): Promise<Result<null>>;
   getSpeechStatus(): Promise<Result<SpeechStatus>>;
@@ -71,7 +73,8 @@ export function isSettings(value: unknown): value is Settings {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
   const obj = value as Record<string, unknown>;
   const keys = Object.keys(obj);
-  return (keys.length === 3 || keys.length === 4 && Object.hasOwn(obj, 'avatarQuality')) && keys.every((key) => ['locale', 'theme', 'interviewRole', 'avatarQuality'].includes(key)) &&
+  return keys.length >= 3 && keys.length <= 5 && keys.every((key) => ['locale', 'theme', 'interviewRole', 'avatarQuality', 'localSpeechVoices'].includes(key)) &&
     (!Object.hasOwn(obj, 'avatarQuality') || obj.avatarQuality === 'low' || obj.avatarQuality === 'standard') && obj.locale === 'ko-KR' &&
+    (!Object.hasOwn(obj, 'localSpeechVoices') || isLocalSpeechVoices(obj.localSpeechVoices)) &&
     obj.interviewRole === 'backend' && THEMES.some((theme) => obj.theme === theme);
 }

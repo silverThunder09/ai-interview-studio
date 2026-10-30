@@ -4,7 +4,7 @@ import type { DeleteAllInterviewsRequest, DeleteInterviewRequest, SharedContextP
 import type { AIPreferences, AIKeyRequest, AIProvider } from '../shared/ai';
 import type { VoiceRequest, VoiceStart } from '../shared/voice';
 import type { SpeechRequest } from '../shared/speech';
-import type { SpeechRequest as LocalSpeechRequest } from '../shared/local-speech';
+import type { LocalSpeechVoices, SpeechRequest as LocalSpeechRequest } from '../shared/local-speech';
 import type { AvatarSlot } from '../shared/avatar';
 
 const api: DesktopAPI = Object.freeze({
@@ -38,6 +38,7 @@ const api: DesktopAPI = Object.freeze({
   generateLocalSpeech: (request: LocalSpeechRequest) => ipcRenderer.invoke(CHANNELS.localSpeechGenerate, request),
   cancelLocalSpeech: (id: string) => ipcRenderer.invoke(CHANNELS.localSpeechCancel, id),
   getLocalSpeechStatus: () => ipcRenderer.invoke(CHANNELS.localSpeechStatus),
+  updateLocalSpeechVoices: (voices: LocalSpeechVoices) => ipcRenderer.invoke(CHANNELS.localSpeechVoices, voices),
   generateSpeech: (request: SpeechRequest) => ipcRenderer.invoke(CHANNELS.speechGenerate, request),
   cancelSpeech: (id: string) => ipcRenderer.invoke(CHANNELS.speechCancel, id),
   getSpeechStatus: () => ipcRenderer.invoke(CHANNELS.speechStatus),
