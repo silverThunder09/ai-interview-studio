@@ -87,6 +87,13 @@ describe('one-shot direct coordinator', () => {
     await expect(runDirectTick({ api: f.api, store: f.store, config: later, policy: tickPolicy, environment: 'env_1', now: () => 1000000, cloud: { list: f.list, limits: tickLimits, launch } })).resolves.toEqual({ state: 'main-ci-hold' });
     expect(launch).not.toHaveBeenCalled();
   });
+  it('can use fresh current-main proof when the completed predecessor is older', async () => {
+    const f = fixture(); f.store.state.tasks[0]!.merged = sha('2'); await installDirectInventory(f.options);
+    f.store.state = nextState(f.store.state); f.store.validationConfig = later;
+    const launch = vi.fn(async () => ({ id: 'task_new' })), mainCIReady = vi.fn(async () => true);
+    await expect(runDirectTick({ api: f.api, store: f.store, config: later, policy: tickPolicy, environment: 'env_1', now: () => 1000000, cloud: { list: f.list, limits: tickLimits, launch, mainCIReady } })).resolves.toEqual({ state: 'sent', task_id: 'task_new' });
+    expect(mainCIReady).toHaveBeenCalledTimes(4); expect(launch).toHaveBeenCalledTimes(1);
+  });
   it('rejects weakened CI policy or a stop label before dispatching', async () => {
     const f = fixture(); await installDirectInventory(f.options);
     f.store.state = nextState(f.store.state); f.store.validationConfig = later;
