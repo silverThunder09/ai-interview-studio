@@ -4,7 +4,7 @@ import { pathToFileURL } from 'node:url';
 import { runDirectRunner } from './direct-runner.mjs';
 
 const KEY = /^[a-f0-9]{64}$/;
-const INTERVAL_MS = 5 * 60 * 1000;
+const INTERVAL_MS = 60 * 60 * 1000;
 
 /**
  * This is a foreground process, not a scheduler. It never infers a reset time,

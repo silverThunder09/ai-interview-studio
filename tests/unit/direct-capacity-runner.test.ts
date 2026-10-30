@@ -9,7 +9,7 @@ describe('capacity-limited request resumption', () => {
     const wait = vi.fn(async () => {}), report = vi.fn();
     await expect(runCapacityRunner({ token: 'synthetic', environment: 'env_1', tick, wait, report })).resolves.toEqual({ state: 'sent', task_id: 'task_one' });
     expect(tick).toHaveBeenCalledTimes(2); expect(tick.mock.calls[1]![0]).toMatchObject({ expectedRequestKey: key });
-    expect(wait).toHaveBeenCalledWith(300000);
+    expect(wait).toHaveBeenCalledWith(3600000);
   });
   it.each([
     { state: 'limits-hold', reason: 'unknown' },
