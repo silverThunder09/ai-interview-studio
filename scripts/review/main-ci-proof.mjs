@@ -11,7 +11,7 @@ const CHECKOUT = 'Run actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803'
 const TYPES = [['.github/workflows/ci.yml', 'checks'], ['.github/workflows/windows-build.yml', 'package']];
 const validId = n => Number.isSafeInteger(n) && n > 0;
 function ensure(value, code) { if (!value) throw new Error(code); }
-const DIAGNOSTICS = new Set(['untrusted_context', 'main_changed', 'main_ci_missing', 'main_ci_not_successful', 'main_ci_job_missing', 'main_ci_job_invalid', 'main_checkout_missing', 'main_checkout_invalid', 'main_checkout_unproven', 'main_ci_changed']);
+const DIAGNOSTICS = new Set(['untrusted_context', 'main_changed', 'main_ci_missing', 'main_ci_not_successful', 'main_ci_job_missing', 'main_ci_job_invalid', 'main_checkout_missing', 'main_checkout_invalid', 'main_checkout_unproven', 'main_ci_changed', 'missing_api_page', 'api_pagination_limit', 'job_log_http_error', 'untrusted_job_log_redirect', 'job_log_download_failed']);
 
 /** Never print arbitrary exception text, URLs, headers, credentials or logs. */
 export function mainCIFailure(error) {

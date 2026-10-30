@@ -40,6 +40,7 @@ function fixture() {
 describe('current main CI proof', () => {
   it('records only safe classified failures without changing the hold decision', () => {
     expect(mainCIFailure(new Error('main_checkout_missing'))).toEqual({ state: 'hold', reason: 'main_ci_unavailable', detail: 'main_checkout_missing' });
+    expect(mainCIFailure(new Error('job_log_download_failed'))).toMatchObject({ state: 'hold', detail: 'job_log_download_failed' });
     expect(mainCIFailure(new APIError(502, 'GET /synthetic-private-path'))).toEqual({ state: 'hold', reason: 'main_ci_unavailable', detail: 'github_http_502' });
     expect(mainCIFailure(new Error('synthetic-secret and private URL'))).toEqual({ state: 'hold', reason: 'main_ci_unavailable', detail: 'unclassified' });
     expect(mainCIFailure(null)).toEqual({ state: 'hold', reason: 'main_ci_unavailable', detail: 'unclassified' });
