@@ -4,12 +4,22 @@ import { Buffer } from 'node:buffer';
 import { promisify } from 'node:util';
 import { pathToFileURL } from 'node:url';
 import { REPO, RuntimeAPI } from './loop-coordinator.mjs';
+import { APIError } from './event-worker.ts';
 
 const SHA = /^[a-f0-9]{40}$/;
 const CHECKOUT = 'Run actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803';
 const TYPES = [['.github/workflows/ci.yml', 'checks'], ['.github/workflows/windows-build.yml', 'package']];
 const validId = n => Number.isSafeInteger(n) && n > 0;
 function ensure(value, code) { if (!value) throw new Error(code); }
+const DIAGNOSTICS = new Set(['untrusted_context', 'main_changed', 'main_ci_missing', 'main_ci_not_successful', 'main_ci_job_missing', 'main_ci_job_invalid', 'main_checkout_missing', 'main_checkout_invalid', 'main_checkout_unproven', 'main_ci_changed']);
+
+/** Never print arbitrary exception text, URLs, headers, credentials or logs. */
+export function mainCIFailure(error) {
+  const detail = error instanceof APIError && Number.isInteger(error.status) && error.status >= 400 && error.status <= 599
+    ? `github_http_${error.status}`
+    : DIAGNOSTICS.has(error?.message) ? error.message : 'unclassified';
+  return { state: 'hold', reason: 'main_ci_unavailable', detail };
+}
 
 export function selectNativeMainRun(runs, path, main) {
   const matches = runs.filter(r => r.path === path && ['push', 'workflow_dispatch'].includes(r.event) && r.head_sha === main && r.head_branch === 'main' && r.repository?.full_name === REPO && r.head_repository?.full_name === REPO);
@@ -63,4 +73,4 @@ async function main() {
   ensure(local === expected, 'main_changed');
   console.log(JSON.stringify(await verifyNativeMainCI({ api: new RuntimeAPI(token), main: expected })));
 }
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main().catch(() => { console.error(JSON.stringify({ state: 'hold', reason: 'main_ci_unavailable' })); process.exitCode = 1; });
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main().catch(error => { console.error(JSON.stringify(mainCIFailure(error))); process.exitCode = 1; });
