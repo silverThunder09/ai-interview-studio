@@ -17,6 +17,22 @@ function fixture() {
   return { path, open };
 }
 describe('main-owned avatar quality preferences', () => {
+  it('restores local voice choices without overwriting theme, quality or protected keys', () => {
+    const { path, open } = fixture(), storage = open();
+    storage.setKey('gemini', 'synthetic-key-123', true);
+    const beforeKeys = JSON.parse(readFileSync(path, 'utf8')).keys;
+    const h = createHandlers('test', storage);
+    expect(h.avatarQuality(['standard'])).toEqual({ ok: true, value: 'standard' });
+    expect(h.localSpeechVoices([{ a: 'Voice A', b: 'Voice B' }])).toEqual({ ok: true, value: { a: 'Voice A', b: 'Voice B' } });
+    expect(h.update([{ ...DEFAULT_SETTINGS, theme: 'dark' }])).toMatchObject({ ok: true });
+    expect(open().settings()).toMatchObject({ theme: 'dark', avatarQuality: 'standard', localSpeechVoices: { a: 'Voice A', b: 'Voice B' } });
+    expect(JSON.parse(readFileSync(path, 'utf8')).keys).toEqual(beforeKeys);
+    const before = readFileSync(path, 'utf8');
+    for (const value of [{ a: '', b: 'Voice B' }, { a: 'Voice A', b: 'bad\0voice' }, { a: 'Voice A', b: 'Voice B', extra: true }]) {
+      expect(h.localSpeechVoices([value])).toMatchObject({ ok: false, error: { code: 'INVALID_REQUEST' } });
+    }
+    expect(readFileSync(path, 'utf8')).toBe(before);
+  });
   it('accepts the old settings schema and only the optional bounded quality enum', () => {
     expect(isSettings(DEFAULT_SETTINGS)).toBe(true);
     for (const avatarQuality of ['low', 'standard']) expect(isSettings({ ...DEFAULT_SETTINGS, avatarQuality })).toBe(true);

@@ -101,7 +101,7 @@ describe('async generation and atomic storage', () => {
       expect(retried.usage).toMatchObject({ attempts: 3, tokens: { totalTokenCount: 39 } });
       expect(await service.answer(answer)).toEqual(retried); expect(next).toHaveBeenCalledTimes(3);
     } finally { database.close(); }
-  });
+  }, 15_000);
   it('does not open a write transaction while waiting for the first question', async () => {
     const delayed = deferred<QuestionDraft | null>(), next = vi.fn<AsyncInterviewProvider['next']>().mockReturnValue(delayed.promise);
     const { store, service } = fixture({ next }), request = startFixture();

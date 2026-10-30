@@ -96,6 +96,19 @@ describe('approved goal → next PR preparation', () => {
     await expect(sender.request('POST', '/pulls', body)).rejects.toThrow('planner_sender_unverified');
     expect(request).toHaveBeenCalledTimes(1);
   });
+  it('accepts only the configured human GitHub identity for the direct planner', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce({ ok: true, json: async () => ({ login: 'silverThunder09', type: 'User' }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ login: 'other-user', type: 'User' }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ login: 'silverThunder09', type: 'Bot' }) })
+      .mockResolvedValueOnce({ ok: false });
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      const sender = directPlannerSender({ token: 'synthetic', client: { request: vi.fn() } });
+      expect(await sender.ready()).toBe(true); expect(await sender.ready()).toBe(false);
+      expect(await sender.ready()).toBe(false); expect(await sender.ready()).toBe(false);
+      expect(fetchMock.mock.calls.every(([url]) => url === 'https://api.github.com/user')).toBe(true);
+    } finally { vi.unstubAllGlobals(); }
+  });
   it('uses the App only for seed objects/ref, keeps Draft creation with the user sender and recovers without duplicates', async () => {
     const api = new API(), { options } = preparation(api), appWrites: string[] = [], senderWrites: string[] = [];
     const credentials = { client: async () => ({ request: async (method: string, path: string, body: unknown) => { appWrites.push(path); return api.request(method, path, body); } }) };
