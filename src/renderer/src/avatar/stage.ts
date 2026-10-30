@@ -4,7 +4,7 @@ import { defaultActor, loadActor, type Actor } from './model';
 import { FramePacer } from './clock';
 import type { AvatarAsset, AvatarSlot } from '../../../shared/avatar';
 
-export interface StageState { active: AvatarSlot | null; speaking: AvatarSlot | null; quality: 'low' | 'standard'; paused: boolean }
+export interface StageState { active: AvatarSlot | null; speaking: AvatarSlot | null; quality: 'low' | 'standard'; paused: boolean; audioLevel: number | undefined }
 export interface StageMetrics { fps: number; geometries: number; textures: number; triangles: number }
 export class AvatarStage {
   private readonly renderer: T.WebGLRenderer;
@@ -24,7 +24,7 @@ export class AvatarStage {
   private redraw = true;
   private readonly pacer = new FramePacer();
   private readonly motion = matchMedia('(prefers-reduced-motion: reduce)');
-  state: StageState = { active: 'a', speaking: null, quality: 'low', paused: false };
+  state: StageState = { active: 'a', speaking: null, quality: 'low', paused: false, audioLevel: undefined };
   constructor(private readonly canvas: HTMLCanvasElement, private readonly metrics: (m: StageMetrics) => void, private readonly failure: (message: string) => void) {
     // Keep the last displayed frame while the 30FPS cap or pause skips rendering.
     // Also makes real screenshots independent of the browser's drawing-buffer discard timing.
@@ -89,7 +89,7 @@ export class AvatarStage {
     if (!this.pacer.due(stamp)) return;
     const delta = this.last ? Math.min((stamp - this.last) / 1000, 0.1) : 0; this.last = stamp; this.elapsed += delta;
     for (const slot of ['a', 'b'] as const) {
-      this.actors[slot].update(this.elapsed + (slot === 'b' ? 1.7 : 0), delta, this.state.speaking === slot, this.motion.matches);
+      this.actors[slot].update(this.elapsed + (slot === 'b' ? 1.7 : 0), delta, this.state.speaking === slot, this.motion.matches, this.state.audioLevel);
       this.rings[slot].visible = this.state.active === slot;
     }
     this.controls.update(); this.renderer.render(this.scene, this.camera); this.redraw = false;

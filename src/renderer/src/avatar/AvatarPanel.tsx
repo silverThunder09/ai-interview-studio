@@ -7,8 +7,8 @@ import { AvatarStage, type StageMetrics } from './stage';
 const names = { a: 'A · 기술 면접관', b: 'B · 경험·협업 면접관' };
 type ModelState = 'default' | 'restoring' | 'active' | 'failed';
 const defaultModel = '기본 3D 캐릭터 · 실사 에셋 아님';
-export function AvatarPanel({ active = 'a', waiting = false, answering = false, preview = false }: {
-  active?: AvatarSlot | null; waiting?: boolean; answering?: boolean; preview?: boolean;
+export function AvatarPanel({ active = 'a', waiting = false, answering = false, preview = false, speechAmplitude = 0 }: {
+  active?: AvatarSlot | null; waiting?: boolean; answering?: boolean; preview?: boolean; speechAmplitude?: number;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null), stage = useRef<AvatarStage | undefined>(undefined);
   const live = useRef(false), timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -65,10 +65,11 @@ export function AvatarPanel({ active = 'a', waiting = false, answering = false, 
   useEffect(() => {
     if (!stage.current) return;
     stage.current.state.active = stageActive;
-    stage.current.state.speaking = preview && !settingsOpen ? speaker : null;
+    stage.current.state.speaking = preview && !settingsOpen ? speaker : !preview && !settingsOpen && speechAmplitude > 0 ? active : null;
+    stage.current.state.audioLevel = preview ? undefined : speechAmplitude;
     stage.current.state.paused = paused || settingsOpen;
     stage.current.setQuality(quality);
-  }, [stageActive, preview, speaker, paused, quality, settingsOpen, ready]);
+  }, [stageActive, active, preview, speaker, paused, quality, settingsOpen, ready, speechAmplitude]);
   async function selectModel(slot: AvatarSlot) {
     if (busy || !stage.current) return;
     const instance = stage.current;

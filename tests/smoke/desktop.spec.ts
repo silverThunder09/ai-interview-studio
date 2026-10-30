@@ -25,7 +25,13 @@ test('desktop starts with secure boundaries, Korean UI and persistent settings',
     expect(await page.evaluate(() => ({
       require: typeof Reflect.get(window, 'require'), process: typeof Reflect.get(window, 'process'),
       api: Object.keys(window.studio ?? {}).sort(),
-    }))).toEqual({ require: 'undefined', process: 'undefined', api: ['beginVoice', 'cancelInterviewOperation', 'cancelSpeech', 'cancelVoice', 'clearAIKey', 'commitAvatar', 'configureAIKey', 'deleteAllInterviews', 'deleteInterview', 'generateSpeech', 'getAIStatus', 'getAvatar', 'getInterview', 'getInterviewHistory', 'getSnapshot', 'getSpeechStatus', 'getVoiceStatus', 'resetAvatar', 'selectAvatar', 'selectResume', 'startInterview', 'stopVoice', 'submitInterviewAnswer', 'transcribeVoice', 'updateAIPreferences', 'updateAvatarQuality', 'updateSettings'] });
+    }))).toEqual({ require: 'undefined', process: 'undefined', api: ['beginVoice', 'cancelInterviewOperation', 'cancelLocalSpeech', 'cancelSpeech', 'cancelVoice', 'clearAIKey', 'commitAvatar', 'configureAIKey', 'deleteAllInterviews', 'deleteInterview', 'generateLocalSpeech', 'generateSpeech', 'getAIStatus', 'getAvatar', 'getInterview', 'getInterviewHistory', 'getLocalSpeechStatus', 'getSnapshot', 'getSpeechStatus', 'getVoiceStatus', 'resetAvatar', 'selectAvatar', 'selectResume', 'startInterview', 'stopVoice', 'submitInterviewAnswer', 'transcribeVoice', 'updateAIPreferences', 'updateAvatarQuality', 'updateSettings'] });
+    const localSpeech = await page.evaluate(() => window.studio!.getLocalSpeechStatus());
+    expect(localSpeech.ok).toBe(true);
+    if (localSpeech.ok) {
+      expect(localSpeech.value.available).toBe(localSpeech.value.voices.length > 0);
+      for (const voice of localSpeech.value.voices) expect(voice.culture).toMatch(/^ko-/);
+    }
     const rendererMetric = await application.evaluate(({ app, BrowserWindow }) => {
       const pid = BrowserWindow.getAllWindows()[0]!.webContents.getOSProcessId();
       return app.getAppMetrics().find((metric) => metric.pid === pid);

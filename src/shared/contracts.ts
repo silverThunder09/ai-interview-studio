@@ -2,6 +2,7 @@ import type { SelectedResume } from './resume';
 import type { AvatarAsset, AvatarSlot, StagedAvatar } from './avatar';
 import type { VoiceRequest, VoiceStart, VoiceStatus } from './voice';
 import type { SpeechRequest, SpeechStatus } from './speech';
+import type { SpeechRequest as LocalSpeechRequest, SpeechStatus as LocalSpeechStatus } from './local-speech';
 import type { AIPreferences, AIKeyRequest, AIProvider, AIStatus } from './ai';
 import type { DeleteAllInterviewsRequest, DeleteInterviewRequest, InterviewHistory, InterviewSession, SharedContextPreview, SharedContextPreviewRequest, StartInterviewRequest, SubmitAnswerRequest } from './interview';
 
@@ -18,6 +19,7 @@ export const CHANNELS = {
   aiPreferences: 'studio:ai-preferences',
   voiceBegin: 'studio:voice-begin', voiceStop: 'studio:voice-stop', voiceCancel: 'studio:voice-cancel',
   voiceTranscribe: 'studio:voice-transcribe', voiceStatus: 'studio:voice-status',
+  localSpeechGenerate: 'studio:local-speech-generate', localSpeechCancel: 'studio:local-speech-cancel', localSpeechStatus: 'studio:local-speech-status',
   speechGenerate: 'studio:speech-generate', speechCancel: 'studio:speech-cancel', speechStatus: 'studio:speech-status',
 } as const;
 export const THEMES = ['system', 'light', 'dark'] as const;
@@ -57,6 +59,9 @@ export interface DesktopAPI {
   cancelVoice(operationId: string): Promise<Result<null>>;
   transcribeVoice(request: VoiceRequest): Promise<Result<string>>;
   getVoiceStatus(): Promise<Result<VoiceStatus>>;
+  generateLocalSpeech(request: LocalSpeechRequest): Promise<Result<Uint8Array>>;
+  cancelLocalSpeech(operationId: string): Promise<Result<null>>;
+  getLocalSpeechStatus(): Promise<Result<LocalSpeechStatus>>;
   generateSpeech(request: SpeechRequest): Promise<Result<Uint8Array>>;
   cancelSpeech(operationId: string): Promise<Result<null>>;
   getSpeechStatus(): Promise<Result<SpeechStatus>>;

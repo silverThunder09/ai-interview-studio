@@ -21,6 +21,8 @@ export function InterviewWorkspace({ session, onUpdate, onHistory }: {
   const [needsKey, setNeedsKey] = useState(false);
   const [notice, setNotice] = useState('');
   const [audioBusy, setAudioBusy] = useState(false);
+  const [speechAmplitude, setSpeechAmplitude] = useState(0);
+  const [autoLocalSpeech, setAutoLocalSpeech] = useState(false);
   const answerInput = useRef<HTMLTextAreaElement>(null);
   const lock = useRef(false);
   const pendingId = useRef<string | undefined>(undefined);
@@ -82,7 +84,8 @@ export function InterviewWorkspace({ session, onUpdate, onHistory }: {
     <p className="eyebrow">{session.ai ? 'EXTERNAL AI INTERVIEW' : 'LOCAL PRACTICE'}</p><h1 id="interview-title">백엔드 면접 연습</h1>
     <p className="muted">{session.ai ? `${AI_NAMES[session.ai.provider]} · ${session.ai.model}에서 생성한 질문입니다. AI 문장은 사실 검증·채용 평가가 아닙니다. 답변 제출 때 전송 범위와 비용을 확인하세요. 재시작 후 키가 없거나 인증에 실패하면 API 연결 설정에서 키를 다시 등록할 수 있습니다.` : '기본 질문은 준비된 질문과 답변 인용이며 AI 분석·평가가 아닙니다. 별도로 선택하는 음성 입력·읽기는 OpenAI 전송과 비용이 발생할 수 있습니다.'}</p>
     {activeInterviewer && session.ai?.provider === 'gemini' && session.ai.profiles && <p>현재 면접관 {activeInterviewer.toUpperCase()} · 말투: {profileNames[session.ai.profiles[activeInterviewer]]}</p>}
-    <AvatarRoom active={activeInterviewer} waiting={saving} answering={answer.trim().length > 0} />
+    <label className="consent"><input type="checkbox" checked={autoLocalSpeech} onChange={e => setAutoLocalSpeech(e.target.checked)} /> 다음 질문도 Windows 로컬 음성으로 자동 읽기</label>
+    <AvatarRoom active={activeInterviewer} speechAmplitude={speechAmplitude} waiting={saving} answering={answer.trim().length > 0} />
     <div className="session-progress"><span>{answered} / {INTERVIEW_LIMITS.turns}개 답변 저장</span><button className="secondary" disabled={saving} onClick={onHistory}>저장된 기록 보기</button></div>
     {session.ai?.provider === 'gemini' && session.usage && <section className="settings-card" aria-label="Gemini 사용량"><h2>Gemini 요청 사용량</h2><p>요청 시도 {session.usage.attempts}회 · 일부 토큰 정보 미제공 {session.usage.missingAttempts}회</p><ul>{GEMINI_USAGE_FIELDS.map(field => {
       const provided = session.usage!.providedAttempts[field] ?? 0, count = session.usage!.tokens[field];
@@ -97,7 +100,7 @@ export function InterviewWorkspace({ session, onUpdate, onHistory }: {
       <h2 id="current-question-title">질문 {current.question.number}</h2><p className="question-copy">{current.question.text}</p>
       {current.question.evidence && <blockquote><cite>{current.question.evidence.origin === 'source' ? '추출 원문' : current.question.evidence.origin === 'reviewed' ? '원문과 다를 수 있는 수정 내용' : '내가 입력한 답변'} · {current.question.evidence.location}</cite><p>{current.question.evidence.text}</p></blockquote>}
       {!saving && <InterviewAudio key={current.question.id} sessionId={session.id} questionId={current.question.id} question={current.question.text} answer={answer} answerLimit={answerLimit}
-        onBusy={setAudioBusy} onApply={text => { setAnswer(text); setTransmissionConsent(false); }} onReviewAnswer={() => answerInput.current?.focus()} />}
+        autoRead={autoLocalSpeech} speakerId={activeInterviewer ?? 'b'} onAmplitude={setSpeechAmplitude} onBusy={setAudioBusy} onApply={text => { setAnswer(text); setTransmissionConsent(false); }} onReviewAnswer={() => answerInput.current?.focus()} />}
       <label htmlFor="interview-answer">내 답변</label><textarea ref={answerInput} id="interview-answer" value={answer} maxLength={answerLimit} disabled={saving} onChange={(event) => { setAnswer(event.target.value); setTransmissionConsent(false); setContextConsent(false); }} />
       {session.ai?.provider === 'gemini' && <section className="transmission-preview" aria-label="공유 문맥 미리보기">
         <h3>제한된 공유 문맥 미리보기</h3><p>전송 목적: 다음 Gemini 질문에 참고할 제한된 문맥입니다. 아래 별도 동의와 답변 제출을 함께 할 때만 표시한 문맥을 전송합니다. 동의하지 않으면 기존 구절·직전 답변 범위만 사용합니다.</p>
