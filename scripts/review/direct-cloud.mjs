@@ -26,7 +26,7 @@ export async function launchCloud({ environment, branch, body }) {
  * A persisted attempt is never automatically sent again, even on lost responses.
  * This function does not interpret an ERROR as a transient failure or retry it.
  */
-export async function dispatchApprovedCloud({ api, store, config, taskId, environment, expectedRequestKey, verifyHistory, launch = launchCloud, now = Date.now }) {
+export async function dispatchApprovedCloud({ api, store, config, taskId, environment, expectedRequestKey, verifyHistory, verifyMain, launch = launchCloud, now = Date.now }) {
   const c = parseLoopConfig(config);
   const history = verifyHistory ?? createDirectHistoryVerifier({ api, config: c });
   ensure(c.enabled && c.cloud_transport === 'disabled' && ENV.test(environment ?? '') && typeof history === 'function', 'direct_cloud_disabled');
@@ -41,6 +41,7 @@ export async function dispatchApprovedCloud({ api, store, config, taskId, enviro
   // Reconciliation must use authoritative, complete evidence; a list alone is insufficient.
   ensure(await history({ task, state: snap.state }) === true, 'cloud_history_unreconciled');
   const check = async () => {
+    if (verifyMain) ensure(await verifyMain(task.request.base_sha) === true, 'main_ci_changed');
     const { pr, main } = await scope(api, task, definition);
     ensure(pr.state === 'open' && pr.merged === false && pr.head.sha === task.request.head_sha && pr.head.ref === task.branch && pr.base.sha === task.request.base_sha && main === task.request.base_sha && pr.head.repo.full_name === REPO, 'stale_cloud_request');
     const branch = await api.request('GET', `/git/ref/heads/${task.branch}`);

@@ -8,6 +8,7 @@ import { allPages } from './event-worker.ts';
 import { REPO, RuntimeAPI, LoopStore, appendApprovedTasks, parseLoopConfig } from './loop-coordinator.mjs';
 import { runDirectTick, validateDirectContext } from './direct-tick.mjs';
 import { readActionsWriterEvidence } from './actions-writer-evidence.mjs';
+import { readActionsMainCIEvidence } from './actions-main-ci-evidence.mjs';
 
 const exec = promisify(execFile), SHA = /^[a-f0-9]{40}$/, ENV = /^[a-zA-Z0-9][a-zA-Z0-9_./-]{0,127}$/;
 function ensure(value, code) { if (!value) throw new Error(code); }
@@ -66,7 +67,8 @@ export async function runDirectRunner({ token, environment, root = process.cwd()
   try {
     const writer = config.pr_auth === 'github-app' ? new ProductWriter({ api, credentials, config }) : undefined;
     result = await runDirectTick({ api, store, config, policy, writer, environment, expectedRequestKey, expectedCloudTaskId,
-      cloud: { actionsWriterReady: async () => (await readActionsWriterEvidence({ api, main: head })).state === 'ready' } });
+      cloud: { actionsWriterReady: async () => (await readActionsWriterEvidence({ api, main: head })).state === 'ready',
+        mainCIReady: async base => base === head && (await readActionsMainCIEvidence({ api, main: head })).state === 'ready' } });
   } finally {
     try { await credentials.dispose(); } catch { cleanupFailed = true; }
   }

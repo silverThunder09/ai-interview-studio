@@ -130,6 +130,12 @@ describe('direct Cloud delivery journal', () => {
     expect(f.store.state.tasks[0]?.direct_cloud).toMatchObject({ phase: 'attempting' });
     expect(f.launch).not.toHaveBeenCalled();
   });
+  it('does not send if current-main CI proof changes after the intent checkpoint', async () => {
+    const f = fixture(), verifyMain = vi.fn().mockResolvedValueOnce(true).mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+    await expect(dispatchApprovedCloud({ ...f.options, verifyMain })).resolves.toEqual({ state: 'preflight_changed' });
+    expect(f.store.state.tasks[0]?.direct_cloud).toMatchObject({ phase: 'attempting' });
+    expect(f.launch).not.toHaveBeenCalled();
+  });
   it('holds for unreconciled history, a stopped issue, or stale main without launching', async () => {
     const f = fixture(); f.verifyHistory.mockResolvedValue(false);
     await expect(dispatchApprovedCloud(f.options)).rejects.toThrow('cloud_history_unreconciled');

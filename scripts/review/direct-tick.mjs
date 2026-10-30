@@ -73,7 +73,12 @@ export async function runDirectTick({ api, store, config, policy, writer, enviro
     // first task, only a verified bootstrap for the exact base is sufficient.
     // A later unrelated main change needs separate authenticated main CI.
     const base = task.request?.base_sha, previous = snap.state.tasks[index - 1];
-    if (previous ? previous.phase !== 'completed' || previous.merged !== base : snap.state.bootstrap?.ready !== true || snap.state.bootstrap.main !== base) return { state: 'main-ci-hold' };
+    const needsMainProof = previous ? previous.phase !== 'completed' || previous.merged !== base : snap.state.bootstrap?.ready !== true || snap.state.bootstrap.main !== base;
+    if (needsMainProof) {
+      let verified = false;
+      try { verified = typeof cloud.mainCIReady === 'function' && await cloud.mainCIReady(base) === true; } catch { /* Hold if proof is unavailable. */ }
+      if (!verified) return { state: 'main-ci-hold' };
+    }
     const verifyHistory = createDirectHistoryVerifier({ api, config: c, list: cloud.list, diff: cloud.diff });
     try { await verifyHistory({ task, state: snap.state }); }
     catch (error) { return { state: 'history-hold', reason: /^[a-z0-9_]+$/.test(error?.message ?? '') ? error.message : 'history_unavailable' }; }
@@ -90,7 +95,7 @@ export async function runDirectTick({ api, store, config, policy, writer, enviro
       try { remote = typeof cloud.actionsWriterReady === 'function' && await cloud.actionsWriterReady() === true; } catch { /* Hold when readiness is unknown. */ }
       if (!remote) return { state: 'writer-hold', reason: 'unavailable' };
     }
-    return dispatchApprovedCloud({ api, store, config: c, taskId: task.id, environment, expectedRequestKey, now, verifyHistory, ...(cloud.launch ? { launch: cloud.launch } : {}) });
+    return dispatchApprovedCloud({ api, store, config: c, taskId: task.id, environment, expectedRequestKey, now, verifyHistory, ...(needsMainProof ? { verifyMain: cloud.mainCIReady } : {}), ...(cloud.launch ? { launch: cloud.launch } : {}) });
   }
   if (task.direct_cloud?.phase === 'attempting') return { state: 'waiting-direct-cloud' };
   await notStopped(api);
