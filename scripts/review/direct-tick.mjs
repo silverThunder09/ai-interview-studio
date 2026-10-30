@@ -49,10 +49,14 @@ export function validateDirectContext(config, policy) {
   return c;
 }
 
-export async function runDirectTick({ api, store, config, policy, writer, environment, expectedRequestKey, now = Date.now, cloud = {} }) {
+export async function runDirectTick({ api, store, config, policy, writer, environment, expectedRequestKey, expectedCloudTaskId, now = Date.now, cloud = {} }) {
   const c = validateDirectContext(config, policy);
   const snap = await store.load(); parseLoopState(snap.state, c);
   const index = snap.state.tasks.findIndex(t => t.phase !== 'completed');
+  if (expectedCloudTaskId !== undefined) {
+    const t = snap.state.tasks[index];
+    if (!/^task_[a-zA-Z0-9_-]+$/.test(expectedCloudTaskId) || !t || t.phase !== 'development' || t.direct_cloud?.phase !== 'sent' || t.direct_cloud.task_id !== expectedCloudTaskId) return { state: 'resumption-hold' };
+  }
   if (expectedRequestKey !== undefined) {
     const t = snap.state.tasks[index];
     if (!/^[a-f0-9]{64}$/.test(expectedRequestKey) || !t || t.phase !== 'development' || t.request?.request_key !== expectedRequestKey || t.delivery?.phase !== 'sending' || t.delivery.attempted !== false || t.direct_cloud !== undefined) return { state: 'resumption-hold' };
@@ -81,12 +85,23 @@ export async function runDirectTick({ api, store, config, policy, writer, enviro
     const { pr, main } = await scope(api, task, c.tasks[index]);
     ensure(pr.state === 'open' && pr.merged === false && pr.head.sha === task.request.head_sha && pr.head.ref === task.branch && pr.base.sha === base && main === base && (await api.request('GET', `/git/ref/heads/${task.branch}`)).object.sha === task.request.head_sha, 'stale_cloud_request');
     // Do not start work that the approved GitHub App writer cannot later apply.
-    if (!await writerReady(c, writer)) return { state: 'writer-hold', reason: 'unavailable' };
+    if (!await writerReady(c, writer)) {
+      let remote = false;
+      try { remote = typeof cloud.actionsWriterReady === 'function' && await cloud.actionsWriterReady() === true; } catch { /* Hold when readiness is unknown. */ }
+      if (!remote) return { state: 'writer-hold', reason: 'unavailable' };
+    }
     return dispatchApprovedCloud({ api, store, config: c, taskId: task.id, environment, expectedRequestKey, now, verifyHistory, ...(cloud.launch ? { launch: cloud.launch } : {}) });
   }
   if (task.direct_cloud?.phase === 'attempting') return { state: 'waiting-direct-cloud' };
   await notStopped(api);
-  if (!await writerReady(c, writer)) return { state: 'writer-hold', reason: 'unavailable' };
+  if (!await writerReady(c, writer)) {
+    if (expectedCloudTaskId === undefined || task.phase !== 'development' || task.direct_cloud?.phase !== 'sent') return { state: 'writer-hold', reason: 'unavailable' };
+    const { checkpointDirectResult, wakeCheckpointedResult } = await import('./direct-handoff.mjs');
+    const result = await checkpointDirectResult({ api, store, config: c, taskId: task.id, now, list: cloud.list, diff: cloud.diff });
+    if (result.state !== 'checkpointed') return { state: `direct-${result.state}` };
+    await notStopped(api);
+    return wakeCheckpointedResult({ api, store, config: c, taskId: task.id, now });
+  }
   // The coordinator handles a saved attempt, result application, CI and human
   // review gates. The disabled sender prevents any legacy PR comment request.
   return runLoop({ api, store, config: c, policy, writer, sender: disabledSender, now,

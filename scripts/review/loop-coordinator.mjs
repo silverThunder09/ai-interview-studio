@@ -102,6 +102,10 @@ export function parseLoopState(value, config) {
       const d = obj(t.direct_cloud);
       ensure(Object.keys(d).sort().join(',') === 'branch,environment,phase,request_key,task_id' && HASH.test(d.request_key ?? '') && d.request_key === t.request?.request_key && typeof d.environment === 'string' && /^[a-zA-Z0-9][a-zA-Z0-9_./-]{0,127}$/.test(d.environment) && d.branch === t.branch && ['attempting', 'sent'].includes(d.phase) && (d.phase === 'attempting' ? d.task_id === null : CLOUD_TASK.test(d.task_id ?? '')) && t.delivery?.attempted === true, 'invalid_direct_cloud_journal');
     }
+    if (t.direct_result !== undefined) {
+      const r = obj(t.direct_result);
+      ensure(Object.keys(r).sort().join(',') === 'base_sha,head_sha,patch,patch_hash,request_key,task_id,wake_attempted' && typeof r.wake_attempted === 'boolean' && t.direct_cloud?.phase === 'sent' && r.task_id === t.direct_cloud.task_id && r.request_key === t.request?.request_key && r.head_sha === t.request?.head_sha && r.base_sha === t.request?.base_sha && typeof r.patch === 'string' && Buffer.byteLength(r.patch, 'utf8') > 0 && Buffer.byteLength(r.patch, 'utf8') <= 128 * 1024 && HASH.test(r.patch_hash ?? '') && hash(r.patch) === r.patch_hash, 'invalid_direct_result');
+    }
     if (t.direct_history !== undefined) {
       ensure(Array.isArray(t.direct_history) && t.direct_history.length <= 4, 'invalid_direct_cloud_history');
       const keys = new Set(), ids = new Set();
@@ -205,8 +209,11 @@ export function preserveDirectCloud(before, after) {
   if (history.length > previous.length) {
     const contexts = ['checks', 'package', 'pr-policy'];
     ensure(old?.phase === 'sent' && next === undefined && before.phase === 'ci' && after.phase === 'review' && [before.head, before.base, before.checkout].every(value => SHA.test(value ?? '')) && before.applied?.parent === before.request?.head_sha && before.applied?.cloud_task_id === old.task_id && before.request?.base_sha === before.base && before.applied?.sha === before.head && after.head === before.head && after.base === before.base && after.checkout === before.checkout && JSON.stringify(after.applied) === JSON.stringify(before.applied) && Array.isArray(after.validated_ci) && after.validated_ci.length === contexts.length && contexts.every(context => after.validated_ci.filter(proof => proof.context === context && proof.repository === REPO && proof.pr_number === before.pr && proof.head_sha === before.head && proof.base_sha === before.base && proof.checkout_sha === before.checkout && /^[1-9][0-9]*$/.test(proof.run_id ?? '')).length === 1) && JSON.stringify(history.at(-1)) === JSON.stringify({ request: before.request, delivery: before.delivery, direct_cloud: old, applied: before.applied }), 'direct_cloud_history_changed');
+    ensure(after.direct_result === undefined, 'direct_result_history_changed');
     return;
   }
+  if (before.direct_result !== undefined) ensure(after.direct_result && JSON.stringify({ ...before.direct_result, wake_attempted: after.direct_result.wake_attempted }) === JSON.stringify(after.direct_result) && (!before.direct_result.wake_attempted || after.direct_result.wake_attempted), 'direct_result_history_changed');
+  else if (after.direct_result !== undefined) ensure(before.phase === 'development' && after.phase === 'development' && old?.phase === 'sent' && after.direct_result.wake_attempted === false && JSON.stringify(old) === JSON.stringify(next) && JSON.stringify(before.request) === JSON.stringify(after.request), 'invalid_direct_result_checkpoint');
   if (old === undefined) return;
   ensure(next && ['request_key', 'environment', 'branch'].every(k => next[k] === old[k]) && after.delivery?.attempted === true, 'direct_cloud_history_changed');
   ensure(old.phase === 'attempting' ? (next.phase === 'attempting' && next.task_id === null || next.phase === 'sent' && CLOUD_TASK.test(next.task_id ?? '')) : next.phase === 'sent' && next.task_id === old.task_id, 'direct_cloud_history_changed');
@@ -217,6 +224,7 @@ export function archiveDirectCloud(task) {
   if (task.direct_cloud === undefined) return;
   ensure(task.phase === 'ci' && task.direct_cloud.phase === 'sent' && task.applied?.parent === task.request?.head_sha && task.applied?.cloud_task_id === task.direct_cloud.task_id && task.request?.base_sha === task.base && task.applied?.sha === task.head && task.applied.sha !== task.applied.parent, 'direct_cloud_not_applied');
   (task.direct_history ??= []).push({ request: task.request, delivery: task.delivery, direct_cloud: task.direct_cloud, applied: task.applied });
+  delete task.direct_result;
   delete task.direct_cloud;
 }
 
@@ -615,10 +623,13 @@ export async function runLoop({ api, sender, store, config, policy, writer, dire
             if (task.phase !== 'development' || task.direct_cloud.phase !== 'sent') return { state: 'waiting-direct-cloud', changes };
             // GitHub Actions has no authenticated Cloud CLI. Only an explicit,
             // trusted, authenticated runner may inspect results; other wakeups wait.
-            if (directCloud.enabled !== true) return { state: 'waiting-direct-cloud', changes };
+            if (directCloud.enabled !== true && !task.direct_result) return { state: 'waiting-direct-cloud', changes };
             // The authenticated result is a change candidate; CI and review follow.
             const { inspectDirectResult } = await import('./direct-result.mjs');
-            const result = await inspectDirectResult({ api, store, config: c, taskId: task.id, list: directCloud.list, diff: directCloud.diff });
+            const checkpoint = task.direct_result;
+            const result = await inspectDirectResult({ api, store, config: c, taskId: task.id,
+              list: checkpoint ? async () => [{ id: checkpoint.task_id, status: 'ready', known_status: true, environment_id: task.direct_cloud.environment, attempt_total: 1 }] : directCloud.list,
+              diff: checkpoint ? async () => checkpoint.patch : directCloud.diff });
             if (result.state !== 'candidate') return { state: `direct-${result.state}`, changes };
             ensure(result.task_id === task.direct_cloud.task_id && result.head_sha === task.head && result.base_sha === task.base && Array.isArray(result.files) && result.files.length > 0, 'invalid_direct_candidate');
             ensure(definition.pr !== null || result.files.some(f => f.path.startsWith('src/')), 'planned_task_not_implemented');

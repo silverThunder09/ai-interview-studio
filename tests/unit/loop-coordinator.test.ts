@@ -154,6 +154,28 @@ describe('disabled Cloud transport', () => {
     expect(f.reads.some(path => path.startsWith('PATCH /git/refs/'))).toBe(false);
     expect(f.sends).toHaveLength(0);
   });
+  it('applies a checkpointed Cloud result in Actions once without Cloud credentials', async () => {
+    const f = new FixtureAPI(), options = { ...f.options(), config: { ...config, cloud_transport: 'disabled' } };
+    await runLoop(options);
+    const task = f.store.state.tasks[0]!, request = task.request as ReturnType<typeof reviewRequest>;
+    Object.assign(task.delivery as object, { attempted: true });
+    task.direct_cloud = { request_key: request.request_key, environment: 'env_1', branch: task.branch, phase: 'sent', task_id: 'task_one' };
+    const patch = 'diff --git a/tests/unit/probe.test.ts b/tests/unit/probe.test.ts\n--- a/tests/unit/probe.test.ts\n+++ b/tests/unit/probe.test.ts\n@@ -1 +1 @@\n-test\n+changed\n';
+    task.direct_result = { task_id: 'task_one', request_key: request.request_key, head_sha: head, base_sha: base, patch, patch_hash: createHash('sha256').update(patch).digest('hex'), wake_attempted: true };
+    const original = f.request.bind(f), nextHead = '7'.repeat(40), nextTree = '8'.repeat(40);
+    let commits = 0, refs = 0;
+    f.request = async (method, path, value) => {
+      if (method === 'POST' && path === '/git/trees') return { sha: nextTree };
+      if (method === 'POST' && path === '/git/commits') { commits++; return { sha: nextHead }; }
+      if (method === 'PATCH' && path.startsWith('/git/refs/heads/')) { refs++; f.currentHead = nextHead; return {}; }
+      if (path === `/git/commits/${checkout}`) return { sha: checkout, parents: [{ sha: base }, { sha: f.currentHead }] };
+      return original(method, path, value);
+    };
+    expect((await runLoop(options)).state).toBe('waiting-ci');
+    expect(f.store.state.tasks[0]).toMatchObject({ phase: 'ci', head: nextHead, applied: { cloud_task_id: 'task_one' } });
+    expect((await runLoop(options)).state).toBe('waiting-ci');
+    expect(commits).toBe(1); expect(refs).toBe(1); expect(f.sends).toHaveLength(0);
+  });
   it('keeps an unknown direct failure on hold without applying or redispatching', async () => {
     const f = new FixtureAPI(), options = { ...f.options(), config: { ...config, cloud_transport: 'disabled' } };
     await runLoop(options);
