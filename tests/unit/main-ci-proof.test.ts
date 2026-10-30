@@ -8,17 +8,19 @@ const native = (id: number, path: string) => ({ id, path, event: 'push', head_sh
 function fixture() {
   const runs = [native(11, '.github/workflows/ci.yml'), native(12, '.github/workflows/windows-build.yml')];
   const proof = { id: 20, path: '.github/workflows/main-ci-readiness.yml', event: 'workflow_run', head_sha: sha, head_branch: 'main', run_attempt: 1, created_at: '2026-10-30T00:01:00Z', updated_at: '2026-10-30T00:02:00Z', status: 'completed', conclusion: 'success', repository: { full_name: repo }, head_repository: { full_name: repo } };
+  const proofs = [proof];
   let main = sha, commandSha = sha;
   const api = {
     async request(_method: string, path: string) {
       if (path === '/branches/main') return { commit: { sha: main } };
-      if (path === '/actions/runs/20') return structuredClone(proof);
+      const proofRun = proofs.find(r => path === `/actions/runs/${r.id}`);
+      if (proofRun) return structuredClone(proofRun);
       const run = runs.find(r => path === `/actions/runs/${r.id}`);
       if (run) return structuredClone(run);
       throw new Error('unexpected_request');
     },
     async pagesObject(path: string) {
-      if (path.startsWith('/actions/workflows/main-ci-readiness.yml/runs')) return [structuredClone(proof)];
+      if (path.startsWith('/actions/workflows/main-ci-readiness.yml/runs')) return structuredClone(proofs);
       if (path.startsWith('/actions/runs?')) return structuredClone(runs);
       if (path.startsWith('/actions/runs/20/')) return [{ name: 'readiness', run_id: 20, run_attempt: 1, status: 'completed', conclusion: 'success', steps: [{ name: 'Verify current main CI and checkout', status: 'completed', conclusion: 'success' }] }];
       const id = Number(path.match(/^\/actions\/runs\/(\d+)/)?.[1]);
@@ -31,10 +33,25 @@ function fixture() {
       return [`2026-10-30T00:00:01Z [command]${command} log -1 --format=%H`, `2026-10-30T00:00:02Z ${commandSha}`, ''].join(newline);
     },
   };
-  return { api, runs, proof, setMain: (value: string) => { main = value; }, setCheckout: (value: string) => { commandSha = value; } };
+  return { api, runs, proof, proofs, setMain: (value: string) => { main = value; }, setCheckout: (value: string) => { commandSha = value; } };
 }
 
 describe('current main CI proof', () => {
+  it('ignores only completed skipped workflow-run proofs while still checking latest native CI', async () => {
+    const f = fixture();
+    const skipped = { ...f.proof, id: 21, conclusion: 'skipped', updated_at: '2026-10-30T00:04:00Z' };
+    f.proofs.push(skipped);
+    expect(await readActionsMainCIEvidence({ api: f.api, main: sha })).toEqual({ state: 'ready', run_id: 20 });
+    f.runs.push({ ...native(13, '.github/workflows/ci.yml'), conclusion: 'failure', updated_at: '2026-10-30T00:03:00Z' });
+    expect(await readActionsMainCIEvidence({ api: f.api, main: sha })).toMatchObject({ state: 'hold' });
+  });
+  it('does not ignore a newer failed, cancelled, running, or manually skipped proof', async () => {
+    for (const changed of [{ conclusion: 'failure' }, { conclusion: 'cancelled' }, { status: 'in_progress', conclusion: null }, { event: 'workflow_dispatch', conclusion: 'skipped' }]) {
+      const f = fixture();
+      f.proofs.push({ ...f.proof, ...changed, id: 21, updated_at: '2026-10-30T00:04:00Z' } as typeof f.proof);
+      expect(await readActionsMainCIEvidence({ api: f.api, main: sha })).toMatchObject({ state: 'hold', reason: 'proof_not_successful' });
+    }
+  });
   it('verifies both native push jobs and their checkout, then reads the Actions proof', async () => {
     const f = fixture();
     expect(await verifyNativeMainCI({ api: f.api, main: sha })).toEqual({ state: 'ready' });

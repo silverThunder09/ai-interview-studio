@@ -9,7 +9,7 @@ export async function readActionsMainCIEvidence({ api, main }) {
   if (!SHA.test(main ?? '') || (await api.request('GET', '/branches/main'))?.commit?.sha !== main) return { state: 'hold', reason: 'main_changed' };
   const list = () => api.pagesObject('/actions/workflows/main-ci-readiness.yml/runs?branch=main', 'workflow_runs');
   const select = runs => {
-    const candidates = runs.filter(r => r.head_sha === main && r.path === PATH && ['workflow_run', 'workflow_dispatch'].includes(r.event) && r.head_branch === 'main' && r.repository?.full_name === REPO && r.head_repository?.full_name === REPO);
+    const candidates = runs.filter(r => r.head_sha === main && r.path === PATH && ['workflow_run', 'workflow_dispatch'].includes(r.event) && r.head_branch === 'main' && r.repository?.full_name === REPO && r.head_repository?.full_name === REPO && !(r.event === 'workflow_run' && r.status === 'completed' && r.conclusion === 'skipped'));
     if (!candidates.length || candidates.some(r => !positive(r.id) || !positive(r.run_attempt) || !Number.isFinite(Date.parse(r.updated_at)))) return null;
     return candidates.sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at) || b.id - a.id)[0];
   };
