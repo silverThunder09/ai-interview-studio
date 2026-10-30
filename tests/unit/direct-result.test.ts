@@ -134,6 +134,14 @@ describe('Cloud result handoff', () => {
     expect(await wakeCheckpointedResult(wake)).toEqual({ state: 'wakeup-pending' });
     expect(dispatch).toHaveBeenCalledTimes(1);
   });
+  it('allows at most one wake when two runners race', async () => {
+    const f = fixture(); await checkpointDirectResult(f.options);
+    const dispatch = vi.fn(async () => ({}));
+    const wake = { ...f.options, api: { request: dispatch } };
+    await Promise.allSettled([wakeCheckpointedResult(wake), wakeCheckpointedResult(wake)]);
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    expect(f.store.state.tasks[0]!.direct_result).toMatchObject({ wake_attempted: true });
+  });
   it('does not checkpoint an unknown failure or a changed state', async () => {
     const f = fixture(); f.list.mockResolvedValue([{ id: 'task_one', status: 'error', known_status: true, environment_id: 'env_1', attempt_total: 1 }]);
     expect(await checkpointDirectResult(f.options)).toEqual({ state: 'hold_unknown_failure' });

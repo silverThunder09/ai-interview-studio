@@ -5,7 +5,7 @@ import { readFile, realpath } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { AppCredentials, ProductWriter } from './pr-writer.mjs';
 import { allPages } from './event-worker.ts';
-import { REPO, RuntimeAPI, LoopStore, parseLoopConfig } from './loop-coordinator.mjs';
+import { REPO, RuntimeAPI, LoopStore, appendApprovedTasks, parseLoopConfig } from './loop-coordinator.mjs';
 import { runDirectTick, validateDirectContext } from './direct-tick.mjs';
 import { readActionsWriterEvidence } from './actions-writer-evidence.mjs';
 
@@ -23,7 +23,9 @@ export async function readRecordedCloudTask({ token, root = process.cwd() }) {
   const api = new RuntimeAPI(token);
   ensure((await api.repository())?.full_name === REPO && (await api.request('GET', '/branches/main')).commit.sha === head, 'trusted_main_moved');
   const config = parseLoopConfig(JSON.parse(await readFile('.github/approved-loop.json', 'utf8')));
-  const state = (await new LoopStore(api, config).load()).state;
+  // Read an approved appended suffix without writing it; the ordinary runner
+  // performs the guarded append only after recovery has ruled out a receipt.
+  const state = appendApprovedTasks((await new LoopStore(api, config).readSnapshot()).state, config);
   ensure((await api.request('GET', '/branches/main')).commit.sha === head, 'trusted_main_moved');
   const task = state.tasks.find(t => t.phase !== 'completed');
   if (!task?.direct_cloud) return { state: 'none' };
