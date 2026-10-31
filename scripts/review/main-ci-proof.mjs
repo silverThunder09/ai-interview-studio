@@ -15,8 +15,10 @@ const DIAGNOSTICS = new Set(['untrusted_context', 'main_changed', 'main_ci_missi
 
 /** Never print arbitrary exception text, URLs, headers, credentials or logs. */
 export function mainCIFailure(error) {
+  const proxy = error?.cause?.cause;
   const detail = error instanceof APIError && Number.isInteger(error.status) && error.status >= 400 && error.status <= 599
     ? `github_http_${error.status}`
+    : proxy?.code === 'UND_ERR_ABORTED' && proxy?.message === 'Proxy response (403) !== 200 when HTTP Tunneling' ? 'proxy_http_403'
     : DIAGNOSTICS.has(error?.message) ? error.message : 'unclassified';
   return { state: 'hold', reason: 'main_ci_unavailable', detail };
 }

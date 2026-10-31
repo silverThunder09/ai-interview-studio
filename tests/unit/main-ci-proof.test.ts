@@ -42,6 +42,9 @@ describe('current main CI proof', () => {
     expect(mainCIFailure(new Error('main_checkout_missing'))).toEqual({ state: 'hold', reason: 'main_ci_unavailable', detail: 'main_checkout_missing' });
     expect(mainCIFailure(new Error('job_log_download_failed'))).toMatchObject({ state: 'hold', detail: 'job_log_download_failed' });
     expect(mainCIFailure(new APIError(502, 'GET /synthetic-private-path'))).toEqual({ state: 'hold', reason: 'main_ci_unavailable', detail: 'github_http_502' });
+    const proxy = Object.assign(new Error('Proxy response (403) !== 200 when HTTP Tunneling'), { code: 'UND_ERR_ABORTED' });
+    const transport = new Error('synthetic private URL', { cause: new Error('synthetic secret', { cause: proxy }) });
+    expect(mainCIFailure(transport)).toEqual({ state: 'hold', reason: 'main_ci_unavailable', detail: 'proxy_http_403' });
     expect(mainCIFailure(new Error('synthetic-secret and private URL'))).toEqual({ state: 'hold', reason: 'main_ci_unavailable', detail: 'unclassified' });
     expect(mainCIFailure(null)).toEqual({ state: 'hold', reason: 'main_ci_unavailable', detail: 'unclassified' });
   });
