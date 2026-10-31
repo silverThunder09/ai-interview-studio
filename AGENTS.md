@@ -27,7 +27,8 @@
 | 작업 재개·컨텍스트 압축·승인 보존·세션 인수인계 | `harness/context-session.md` |
 | 구조·MVP 범위·인수 기준 | `harness/architecture.md` |
 | 보안·개인정보·의존성·REA | `harness/security.md` |
-| 기능 구현 | 승인된 해당 MVP 스펙 (`harness/specs/`) |
+| 기능 구현 | 승인된 해당 MVP 스펙 (`harness/specs/`)과 관련 코드 |
+| 승인된 개발 자동화·재개·중복 방지 | `harness/event-loop.md`; 현재 상태는 설정·이력·CI로 확인 |
 | 코드·PR 리뷰·자동 수정·머지 | `.agents/skills/code-review/SKILL.md`, `.agents/skills/pr-review/SKILL.md`, `harness/review-automation.md` |
 
 ## 작업 영역별 지침

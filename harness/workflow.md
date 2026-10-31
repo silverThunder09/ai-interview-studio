@@ -7,7 +7,7 @@
 | 분류 | 작업 | 필요한 증거 |
 | --- | --- | --- |
 | LIGHT | 동작·보안 경계를 바꾸지 않는 문구·스타일·문서 | 영향 파일·적용 지침과 관련 링크/diff 확인; 새 계획·스펙·전체 테스트·장문 보고 불필요 |
-| STANDARD | 기능·스키마·IPC 계약 | 활성 스펙, 측정 가능한 AC, 테스트, Draft PR |
+| STANDARD | 기능·스키마·IPC 계약 | 활성 스펙, 측정 가능한 AC, 테스트, 일반 PR |
 | HIGH RISK | 보안 기본값·개인정보·AI·장치·REA | STANDARD + 데이터 흐름·권한·실패 경로·보존·라이선스 검토 |
 
 현재 단계·승인·제외 범위는 `architecture.md`의 로드맵과 사용자 요청을 따른다. 문서 변경도 보안 통제를 약화하거나 승인 범위를 넓히면 해당 영향에 따라 분류한다. LIGHT는 표의 확인으로 충분하며, 아래 절차는 STANDARD/HIGH RISK의 기본 절차다.
@@ -17,7 +17,7 @@
 3. `feat/...` 등 작업 브랜치에서 작은 변경을 만든다. 같은 작업의 브랜치·PR이 있으면 재사용하고 main에 직접 push하지 않는다.
 4. 클라우드에서 Node 24.19.x로 영향에 맞는 검사를 선택한다. 의존성 설치는 `npm ci`, 코드 검증은 `npm run check`, 번들 검증은 `npm run build`, Electron 동작·보안 검증은 빌드 후 `npm run test:smoke`를 사용한다. Linux smoke의 display/OS sandbox가 없으면 정확한 오류를 보고하고 Windows CI로 검증한다. sandbox를 끄지 않는다.
 5. 보안·의존성·라이선스·변경 범위를 검토한다. 오류를 숨기거나 미실행 테스트를 성공 처리하지 않는다.
-6. Conventional Commit으로 커밋하고 push 후 템플릿에 맞춰 관련 Draft PR을 갱신하거나 새로 연다. 본문에는 결과, 실제 검증, 제한을 적는다. 리뷰·이슈·자동 수정·머지는 `review-automation.md` 정책을 따른다. 무단 공개 release·강제 push는 하지 않는다.
+6. Conventional Commit으로 커밋하고 push 후 템플릿에 맞춰 관련 일반 PR을 갱신하거나 새로 연다. 본문에는 결과, 실제 검증, 제한을 적는다. 리뷰·이슈·자동 수정·머지는 `review-automation.md` 정책을 따른다. 무단 공개 release·강제 push는 하지 않는다.
 7. 관련 Actions 결과를 확인한다. 앱 실행·패키징 변경에는 `Windows build`를 포함한다. 실패하면 원인과 변경을 연결해 수정하고 재검증한다. Windows 하드웨어 확인은 다운로드 빌드에 대한 사용자 수동 검증으로 남긴다.
 
 ## 검증과 인수인계
