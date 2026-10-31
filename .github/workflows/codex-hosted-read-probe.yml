@@ -1,0 +1,49 @@
+name: Codex hosted authentication read probe
+on:
+  pull_request:
+    paths:
+      - .github/workflows/codex-hosted-read-probe.yml
+permissions: {}
+jobs:
+  probe:
+    if: >-
+      github.repository == 'silverThunder09/ai-interview-studio' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.user.login == 'silverThunder09'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      result: ${{ steps.probe.outputs.result }}
+    steps:
+      - name: Install the official CLI without repository code or secrets
+        run: npm install --prefix "$RUNNER_TEMP/codex-probe" --no-save --no-audit --no-fund @openai/codex@0.159.2
+      - name: Check login and Cloud listing without printing details
+        id: probe
+        shell: bash
+        run: |
+          cli="$RUNNER_TEMP/codex-probe/node_modules/.bin/codex"
+          if ! timeout 30s "$cli" login status >/dev/null 2>&1; then
+            printf 'result=login_unconfirmed\n' >> "$GITHUB_OUTPUT"
+          elif timeout 30s "$cli" cloud list --limit 1 --json >/dev/null 2>&1; then
+            printf 'result=list_succeeded\n' >> "$GITHUB_OUTPUT"
+          else
+            printf 'result=list_unconfirmed\n' >> "$GITHUB_OUTPUT"
+          fi
+  login-unconfirmed:
+    needs: probe
+    if: needs.probe.outputs.result == 'login_unconfirmed'
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo 'No usable inherited Codex login was confirmed.'
+  list-unconfirmed:
+    needs: probe
+    if: needs.probe.outputs.result == 'list_unconfirmed'
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo 'Cloud list was not confirmed after login status succeeded.'
+  list-succeeded:
+    needs: probe
+    if: needs.probe.outputs.result == 'list_succeeded'
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo 'The official CLI returned a Cloud list.'
