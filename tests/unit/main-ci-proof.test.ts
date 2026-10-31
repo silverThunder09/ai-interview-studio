@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { verifyNativeMainCI } from '../../scripts/review/main-ci-proof.mjs';
+import { mainCIFailure, verifyNativeMainCI } from '../../scripts/review/main-ci-proof.mjs';
+import { APIError } from '../../scripts/review/event-worker';
 import { readActionsMainCIEvidence } from '../../scripts/review/actions-main-ci-evidence.mjs';
 
 const repo = 'silverThunder09/ai-interview-studio', sha = 'a'.repeat(40);
@@ -37,6 +38,16 @@ function fixture() {
 }
 
 describe('current main CI proof', () => {
+  it('records only safe classified failures without changing the hold decision', () => {
+    expect(mainCIFailure(new Error('main_checkout_missing'))).toEqual({ state: 'hold', reason: 'main_ci_unavailable', detail: 'main_checkout_missing' });
+    expect(mainCIFailure(new Error('job_log_download_failed'))).toMatchObject({ state: 'hold', detail: 'job_log_download_failed' });
+    expect(mainCIFailure(new APIError(502, 'GET /synthetic-private-path'))).toEqual({ state: 'hold', reason: 'main_ci_unavailable', detail: 'github_http_502' });
+    const proxy = Object.assign(new Error('Proxy response (403) !== 200 when HTTP Tunneling'), { code: 'UND_ERR_ABORTED' });
+    const transport = new Error('synthetic private URL', { cause: new Error('synthetic secret', { cause: proxy }) });
+    expect(mainCIFailure(transport)).toEqual({ state: 'hold', reason: 'main_ci_unavailable', detail: 'proxy_http_403' });
+    expect(mainCIFailure(new Error('synthetic-secret and private URL'))).toEqual({ state: 'hold', reason: 'main_ci_unavailable', detail: 'unclassified' });
+    expect(mainCIFailure(null)).toEqual({ state: 'hold', reason: 'main_ci_unavailable', detail: 'unclassified' });
+  });
   it('ignores only completed skipped workflow-run proofs while still checking latest native CI', async () => {
     const f = fixture();
     const skipped = { ...f.proof, id: 21, conclusion: 'skipped', updated_at: '2026-10-30T00:04:00Z' };
