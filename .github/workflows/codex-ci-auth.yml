@@ -4,7 +4,7 @@ on:
     paths:
       - .github/workflows/codex-ci-auth.yml
       - scripts/review/codex-ci-auth.mjs
-      - tests/codex-ci-auth.test.mjs
+      - scripts/review/codex-ci-auth.check.mjs
   workflow_dispatch:
 permissions:
   contents: read
@@ -24,7 +24,7 @@ jobs:
         with:
           node-version-file: .node-version
           package-manager-cache: false
-      - run: node --test tests/codex-ci-auth.test.mjs
+      - run: node --test scripts/review/codex-ci-auth.check.mjs
   check:
     if: github.event_name == 'workflow_dispatch' && github.repository == 'silverThunder09/ai-interview-studio' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04

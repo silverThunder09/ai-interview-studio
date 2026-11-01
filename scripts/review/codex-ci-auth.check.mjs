@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import { strict as assert } from 'node:assert';
-import { maintainAuth, storeSecret } from '../scripts/review/codex-ci-auth.mjs';
+import { maintainAuth, storeSecret } from './codex-ci-auth.mjs';
 test('preflight failure blocks CLI and persistence', async () => { const events=[]; const result=await maintainAuth({prepare:async()=>{events.push('prepare');throw Error()},probe:async()=>events.push('probe'),persist:async()=>events.push('persist'),cleanup:async()=>events.push('cleanup')}); assert.equal(result,'preflight_failed');assert.deepEqual(events,['prepare','cleanup']); });
 test('failed probe still saves possible rotated credentials', async () => { const events=[]; const result=await maintainAuth({prepare:async()=>events.push('prepare'),probe:async()=>{events.push('probe');throw Error()},persist:async()=>events.push('persist'),cleanup:async()=>events.push('cleanup')});assert.equal(result,'cloud_list_unconfirmed');assert.deepEqual(events,['prepare','probe','persist','cleanup']); });
 test('failed writeback or cleanup never reports success', async () => { const common={prepare:async()=>{},probe:async()=>true,persist:async()=>{},cleanup:async()=>{}};assert.equal(await maintainAuth({...common,persist:async()=>{throw Error()}}),'writeback_unconfirmed');assert.equal(await maintainAuth({...common,cleanup:async()=>{throw Error()}}),'cleanup_unconfirmed');assert.equal(await maintainAuth(common),'cloud_list_ok'); });
