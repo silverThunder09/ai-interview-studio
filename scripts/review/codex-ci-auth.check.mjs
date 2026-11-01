@@ -54,3 +54,12 @@ test('unknown CLI errors never reveal their text or become success', async () =>
 test('successful login and Cloud list report success', async () => {
   assert.deepEqual(await inspectCloudLogin(async () => {}), { stage: 'cloud_list', outcome: 'ok', reason: 'none' });
 });
+
+
+test('auth JSON parser failures are classified without including their content', () => {
+  assert.equal(classifyCliFailure({ stderr: 'Error checking login status: invalid type: sequence, expected struct AuthDotJson at line 1 column 1 synthetic-secret' }), 'invalid_auth_json');
+  assert.equal(classifyCliFailure({ stderr: 'Error checking login status: expected value at line 1 column 1' }), 'invalid_auth_json');
+  assert.equal(classifyCliFailure({ stderr: 'Not signed in. Please run codex login' }), 'not_logged_in');
+  assert.equal(classifyCliFailure({ code: 'ENOENT' }), 'cli_unavailable');
+  assert.equal(classifyCliFailure({ stderr: 'untrusted string: invalid type: sequence synthetic-secret' }), 'unclassified');
+});
