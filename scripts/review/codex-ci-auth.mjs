@@ -1,5 +1,8 @@
 /** Read-only Cloud probe with serialized, fail-closed credential write-back. */
+/* global fetch, AbortSignal */
 import { createPrivateKey, sign } from 'node:crypto';
+import { Buffer } from 'node:buffer';
+import { setTimeout, clearTimeout } from 'node:timers';
 import { execFile as execFileCallback, spawn } from 'node:child_process';
 import { createReadStream } from 'node:fs';
 import { promisify } from 'node:util';
@@ -34,7 +37,7 @@ export async function storeSecret(path, token, command = 'gh') {
 
 /** The caller supplies the only operations that can touch credentials or the network. */
 export async function maintainAuth({ prepare, probe, persist, cleanup }) {
-  let result = 'preflight_failed';
+  let result;
   try {
     await prepare(); // Do not run the CLI until write-back permission is confirmed.
     try { result = await probe() ? 'cloud_list_ok' : 'cloud_list_unconfirmed'; }
