@@ -1,0 +1,63 @@
+name: Approved Cloud runner
+on:
+  pull_request:
+    paths:
+      - .github/workflows/codex-actions-runner.yml
+      - scripts/review/codex-actions-runner.mjs
+      - scripts/review/codex-actions-runner.check.mjs
+      - scripts/review/direct-runner.mjs
+      - scripts/review/direct-runner.d.mts
+  schedule:
+    - cron: '11 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('codex-ci-auth-test-{0}', github.run_id) || 'codex-ci-auth-exclusive' }}
+  cancel-in-progress: false
+jobs:
+  synthetic-tests:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - run: node --test scripts/review/codex-actions-runner.check.mjs scripts/review/codex-ci-auth.check.mjs
+  tick:
+    if: github.event_name != 'pull_request' && github.repository == 'silverThunder09/ai-interview-studio' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      checks: read
+      actions: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - name: Install official Codex CLI
+        run: |
+          npm install --prefix "$RUNNER_TEMP/codex-auth-cli" --no-save --no-audit --no-fund --ignore-scripts @openai/codex@0.159.2
+          echo "$RUNNER_TEMP/codex-auth-cli/node_modules/.bin" >> "$GITHUB_PATH"
+      - name: Run one guarded tick and preserve refreshed login
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          AIS_CODEX_AUTH_JSON: ${{ secrets.AIS_CODEX_AUTH_JSON }}
+          AIS_CODEX_CLOUD_ENVIRONMENT: ${{ vars.AIS_CODEX_CLOUD_ENVIRONMENT }}
+          AIS_PR_WRITER_APP_ID: ${{ vars.AIS_PR_WRITER_APP_ID }}
+          AIS_PR_WRITER_INSTALLATION_ID: ${{ vars.AIS_PR_WRITER_INSTALLATION_ID }}
+          AIS_PR_WRITER_PRIVATE_KEY: ${{ secrets.AIS_PR_WRITER_PRIVATE_KEY }}
+        run: node scripts/review/codex-actions-runner.mjs
