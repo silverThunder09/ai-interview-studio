@@ -11,6 +11,15 @@ const execFile = promisify(execFileCallback);
 const REPO = 'silverThunder09/ai-interview-studio';
 const safeEnv = () => Object.fromEntries(['PATH', 'HOME', 'USER', 'LANG', 'TZ', 'RUNNER_TEMP', 'TMPDIR', 'HTTPS_PROXY', 'HTTP_PROXY', 'NO_PROXY', 'SSL_CERT_FILE', 'CODEX_CA_CERTIFICATE'].filter(k => process.env[k] !== undefined).map(k => [k, process.env[k]]));
 
+/** Inspect only the non-secret envelope shape; never return any field value. */
+export function validateCachedAuthEnvelope(value) {
+  let parsed;
+  try { parsed = JSON.parse(value); } catch { return 'invalid_auth_json'; }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return 'invalid_auth_json';
+  if (parsed.auth_mode !== 'chatgpt') return 'unsupported_or_legacy_mode';
+  return 'chatgpt_mode';
+}
+
 /** Only fixed classifications are returned; CLI output and auth content stay private. */
 export async function inspectCachedLogin({ prepare, runStatus, cleanup }) {
   let result;
@@ -31,6 +40,13 @@ async function main() {
   let seed = process.env.AIS_CODEX_AUTH_JSON, path;
   delete process.env.AIS_CODEX_AUTH_JSON;
   if (typeof seed !== 'string' || !seed.length) throw new Error('missing_config');
+  const envelope = validateCachedAuthEnvelope(seed);
+  if (envelope !== 'chatgpt_mode') {
+    seed = undefined;
+    console.log(JSON.stringify({ state: 'login_status_unconfirmed', reason: envelope }));
+    process.exitCode = 1;
+    return;
+  }
   const result = await inspectCachedLogin({
     prepare: async () => {
       const directory = join(homedir(), '.codex');
