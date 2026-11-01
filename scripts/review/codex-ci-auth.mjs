@@ -35,6 +35,31 @@ export async function storeSecret(path, token, command = 'gh') {
   });
 }
 
+/** Convert CLI errors to fixed categories; never return command output or exception text. */
+export function classifyCliFailure(error) {
+  if (error?.killed || error?.code === 'ETIMEDOUT') return 'timeout';
+  if (error?.code === 'ENOENT') return 'cli_unavailable';
+  if (['ENOTFOUND', 'ECONNREFUSED', 'ECONNRESET', 'EAI_AGAIN'].includes(error?.code)) return 'network_error';
+  const stderr = typeof error?.stderr === 'string' ? error.stderr.slice(0, 16384) : '';
+  const stdout = typeof error?.stdout === 'string' ? error.stdout.slice(0, 16384) : '';
+  const text = `${stderr}\n${stdout}`;
+  if (/\bnot (?:logged|signed) in\b/i.test(text)) return 'not_logged_in';
+  if (/error checking login status:/i.test(text) && /(?:invalid type: (?:sequence|string|number|null)|expected (?:value|ident|a string)|trailing characters|EOF while parsing|key must be a string)/i.test(text)) return 'invalid_auth_json';
+  if (/could not parse (?:your )?authentication token/i.test(text)) return 'invalid_auth_token';
+  const match = text.match(/\b(?:http|status)(?:\s*(?:code)?\s*[:=]?)?\s*(401|403|429|5[0-9][0-9])\b/i);
+  if (match) return match[1].startsWith('5') ? 'http_5xx' : `http_${match[1]}`;
+  return 'unclassified';
+}
+
+/** A failed login must not be reported as a Cloud list attempt. */
+export async function inspectCloudLogin(run) {
+  try { await run(['login', 'status']); }
+  catch (error) { return { stage: 'login_status', outcome: 'unconfirmed', reason: classifyCliFailure(error) }; }
+  try { await run(['cloud', 'list', '--limit', '1', '--json']); }
+  catch (error) { return { stage: 'cloud_list', outcome: 'unconfirmed', reason: classifyCliFailure(error) }; }
+  return { stage: 'cloud_list', outcome: 'ok', reason: 'none' };
+}
+
 /** The caller supplies the only operations that can touch credentials or the network. */
 export async function maintainAuth({ prepare, probe, persist, cleanup }) {
   let result;
@@ -62,6 +87,7 @@ async function main() {
     ensure(response.ok, 'github_request_failed');
     return response.status === 204 ? null : response.json();
   };
+  let probeDetail;
   const result = await maintainAuth({
     prepare: async () => {
       const key = createPrivateKey(privateKey);
@@ -87,9 +113,8 @@ async function main() {
     probe: async () => {
       const cli = join(process.env.RUNNER_TEMP, 'codex-auth-cli', 'node_modules', '.bin', 'codex');
       const options = { env: safeEnv(), timeout: 60000, maxBuffer: 1024 * 1024 };
-      await execFile(cli, ['login', 'status'], options);
-      await execFile(cli, ['cloud', 'list', '--limit', '1', '--json'], options);
-      return true;
+      probeDetail = await inspectCloudLogin(args => execFile(cli, args, options));
+      return probeDetail.outcome === 'ok';
     },
     persist: async () => {
       // Refuse to overwrite a secret updated during this run. This is not a GitHub CAS.
@@ -105,7 +130,7 @@ async function main() {
       if (failed) throw new Error('cleanup_failed');
     }
   });
-  console.log(JSON.stringify({ state: result }));
+  console.log(JSON.stringify({ state: result, ...(probeDetail ? { probe: probeDetail } : {}) }));
   if (result !== 'cloud_list_ok') process.exitCode = 1;
 }
 
