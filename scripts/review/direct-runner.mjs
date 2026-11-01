@@ -40,7 +40,7 @@ export async function readRecordedCloudTask({ token, root = process.cwd() }) {
 }
 
 /** No checkout or token manipulation; fail closed if local main is not trusted. */
-export async function runDirectRunner({ token, environment, root = process.cwd(), expectedRequestKey, expectedCloudTaskId }) {
+export async function runDirectRunner({ token, environment, root = process.cwd(), expectedRequestKey, expectedCloudTaskId, appPrivateKey = process.env.AIS_PR_WRITER_PRIVATE_KEY }) {
   ensure(typeof token === 'string' && token.length > 0 && ENV.test(environment ?? ''), 'missing_runner_context');
   const rootPath = await realpath(root), gitRoot = await realpath(await git(['rev-parse', '--show-toplevel']));
   ensure(rootPath === gitRoot && await realpath(process.cwd()) === rootPath, 'wrong_runner_directory');
@@ -62,7 +62,7 @@ export async function runDirectRunner({ token, environment, root = process.cwd()
   if (expectedRequestKey === undefined && expectedCloudTaskId === undefined) await store.appendApprovedTasks();
   // The default GitHub Actions masker prints its argument as a workflow
   // directive. A standalone runner must never print a private key or token.
-  const credentials = new AppCredentials({ api, appId: process.env.AIS_PR_WRITER_APP_ID, installationId: process.env.AIS_PR_WRITER_INSTALLATION_ID, privateKey: process.env.AIS_PR_WRITER_PRIVATE_KEY, redact: () => {} });
+  const credentials = new AppCredentials({ api, appId: process.env.AIS_PR_WRITER_APP_ID, installationId: process.env.AIS_PR_WRITER_INSTALLATION_ID, privateKey: appPrivateKey, redact: () => {} });
   let result, cleanupFailed = false;
   try {
     const writer = config.pr_auth === 'github-app' ? new ProductWriter({ api, credentials, config }) : undefined;
