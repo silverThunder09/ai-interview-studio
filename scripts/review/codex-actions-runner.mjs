@@ -1,8 +1,8 @@
 /** One GitHub-hosted tick; existing Cloud credentials are saved even on failure. */
 /* global fetch, AbortSignal */
 import { Buffer } from 'node:buffer';
-import { createPrivateKey, sign } from 'node:crypto';
-import { mkdir, open, rm } from 'node:fs/promises';
+import { createHash, createPrivateKey, sign } from 'node:crypto';
+import { mkdir, open, readFile, rm } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -13,6 +13,14 @@ const REPO = 'silverThunder09/ai-interview-studio';
 const SECRET = 'AIS_CODEX_AUTH_JSON';
 const STATES = new Set(['idle', 'sent', 'leased', 'paused', 'disabled', 'stopped', 'needs-user', 'resumption-hold', 'waiting-actions', 'history-hold', 'limits-hold', 'main-ci-hold', 'writer-hold', 'waiting-bootstrap-ci', 'waiting-ci', 'waiting-cloud', 'waiting-direct-cloud', 'waiting-main-ci', 'waiting-planner-auth', 'waiting-planning-ci', 'waiting-transport', 'direct-waiting', 'direct-hold_empty_diff', 'direct-hold_unknown_failure', 'preflight_changed', 'ambiguous_delivery', 'receipt_persistence_unknown', 'wakeup-pending', 'wakeup-sent', 'wakeup-unknown']);
 function ensure(value, code) { if (!value) throw new Error(code); }
+const digest = value => createHash('sha256').update(value).digest('hex');
+
+/** Avoid rewriting the repository Secret when the CLI did not refresh it. */
+export async function persistChangedSecret({ path, originalDigest, token, read = readFile, store = storeSecret }) {
+  if (digest(await read(path)) === originalDigest) return false;
+  await store(path, token);
+  return true;
+}
 
 /** A restarted process observes the durable receipt before considering a new submission. */
 export async function oneTick({ token, environment, appPrivateKey, discover = readRecordedCloudTask, tick = runDirectRunner }) {
@@ -30,7 +38,7 @@ export async function oneTick({ token, environment, appPrivateKey, discover = re
 /** Return only fixed result categories, never raw errors or Cloud content. */
 export function safeRunnerResult(result, tickResult) {
   const state = STATES.has(tickResult?.state) ? tickResult.state : 'unconfirmed';
-  const authLifecycle = result === 'cloud_list_ok' ? 'saved' : result === 'cloud_list_unconfirmed' ? 'tick_failed' : result;
+  const authLifecycle = result === 'cloud_list_ok' ? 'preserved' : result === 'cloud_list_unconfirmed' ? 'tick_failed' : result;
   const limitReason = state === 'limits-hold' && ['limited', 'unknown', 'unavailable'].includes(tickResult?.reason) ? tickResult.reason : undefined;
   return { state: result === 'cloud_list_ok' ? state : 'hold', auth_lifecycle: authLifecycle, ...(result === 'cloud_list_ok' && limitReason ? { reason: limitReason } : {}) };
 }
@@ -41,7 +49,7 @@ async function main() {
   const repoId = Number(process.env.GITHUB_REPOSITORY_ID), runId = process.env.GITHUB_RUN_ID;
   const privateKey = process.env.AIS_PR_WRITER_PRIVATE_KEY, githubToken = process.env.GITHUB_TOKEN;
   const environment = process.env.AIS_CODEX_CLOUD_ENVIRONMENT;
-  let seed = process.env.AIS_CODEX_AUTH_JSON, token, path, expectedSecretUpdate, tickResult;
+  let seed = process.env.AIS_CODEX_AUTH_JSON, token, path, expectedSecretUpdate, originalDigest, tickResult;
   delete process.env.AIS_CODEX_AUTH_JSON;
   delete process.env.AIS_PR_WRITER_PRIVATE_KEY;
   delete process.env.GITHUB_TOKEN;
@@ -68,6 +76,7 @@ async function main() {
       expectedSecretUpdate = metadata.updated_at;
       const directory = join(homedir(), '.codex'); await mkdir(directory, { recursive: true, mode: 0o700 });
       const candidate = join(directory, 'auth.json'); const file = await open(candidate, 'wx', 0o600); path = candidate;
+      originalDigest = digest(seed);
       try { await file.writeFile(seed); } finally { await file.close(); seed = undefined; }
     },
     probe: async () => {
@@ -77,7 +86,7 @@ async function main() {
     persist: async () => {
       const metadata = await request('GET', `/repos/${REPO}/actions/secrets/${SECRET}`, token);
       ensure(metadata?.updated_at === expectedSecretUpdate, 'secret_changed');
-      await storeSecret(path, token);
+      await persistChangedSecret({ path, originalDigest, token });
     },
     cleanup: async () => {
       let failed = false;
