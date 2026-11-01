@@ -15,7 +15,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: ${{ github.event_name == 'pull_request' && format('codex-ci-auth-test-{0}', github.run_id) || 'codex-ci-auth-exclusive' }}
+  group: ${{ github.event_name == 'pull_request' && format('codex-ci-auth-test-{0}', github.run_id) || (github.event_name == 'schedule' && github.event.schedule == '*/5 * * * *' && 'codex-schedule-probe') || 'codex-ci-auth-exclusive' }}
   cancel-in-progress: false
 jobs:
   schedule-probe:
