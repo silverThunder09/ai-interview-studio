@@ -9,24 +9,13 @@ on:
       - scripts/review/direct-runner.d.mts
   schedule:
     - cron: '11 * * * *'
-    # Temporary, read-only schedule delivery check; remove after observation.
-    - cron: '*/5 * * * *'
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
-  group: ${{ github.event_name == 'pull_request' && format('codex-ci-auth-test-{0}', github.run_id) || (github.event_name == 'schedule' && github.event.schedule == '*/5 * * * *' && 'codex-schedule-probe') || 'codex-ci-auth-exclusive' }}
+  group: ${{ github.event_name == 'pull_request' && format('codex-ci-auth-test-{0}', github.run_id) || 'codex-ci-auth-exclusive' }}
   cancel-in-progress: false
 jobs:
-  schedule-probe:
-    if: github.event_name == 'schedule' && github.event.schedule == '*/5 * * * *' && github.repository == 'silverThunder09/ai-interview-studio' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 2
-    permissions:
-      contents: read
-    steps:
-      - name: Confirm GitHub delivered the scheduled event
-        run: printf '%s\n' 'scheduled_event_received'
   synthetic-tests:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
@@ -41,7 +30,7 @@ jobs:
           package-manager-cache: false
       - run: node --test scripts/review/codex-actions-runner.check.mjs scripts/review/codex-ci-auth.check.mjs
   tick:
-    if: github.event_name != 'pull_request' && (github.event_name != 'schedule' || github.event.schedule != '*/5 * * * *') && github.repository == 'silverThunder09/ai-interview-studio' && github.ref == 'refs/heads/main'
+    if: (github.event_name == 'workflow_dispatch' || (github.event_name == 'schedule' && github.event.schedule == '11 * * * *')) && github.repository == 'silverThunder09/ai-interview-studio' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 12
     permissions:
