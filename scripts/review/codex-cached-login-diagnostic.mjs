@@ -16,7 +16,11 @@ export function validateCachedAuthEnvelope(value) {
   let parsed;
   try { parsed = JSON.parse(value); } catch { return 'invalid_auth_json'; }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return 'invalid_auth_json';
-  if (parsed.auth_mode !== 'chatgpt') return 'unsupported_or_legacy_mode';
+  const otherAuth = ['personal_access_token', 'bedrock_api_key', 'bedrock_access_keys', 'OPENAI_API_KEY'].some(key => parsed[key] != null);
+  const chatgptMode = parsed.auth_mode === 'chatgpt' || (parsed.auth_mode == null && !otherAuth);
+  if (!chatgptMode) return 'unsupported_mode';
+  if (!parsed.tokens || typeof parsed.tokens !== 'object' || Array.isArray(parsed.tokens)) return 'missing_auth_material';
+  if (!['id_token', 'access_token', 'refresh_token'].every(key => typeof parsed.tokens[key] === 'string' && parsed.tokens[key].length > 0)) return 'missing_auth_material';
   return 'chatgpt_mode';
 }
 

@@ -13,7 +13,11 @@ test('cleanup failure never reports success', async () => { const f=fixture();f.
 test('checks only the envelope and rejects malformed JSON or outer arrays', () => {
   assert.equal(validateCachedAuthEnvelope('[{"auth_mode":"chatgpt"}]'), 'invalid_auth_json');
   assert.equal(validateCachedAuthEnvelope('{broken'), 'invalid_auth_json');
-  assert.equal(validateCachedAuthEnvelope('{"auth_mode":"chatgpt","tokens":{"access_token":"synthetic-secret"}}'), 'chatgpt_mode');
-  assert.equal(validateCachedAuthEnvelope('{"auth_mode":"apikey"}'), 'unsupported_or_legacy_mode');
-  assert.equal(validateCachedAuthEnvelope('{}'), 'unsupported_or_legacy_mode');
+  const tokens = { id_token: 'synthetic-id', access_token: 'synthetic-access', refresh_token: 'synthetic-refresh' };
+  assert.equal(validateCachedAuthEnvelope(JSON.stringify({ auth_mode: 'chatgpt', tokens })), 'chatgpt_mode');
+  assert.equal(validateCachedAuthEnvelope(JSON.stringify({ tokens, OPENAI_API_KEY: null })), 'chatgpt_mode');
+  assert.equal(validateCachedAuthEnvelope(JSON.stringify({ tokens, OPENAI_API_KEY: 'synthetic-key' })), 'unsupported_mode');
+  assert.equal(validateCachedAuthEnvelope('{"auth_mode":"apikey"}'), 'unsupported_mode');
+  assert.equal(validateCachedAuthEnvelope('{}'), 'missing_auth_material');
+  assert.equal(validateCachedAuthEnvelope(JSON.stringify({ auth_mode: 'chatgpt', tokens: { ...tokens, refresh_token: '' } })), 'missing_auth_material');
 });
