@@ -12,6 +12,10 @@ const execFile = promisify(execFileCallback);
 const REPO = 'silverThunder09/ai-interview-studio';
 const SECRET = 'AIS_CODEX_AUTH_JSON';
 const ensure = (condition, reason) => { if (!condition) throw new Error(reason); };
+export const seedPredatesRun = (secretUpdated, runCreated) => {
+  const secretTime = Date.parse(secretUpdated), runTime = Date.parse(runCreated);
+  return Number.isFinite(secretTime) && Number.isFinite(runTime) && secretTime < runTime;
+};
 const safeEnv = () => Object.fromEntries(['PATH', 'HOME', 'USER', 'LANG', 'TZ', 'RUNNER_TEMP', 'TMPDIR', 'HTTPS_PROXY', 'HTTP_PROXY', 'NO_PROXY', 'SSL_CERT_FILE', 'CODEX_CA_CERTIFICATE'].filter(k => process.env[k] !== undefined).map(k => [k, process.env[k]]));
 
 export async function storeSecret(path, token, command = 'gh') {
@@ -46,10 +50,10 @@ async function main() {
   ensure(process.env.GITHUB_REPOSITORY === REPO && process.env.GITHUB_EVENT_NAME === 'workflow_dispatch' && process.env.GITHUB_REF === 'refs/heads/main', 'untrusted_context');
   const appId = process.env.AIS_PR_WRITER_APP_ID, installation = process.env.AIS_PR_WRITER_INSTALLATION_ID;
   const repoId = Number(process.env.GITHUB_REPOSITORY_ID), privateKey = process.env.AIS_PR_WRITER_PRIVATE_KEY;
-  let seed = process.env.AIS_CODEX_AUTH_JSON, token, path;
+  let seed = process.env.AIS_CODEX_AUTH_JSON, token, path, expectedSecretUpdate;
   delete process.env.AIS_CODEX_AUTH_JSON;
   delete process.env.AIS_PR_WRITER_PRIVATE_KEY;
-  ensure(/^[1-9]\d*$/.test(appId ?? '') && /^[1-9]\d*$/.test(installation ?? '') && Number.isSafeInteger(repoId) && repoId > 0 && typeof privateKey === 'string' && typeof seed === 'string' && seed.length > 0, 'missing_configuration');
+  ensure(/^[1-9]\d*$/.test(appId ?? '') && /^[1-9]\d*$/.test(installation ?? '') && /^[1-9]\d*$/.test(process.env.GITHUB_RUN_ID ?? '') && typeof process.env.GITHUB_TOKEN === 'string' && Number.isSafeInteger(repoId) && repoId > 0 && typeof privateKey === 'string' && typeof seed === 'string' && seed.length > 0, 'missing_configuration');
   const request = async (method, url, bearer, body) => {
     const response = await fetch(`https://api.github.com${url}`, { method, headers: { Authorization: `Bearer ${bearer}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', ...(body ? { 'Content-Type': 'application/json' } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}), redirect: 'error', signal: AbortSignal.timeout(30000) });
     ensure(response.ok, 'github_request_failed');
@@ -66,7 +70,10 @@ async function main() {
       const grant = await request('POST', `/app/installations/${installation}/access_tokens`, jwt, { repository_ids: [repoId], permissions: { secrets: 'write' } });
       token = grant?.token;
       ensure(typeof token === 'string' && token.length > 0 && grant.permissions?.secrets === 'write' && Object.entries(grant.permissions).every(([k,v]) => (k === 'secrets' && v === 'write') || (k === 'metadata' && v === 'read')) && grant.repositories?.length === 1 && grant.repositories[0].id === repoId && grant.repositories[0].full_name === REPO, 'invalid_app_grant');
-      await request('GET', `/repos/${REPO}/actions/secrets/${SECRET}`, token);
+      const metadata = await request('GET', `/repos/${REPO}/actions/secrets/${SECRET}`, token);
+      const run = await request('GET', `/repos/${REPO}/actions/runs/${process.env.GITHUB_RUN_ID}`, process.env.GITHUB_TOKEN);
+      ensure(run?.event === 'workflow_dispatch' && run?.head_branch === 'main' && seedPredatesRun(metadata?.updated_at, run?.created_at), 'stale_queued_secret');
+      expectedSecretUpdate = metadata.updated_at;
       const directory = join(homedir(), '.codex');
       await mkdir(directory, { recursive: true, mode: 0o700 });
       const candidate = join(directory, 'auth.json');
@@ -82,6 +89,9 @@ async function main() {
       return true;
     },
     persist: async () => {
+      // Refuse to overwrite a secret updated during this run. This is not a GitHub CAS.
+      const metadata = await request('GET', `/repos/${REPO}/actions/secrets/${SECRET}`, token);
+      ensure(metadata?.updated_at === expectedSecretUpdate, 'secret_changed');
       // gh encrypts the file using GitHub's public key; no credential appears in argv or output.
       await storeSecret(path, token);
     },

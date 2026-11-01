@@ -8,6 +8,7 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+  actions: read
 concurrency:
   group: codex-ci-auth-exclusive
   cancel-in-progress: false
@@ -42,6 +43,7 @@ jobs:
         run: npm install --prefix "$RUNNER_TEMP/codex-auth-cli" --no-save --no-audit --no-fund --ignore-scripts @openai/codex@0.159.2
       - name: Check Cloud list and preserve refreshed login
         env:
+          GITHUB_TOKEN: ${{ github.token }}
           AIS_CODEX_AUTH_JSON: ${{ secrets.AIS_CODEX_AUTH_JSON }}
           AIS_PR_WRITER_APP_ID: ${{ vars.AIS_PR_WRITER_APP_ID }}
           AIS_PR_WRITER_INSTALLATION_ID: ${{ vars.AIS_PR_WRITER_INSTALLATION_ID }}
