@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import { strict as assert } from 'node:assert';
-import { oneTick } from './codex-actions-runner.mjs';
+import { oneTick, safeRunnerResult } from './codex-actions-runner.mjs';
 
 test('existing receipt is resumed with the exact recorded task, not submitted anew', async () => {
   const seen = [];
@@ -30,4 +30,9 @@ test('only an absent recorded receipt permits the normal guarded runner', async 
   let calls = 0;
   const result = await oneTick({ token: 'synthetic', environment: 'synthetic', discover: async () => ({ state: 'none' }), tick: async input => { calls++; assert.equal(input.expectedCloudTaskId, undefined); return { state: 'idle' }; } });
   assert.equal(result.state, 'idle'); assert.equal(calls, 1);
+});
+test('reports confirmed usage limits without leaking raw failures or treating failed persistence as success', () => {
+  assert.deepEqual(safeRunnerResult('cloud_list_ok', { state: 'limits-hold', reason: 'limited' }), { state: 'limits-hold', auth_lifecycle: 'saved', reason: 'limited' });
+  assert.deepEqual(safeRunnerResult('writeback_unconfirmed', { state: 'sent', task_id: 'task_private' }), { state: 'hold', auth_lifecycle: 'writeback_unconfirmed' });
+  assert.equal(JSON.stringify(safeRunnerResult('cloud_list_ok', { state: 'limits-hold', reason: 'synthetic-private-token' })).includes('synthetic-private-token'), false);
 });

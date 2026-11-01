@@ -11,6 +11,7 @@ import { readRecordedCloudTask, runDirectRunner } from './direct-runner.mjs';
 
 const REPO = 'silverThunder09/ai-interview-studio';
 const SECRET = 'AIS_CODEX_AUTH_JSON';
+const STATES = new Set(['idle', 'sent', 'leased', 'paused', 'disabled', 'stopped', 'needs-user', 'resumption-hold', 'waiting-actions', 'history-hold', 'limits-hold', 'main-ci-hold', 'writer-hold', 'waiting-bootstrap-ci', 'waiting-ci', 'waiting-cloud', 'waiting-direct-cloud', 'waiting-main-ci', 'waiting-planner-auth', 'waiting-planning-ci', 'waiting-transport', 'direct-waiting', 'direct-hold_empty_diff', 'direct-hold_unknown_failure', 'preflight_changed', 'ambiguous_delivery', 'receipt_persistence_unknown', 'wakeup-pending', 'wakeup-sent', 'wakeup-unknown']);
 function ensure(value, code) { if (!value) throw new Error(code); }
 
 /** A restarted process observes the durable receipt before considering a new submission. */
@@ -24,6 +25,14 @@ export async function oneTick({ token, environment, appPrivateKey, discover = re
   }
   if (recorded.state !== 'none') return { state: 'resumption-hold' };
   return tick({ token, environment, appPrivateKey });
+}
+
+/** Return only fixed result categories, never raw errors or Cloud content. */
+export function safeRunnerResult(result, tickResult) {
+  const state = STATES.has(tickResult?.state) ? tickResult.state : 'unconfirmed';
+  const authLifecycle = result === 'cloud_list_ok' ? 'saved' : result === 'cloud_list_unconfirmed' ? 'tick_failed' : result;
+  const limitReason = state === 'limits-hold' && ['limited', 'unknown', 'unavailable'].includes(tickResult?.reason) ? tickResult.reason : undefined;
+  return { state: result === 'cloud_list_ok' ? state : 'hold', auth_lifecycle: authLifecycle, ...(result === 'cloud_list_ok' && limitReason ? { reason: limitReason } : {}) };
 }
 
 async function main() {
@@ -77,9 +86,7 @@ async function main() {
       if (failed) throw new Error('cleanup_failed');
     },
   });
-  const state = typeof tickResult?.state === 'string' && /^[a-z-]{1,60}$/.test(tickResult.state) ? tickResult.state : 'unconfirmed';
-  const authLifecycle = result === 'cloud_list_ok' ? 'saved' : result === 'cloud_list_unconfirmed' ? 'tick_failed' : result;
-  console.log(JSON.stringify({ state: result === 'cloud_list_ok' ? state : 'hold', auth_lifecycle: authLifecycle }));
+  console.log(JSON.stringify(safeRunnerResult(result, tickResult)));
   if (result !== 'cloud_list_ok') process.exitCode = 1;
 }
 
