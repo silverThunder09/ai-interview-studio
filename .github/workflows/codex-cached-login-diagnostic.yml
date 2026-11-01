@@ -9,6 +9,9 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: codex-ci-auth-exclusive
+  cancel-in-progress: false
 jobs:
   synthetic-tests:
     if: github.event_name == 'pull_request'
