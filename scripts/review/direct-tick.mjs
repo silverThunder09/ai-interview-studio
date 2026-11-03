@@ -55,7 +55,7 @@ export async function runDirectTick({ api, store, config, policy, writer, enviro
   const index = snap.state.tasks.findIndex(t => t.phase !== 'completed');
   if (expectedCloudTaskId !== undefined) {
     const t = snap.state.tasks[index];
-    if (!/^task_[a-zA-Z0-9_-]+$/.test(expectedCloudTaskId) || !t || t.phase !== 'development' || t.direct_cloud?.phase !== 'sent' || t.direct_cloud.task_id !== expectedCloudTaskId) return { state: 'resumption-hold' };
+    if (!/^task_[a-zA-Z0-9_-]+$/.test(expectedCloudTaskId) || !t || !['development', 'review'].includes(t.phase) || t.direct_cloud?.phase !== 'sent' || t.direct_cloud.task_id !== expectedCloudTaskId) return { state: 'resumption-hold' };
   }
   if (expectedRequestKey !== undefined) {
     const t = snap.state.tasks[index];
@@ -99,6 +99,13 @@ export async function runDirectTick({ api, store, config, policy, writer, enviro
   }
   if (task.direct_cloud?.phase === 'attempting') return { state: 'waiting-direct-cloud' };
   await notStopped(api);
+  if (task.phase === 'review' && task.direct_cloud?.phase === 'sent') {
+    const { inspectDirectReview } = await import('./direct-review-result.mjs');
+    const result = await inspectDirectReview({ api, store, config: c, taskId: task.id, list: cloud.list, diff: cloud.diff });
+    // A candidate is not a posted review or permission to merge. No result
+    // contents are returned to the Actions log or applied to the product.
+    return { state: `direct-review-${result.state}` };
+  }
   if (!await writerReady(c, writer)) {
     if (expectedCloudTaskId === undefined || task.phase !== 'development' || task.direct_cloud?.phase !== 'sent') return { state: 'writer-hold', reason: 'unavailable' };
     const { checkpointDirectResult, wakeCheckpointedResult } = await import('./direct-handoff.mjs');
