@@ -16,9 +16,10 @@ async function git(args) { return (await exec('git', args, { timeout: 15000, max
 
 export function recordedCloudTask(state) {
   const task = state.tasks.find(t => t.phase !== 'completed');
-  if (task && ['apply', 'ci', 'review', 'merge', 'main-ci'].includes(task.phase)) return { state: 'processing' };
+  if (task && ['apply', 'ci', 'merge', 'main-ci'].includes(task.phase)) return { state: 'processing' };
+  if (task?.phase === 'review' && !task.direct_cloud) return { state: 'processing' };
   if (!task?.direct_cloud) return { state: 'none' };
-  if (task.phase !== 'development' || task.direct_cloud.phase !== 'sent') return { state: 'hold' };
+  if (!['development', 'review'].includes(task.phase) || task.direct_cloud.phase !== 'sent') return { state: 'hold' };
   return { state: 'sent', task_id: task.direct_cloud.task_id };
 }
 

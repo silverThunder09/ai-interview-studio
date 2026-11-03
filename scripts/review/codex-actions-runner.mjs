@@ -12,6 +12,7 @@ import { readRecordedCloudTask, runDirectRunner } from './direct-runner.mjs';
 const REPO = 'silverThunder09/ai-interview-studio';
 const SECRET = 'AIS_CODEX_AUTH_JSON';
 const STATES = new Set(['idle', 'sent', 'leased', 'paused', 'disabled', 'stopped', 'needs-user', 'resumption-hold', 'waiting-actions', 'history-hold', 'limits-hold', 'main-ci-hold', 'writer-hold', 'waiting-bootstrap-ci', 'waiting-ci', 'waiting-cloud', 'waiting-direct-cloud', 'waiting-main-ci', 'waiting-planner-auth', 'waiting-planning-ci', 'waiting-transport', 'direct-waiting', 'direct-hold_empty_diff', 'direct-hold_unknown_failure', 'preflight_changed', 'ambiguous_delivery', 'receipt_persistence_unknown', 'wakeup-pending', 'wakeup-sent', 'wakeup-unknown']);
+for (const state of ['candidate', 'waiting', 'hold_empty_diff', 'hold_unknown_failure', 'hold_review_blocked']) STATES.add(`direct-review-${state}`);
 function ensure(value, code) { if (!value) throw new Error(code); }
 const digest = value => createHash('sha256').update(value).digest('hex');
 
