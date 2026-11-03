@@ -52,14 +52,15 @@ export async function installDirectInventory({ api, store, config, list = cloudT
 }
 
 /** The returned verifier can be passed to dispatchApprovedCloud. */
-export function createDirectHistoryVerifier({ api, config, list = cloudTasks, diff = cloudDiff }) {
+export function createDirectHistoryVerifier({ api, config, list = cloudTasks, diff = cloudDiff, phase = 'development' }) {
   const c = parseLoopConfig(config);
+  ensure(['development', 'review'].includes(phase), 'invalid_history_phase');
   return async ({ task, state }) => {
     parseLoopState(state, c);
     const inventory = state.direct_inventory;
     ensure(inventory && (inventory.schema === 2 || inventory.tasks.length === 0), 'cloud_history_unreconciled');
     const index = state.tasks.findIndex(t => t.id === task.id);
-    ensure(inventory && index >= inventory.queue_ids.length && state.tasks[index].phase === 'development' && state.tasks[index].request?.request_key === task.request?.request_key && KEY.test(task.request?.request_key ?? '') && task.delivery?.attempted === false && task.direct_cloud === undefined, 'direct_history_unverified');
+    ensure(inventory && index >= inventory.queue_ids.length && state.tasks[index].phase === phase && state.tasks[index].request?.request_key === task.request?.request_key && KEY.test(task.request?.request_key ?? '') && task.delivery?.attempted === false && task.direct_cloud === undefined, 'direct_history_unverified');
     const expected = new Map(inventory.tasks.map(t => [t.id, t]));
     const firstRaw = await list(), first = terminalSnapshot(firstRaw);
     // Separately record a manually adapted result without asserting that its
@@ -77,11 +78,12 @@ export function createDirectHistoryVerifier({ api, config, list = cloudTasks, di
       ensure(typeof patch === 'string' && patch.length > 0 && createHash('sha256').update(patch).digest('hex') === receipt.diff_hash, 'manual_cloud_receipt_mismatch');
       expected.set(matches[0].id, matches[0]);
     }
-    for (let i = inventory.queue_ids.length; i < index; i++) {
+    for (let i = inventory.queue_ids.length; i < index + (phase === 'review' ? 1 : 0); i++) {
       const prior = state.tasks[i], definition = c.tasks[i];
-      ensure(prior.phase === 'completed' && SHA.test(prior.merged ?? '') && SHA.test(prior.head ?? '') && Array.isArray(prior.direct_history) && prior.direct_history.length > 0 && prior.direct_cloud === undefined, 'direct_history_unverified');
+      const currentReview = phase === 'review' && i === index;
+      ensure((currentReview ? prior.phase === 'review' : prior.phase === 'completed' && SHA.test(prior.merged ?? '') && prior.direct_cloud === undefined) && SHA.test(prior.head ?? '') && Array.isArray(prior.direct_history) && prior.direct_history.length > 0, 'direct_history_unverified');
       const pr = await api.request('GET', `/pulls/${prior.pr}`);
-      ensure(pr.merged === true && pr.merge_commit_sha === prior.merged && pr.head?.sha === prior.head && pr.base?.repo?.full_name === c.repository && pr.base.ref === 'main', 'direct_history_unverified');
+      ensure((currentReview ? pr.state === 'open' && pr.merged === false && pr.base?.sha === prior.base : pr.merged === true && pr.merge_commit_sha === prior.merged) && pr.head?.sha === prior.head && pr.base?.repo?.full_name === c.repository && pr.base.ref === 'main', 'direct_history_unverified');
       for (const entry of prior.direct_history) {
         const direct = entry.direct_cloud, observed = first.find(t => t.id === direct.task_id), identity = firstRaw.find(t => t.id === direct.task_id);
         ensure(!expected.has(direct.task_id) && observed?.status === 'ready' && observed.attempt_total === 1 && (identity.environment_id === null || identity.environment_id === direct.environment), 'direct_history_unverified');
@@ -119,7 +121,8 @@ export function createDirectHistoryVerifier({ api, config, list = cloudTasks, di
     const comments = await allPages(api, `/issues/${task.pr}/comments`);
     for (const comment of comments) {
       ensure(comment && typeof comment.body === 'string' && Number.isFinite(Date.parse(comment.created_at)), 'invalid_history_comment');
-      ensure(!comment.body.includes(`ais-development-request-v2:${task.request.request_key}`) && !(Date.parse(comment.created_at) + 999 >= when && /(?:^|\s)@codex\b/i.test(comment.body)), 'ambiguous_prior_request');
+      const marker = phase === 'review' ? 'ais-code-review-request' : 'ais-development-request-v2';
+      ensure(!comment.body.includes(`${marker}:${task.request.request_key}`) && !(Date.parse(comment.created_at) + 999 >= when && /(?:^|\s)@codex\b/i.test(comment.body)), 'ambiguous_prior_request');
     }
     return true;
   };

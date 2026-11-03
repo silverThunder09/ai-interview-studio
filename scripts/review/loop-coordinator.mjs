@@ -391,6 +391,26 @@ async function jobEvidence(api, expected, checks) {
   const job = jobs.find(j => j.id === Number(m[2])); ensure(job, 'missing_latest_attempt_job');
   return readJobCIEvidence(expected, checks, run, job, await api.jobLog(job.id));
 }
+/** Re-read the latest native CI and its checkout evidence before direct review. */
+export async function reviewCIReady(api, task, definition, policy) {
+  const required = ['checks', 'package', 'pr-policy'];
+  ensure(Array.isArray(policy?.required_checks) && policy.required_checks.length === required.length && required.every(name => policy.required_checks.includes(name)), 'invalid_review_ci_policy');
+  const { pr, main } = await scope(api, task, definition);
+  ensure(pr.state === 'open' && pr.merged === false && pr.draft === false && pr.head.sha === task.head && pr.base.sha === task.base && main === task.base && pr.merge_commit_sha === task.checkout, 'stale_review_ci');
+  const commit = await api.request('GET', `/git/commits/${task.checkout}`);
+  ensure(isCurrentMergeCheckout(pr, main, commit), 'stale_review_ci');
+  const status = await nativeCIStatus(api, task, policy);
+  if (status.waiting) return false;
+  ensure(Array.isArray(task.validated_ci) && task.validated_ci.length === required.length, 'unverified_review_ci');
+  for (const context of required) {
+    const proof = await jobEvidence(api, { repository: REPO, pr_number: task.pr, context, head_sha: task.head, base_sha: task.base, checkout_sha: task.checkout }, status.checks);
+    const saved = task.validated_ci.filter(p => p.context === context);
+    ensure(saved.length === 1 && ['repository', 'context', 'run_id', 'pr_number', 'head_sha', 'base_sha', 'checkout_sha'].every(k => saved[0][k] === proof[k]), 'stale_review_ci');
+  }
+  const fresh = await scope(api, task, definition);
+  ensure(fresh.main === main && fresh.pr.state === 'open' && fresh.pr.merged === false && fresh.pr.draft === false && fresh.pr.head.sha === task.head && fresh.pr.base.sha === task.base && fresh.pr.merge_commit_sha === task.checkout, 'stale_review_ci');
+  return true;
+}
 async function ready(api, pr) {
   if (!pr.draft) return;
   const r = await api.graphql('mutation($id:ID!){markPullRequestReadyForReview(input:{pullRequestId:$id}){pullRequest{isDraft}}}', { id: pr.node_id });

@@ -87,4 +87,12 @@ describe('direct Cloud review dispatch journal', () => {
     await expect(dispatchApprovedReview(stopped.options)).rejects.toThrow('loop_control_paused');
     expect(f.launch).not.toHaveBeenCalled(); expect(bad.launch).not.toHaveBeenCalled(); expect(old.launch).not.toHaveBeenCalled(); expect(stopped.launch).not.toHaveBeenCalled();
   });
+  it('uses the real history and CI verifiers by default and holds on missing evidence', async () => {
+    const history = fixture();
+    await expect(dispatchApprovedReview({ ...history.options, verifyHistory: undefined, list: async () => [] })).rejects.toThrow('cloud_history_unreconciled');
+    expect(history.launch).not.toHaveBeenCalled();
+    const ci = fixture();
+    await expect(dispatchApprovedReview({ ...ci.options, verifyCI: undefined, policy: { required_checks: ['checks'] } })).rejects.toThrow('invalid_review_ci_policy');
+    expect(ci.launch).not.toHaveBeenCalled();
+  });
 });

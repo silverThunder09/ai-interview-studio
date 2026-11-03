@@ -2,14 +2,17 @@
 import { randomBytes } from 'node:crypto';
 import { launchCloud } from './direct-cloud.mjs';
 import { buildDirectReviewRequest } from './direct-review-protocol.mjs';
-import { parseLoopConfig, parseLoopState, REPO, scope } from './loop-coordinator.mjs';
+import { createDirectHistoryVerifier } from './direct-history.mjs';
+import { parseLoopConfig, parseLoopState, REPO, reviewCIReady, scope } from './loop-coordinator.mjs';
 
 const ENV = /^[a-zA-Z0-9][a-zA-Z0-9_./-]{0,127}$/, TASK = /^task_[a-zA-Z0-9_-]+$/, SHA = /^[a-f0-9]{40}$/;
 const BRANCH = /^(?!-)(?!.*\.\.)(?!.*\/\/)[a-zA-Z0-9._/-]{1,200}$/;
 function ensure(value, code) { if (!value) throw new Error(code); }
 
-export async function dispatchApprovedReview({ api, store, config, taskId, environment, verifyHistory, verifyCI, launch = launchCloud, now = Date.now }) {
+export async function dispatchApprovedReview({ api, store, config, policy, taskId, environment, verifyHistory, verifyCI, list, diff, launch = launchCloud, now = Date.now }) {
   const c = parseLoopConfig(config);
+  if (verifyHistory === undefined) verifyHistory = createDirectHistoryVerifier({ api, config: c, phase: 'review', ...(list ? { list } : {}), ...(diff ? { diff } : {}) });
+  if (verifyCI === undefined && policy) verifyCI = ({ task, definition }) => reviewCIReady(api, task, definition, policy);
   ensure(c.enabled && c.cloud_transport === 'disabled' && ENV.test(environment ?? '') && typeof verifyHistory === 'function' && typeof verifyCI === 'function', 'direct_review_disabled');
   let snap = await store.load(); parseLoopState(snap.state, c);
   const index = snap.state.tasks.findIndex(t => t.id === taskId);

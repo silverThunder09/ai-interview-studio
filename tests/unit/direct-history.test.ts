@@ -375,7 +375,7 @@ describe('verified direct history continuation', () => {
       return f.api.request(method, path);
     } };
     const verify = createDirectHistoryVerifier({ api, config: three, list, diff });
-    return { expanded, verify, list, diff, api };
+    return { state, expanded, verify, list, diff, api };
   }
   it('allows a subsequent task only after the recorded Cloud diff matches its applied commit and merged PR', async () => {
     const f = continuation();
@@ -406,5 +406,25 @@ describe('verified direct history continuation', () => {
     const f = continuation(), original = f.api.request;
     f.api.request = async (method, path) => path.startsWith('/compare/') ? { status: 'diverged', base_commit: { sha: sha('4') }, merge_base_commit: { sha: sha('3') } } : original(method, path);
     await expect(f.verify({ task: f.expanded.tasks[2], state: f.expanded })).rejects.toThrow('direct_history_unverified');
+  });
+  it('reconciles the current development receipt before a direct review and keeps it after recording intent', async () => {
+    const f = continuation(), task = f.state.tasks[1]!, original = f.api.request;
+    const request = { ...(task.request as object), request_key: 'd'.repeat(64), head_sha: sha('5'), mode: 'read-only', allowed_paths: [] };
+    const body = 'synthetic review';
+    Object.assign(task, { phase: 'review', merged: null, base: sha('1'), request, delivery: { phase: 'sending', hash: createHash('sha256').update(body).digest('hex'), body, id: null, attempted: false } });
+    f.api.request = async (method, path) => {
+      if (path === '/pulls/81') return { state: 'open', merged: false, head: { sha: sha('5') }, base: { sha: sha('1'), ref: 'main', repo: { full_name: repo } } };
+      if (path.startsWith('/issues/81/comments')) return [];
+      return original(method, path);
+    };
+    const verify = createDirectHistoryVerifier({ api: f.api, config: later, list: f.list, diff: f.diff, phase: 'review' });
+    const before = structuredClone(task);
+    await expect(verify({ task: before, state: f.state })).resolves.toBe(true);
+    Object.assign(task.delivery as object, { attempted: true });
+    task.direct_cloud = { request_key: 'd'.repeat(64), environment: 'env_1', branch: 'work/next', phase: 'attempting', task_id: null };
+    await expect(verify({ task: before, state: f.state })).resolves.toBe(true);
+    f.diff.mockResolvedValueOnce('changed result');
+    await expect(verify({ task: before, state: f.state })).rejects.toThrow();
+    expect(task.direct_history).toEqual(before.direct_history);
   });
 });
